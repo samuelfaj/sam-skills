@@ -1,0 +1,3 @@
+interface:
+  display_name: "Create Playwright Tests"
+  short_description: "Map flows, write E2E coverage, and attach Playwright evidence."

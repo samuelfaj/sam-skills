@@ -1,0 +1,3 @@
+interface:
+  display_name: "Sam Fix Bug"
+  short_description: "Bugfix workflow with test-first validation and PR evidence."
