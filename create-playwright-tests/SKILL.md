@@ -172,11 +172,20 @@ When video evidence is requested:
    - Which tests passed
    - Where videos were attached or linked
 
-GitHub note:
+GitHub/GitLab note:
 
 - `gh pr comment` posts text and does not reliably upload local files by itself.
-- If a helper such as `gh image` is available, use it to upload videos and paste returned markdown links into the PR comment.
-- Do not promise inline video player rendering. GitHub attachment rendering is client-dependent.
+- If a helper such as `gh image` is available, use it to upload videos and extract the raw uploaded video URL from the returned markdown.
+- To make the video render inline in GitHub or GitLab, place the raw video URL alone on its own paragraph with a blank line before and after it. Do not wrap the video URL in markdown image/link syntax in the final PR/MR comment. Example:
+
+  ```markdown
+  Aqui está o vídeo funcionando:
+
+  https://github.com/user-attachments/assets/9d67afa2-81f8-4aa1-9ca2-173a81b63d56
+
+  Continua com algum texto...
+  ```
+- Do not promise inline video player rendering if the host changes behavior, but always use the raw-URL-on-empty-line format because it is the expected rendering format for GitHub/GitLab video attachments.
 
 ## Playwright-Specific Rules
 
@@ -208,4 +217,3 @@ If blocked, report:
 - Why it is blocked
 - Evidence collected
 - Exact next action required
-
