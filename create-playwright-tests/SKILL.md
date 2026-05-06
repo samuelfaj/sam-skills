@@ -11,7 +11,7 @@ Use this skill when the user invokes `/create-playwright-tests` or asks for comp
 
 You are a senior QA automation engineer and senior software engineer.
 
-Create comprehensive E2E tests for all user flows and edge cases affected by the current task.
+Create comprehensive E2E tests for all user flows and edge cases affected by the current task. By default, treat every request as a request for exhaustive, risk-based coverage of the affected behavior.
 
 ## Core Context
 
@@ -19,9 +19,13 @@ Before writing tests:
 
 - Inspect the current git diff against the base branch.
 - Inspect related files, routes, components, services, API endpoints, validations, permissions, and state changes affected by the task.
+- Inspect existing tests for the affected feature, adjacent features, and any comparable working flow mentioned by the user.
+- Inspect the user report, QA criteria, acceptance criteria, PR/MR comments, and any linked issue text available in context.
 - Infer the real user behaviors impacted by the change.
+- Build a test matrix before implementing tests.
 - Do not test implementation details directly.
 - Test observable behavior from the user or API perspective.
+- Do not claim full confidence unless every meaningful matrix row is automated, manually proven, or explicitly marked redundant with rationale.
 
 ## Step 1: Analyze Task Impact
 
@@ -41,7 +45,7 @@ Identify every affected:
 - Regression risk
 - Nearby behavior likely to be affected
 
-Before writing tests, list the impacted flows.
+Before writing tests, list the impacted flows and build a coverage matrix.
 
 The impacted-flow list must be concrete and user/API oriented. Prefer descriptions like:
 
@@ -56,9 +60,33 @@ Avoid implementation-only descriptions like:
 - Component state changes.
 - Mock was invoked.
 
+The coverage matrix must include every meaningful equivalence class around the changed behavior:
+
+- Reported failing flow
+- Comparable working flow mentioned in the task
+- Primary happy path
+- Add, remove, update, and preserve-existing-value variants
+- Existing value, missing value, `null`, `undefined`, empty string, and sentinel values when those inputs affect branching logic
+- Loading state
+- Empty state
+- Error state
+- Permission and role variants
+- Validation boundaries
+- Save, cancel, retry, and navigation behavior
+- API method, path, query, payload, status, and response-body assertions
+- UI persistence, read-after-write, and stale-cache behavior when applicable
+- Cross-browser, mobile, or responsive variants only when the changed behavior can differ by viewport/browser
+
+For each matrix row, choose one status:
+
+- `AUTOMATED`: covered by a test file and test name
+- `MANUAL_PROOF`: covered by browser, video, API, or database proof
+- `REDUNDANT`: equivalent to another covered row, with exact reason
+- `NOT_COVERED`: not covered, with blocker and residual risk
+
 ## Step 2: Create E2E Test Plan
 
-Create a test plan that covers every applicable category:
+Create a test plan that covers every applicable matrix row by default:
 
 - Happy paths
 - Negative paths
@@ -70,6 +98,11 @@ Create a test plan that covers every applicable category:
 - Regression cases around nearby existing behavior
 - Loading states, when observable
 - Retry or recovery behavior, when user-visible
+- Existing working comparable behavior, when mentioned
+- Save-without-changing-related-field behavior
+- Explicit clearing/removal behavior
+- Null/undefined/empty/sentinel payload behavior, when applicable
+- Cache/read-after-write behavior, when applicable
 
 For each planned test, define:
 
@@ -77,9 +110,10 @@ For each planned test, define:
 - User/API behavior under test
 - Data setup needed
 - Observable assertion
+- Matrix rows covered
 - Why the test is necessary
 
-Do not stop after the obvious happy path. Keep exploring until confidence is high that affected behavior is covered from the user's perspective.
+Do not stop after the obvious happy path. Keep exploring until every meaningful matrix row has a status. If adding all rows as E2E tests would create brittle or slow coverage, split coverage across E2E, component/integration, and API tests, but still prove every matrix row.
 
 ## Step 3: Implement Tests
 
@@ -143,10 +177,17 @@ The E2E work is complete only when:
 
 - All new E2E tests pass locally.
 - Existing affected E2E tests still pass.
+- Unit, integration, API, or contract tests that cover affected non-browser behavior pass locally.
 - No flaky waits were introduced.
 - Tests clearly cover impacted behavior.
 - Test data is deterministic and isolated.
-- Any untested case has a clear blocker or rationale.
+- Every QA/acceptance criterion maps to `AUTOMATED`, `MANUAL_PROOF`, or `REDUNDANT`.
+- Any `NOT_COVERED` matrix row has a clear blocker, exact residual risk, and recommended next action.
+
+Full-confidence rule:
+
+- Only say `100% confidence` when every QA/acceptance criterion and every meaningful matrix row is automated, manually proven, or explicitly redundant; all affected local suites pass; linked frontend/backend services are exercised when the task crosses that boundary; and PR/MR evidence is attached when requested.
+- If any of those conditions is missing, do not say `100% confidence`. State the exact confidence blocker instead.
 
 ## Step 7: Local Playwright Video Recording And PR Attachment
 
@@ -203,10 +244,12 @@ GitHub/GitLab note:
 Report results in this order:
 
 1. Impacted flows discovered
-2. Test cases created
-3. Files changed
-4. Commands run and results
-5. Risks, gaps, or cases that could not be tested
+2. Coverage matrix summary with `AUTOMATED`, `MANUAL_PROOF`, `REDUNDANT`, and `NOT_COVERED` rows
+3. Test cases created
+4. Files changed
+5. Commands run and results
+6. Confidence level and exact blockers, if any
+7. Risks, gaps, or cases that could not be tested
 
 ## Hard Blocker Output
 
