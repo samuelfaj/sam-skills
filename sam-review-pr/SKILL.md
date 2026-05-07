@@ -43,8 +43,9 @@ review back to the hosting platform.
      suggestions out of the platform review.
    - Also publish one top-level platform comment using only these sections:
      `Blockers`, `Important Issues`, `Automated Tests`, and `Final Decision`.
-   - If there are no blockers, approve the PR/MR when allowed. Important
-     line-level comments can still be posted before approval.
+   - Approve the PR/MR only when both `Blockers` and `Important Issues` are
+     `N/A`. Any `IMPORTANT` finding is merge-blocking and requires
+     `Final Decision: CHANGES REQUIRED`.
 
 5. Delete the temporary working directory before finishing.
 
@@ -112,7 +113,9 @@ Use `BLOCKER` when the issue should prevent merge:
   rules, unsafe side effects, or code that cannot be tested in isolation.
 - Production deployment, CI, environment, or configuration changes that are unsafe or unvalidated.
 
-Use `IMPORTANT` when the issue should be fixed before or soon after merge, but may not block by itself:
+Use `IMPORTANT` when the issue is less severe than `BLOCKER` but still must be
+fixed before merge. Important Issues are merge-blocking: do not approve a PR/MR
+with any `IMPORTANT` finding.
 
 - Maintainability problems that create meaningful future risk.
 - Incomplete edge-case handling.
@@ -391,18 +394,17 @@ files, set `old_path` to the old path and `new_path` to the new path.
 glab mr note "$MR_IID" -m "$SUMMARY"
 ```
 
-5. Approve only when allowed and when there are no blockers:
+5. Approve only when allowed and when there are no blockers or important issues:
 
 ```bash
 glab mr approve "$MR_IID"
 ```
 
-If the MR has blockers, do not approve. If it only has important issues,
-approve when the remaining risk is acceptable and call out the follow-ups in
-`Important Issues`. GitLab does not always expose a
-GitHub-style "request changes" state through `glab`; unresolved line
-discussions plus the top-level `Final Decision: CHANGES REQUIRED` section
-are the required outcome.
+If the MR has blockers or important issues, do not approve. Important Issues
+are treated as blockers for merge readiness, but with slightly lower severity.
+GitLab does not always expose a GitHub-style "request changes" state through
+`glab`; unresolved line discussions plus the top-level
+`Final Decision: CHANGES REQUIRED` section are the required outcome.
 
 # Publishing Reviews on GitHub
 
@@ -411,7 +413,9 @@ A top-level-only PR comment is not enough when there are file/line findings.
 
 For line comments, use the pull request review comments API with the commit
 ID, path, side, and line from the diff. Then submit a final review with
-`REQUEST_CHANGES`, `COMMENT`, or `APPROVE` as appropriate.
+`REQUEST_CHANGES`, `COMMENT`, or `APPROVE` as appropriate. Use
+`REQUEST_CHANGES` whenever there is at least one `BLOCKER` or `IMPORTANT`
+finding. Use `APPROVE` only when both sections are `N/A`.
 
 # Platform Markdown Formatting
 
@@ -442,6 +446,10 @@ Markdown that preserves structure:
 
 The top-level GitHub/GitLab platform comment must contain only these
 sections, in this order:
+
+`Final Decision` must be `CHANGES REQUIRED` whenever `Blockers` or
+`Important Issues` contains any finding. `APPROVE` is allowed only when both
+sections are `N/A`.
 
 ```markdown
 EN-US
@@ -487,6 +495,8 @@ Do not add any other top-level sections to the GitHub/GitLab comment.
 - The review is not complete until the GitHub/GitLab review is published or
   you have reported the exact API/tooling error that prevented publication.
 - Prefer fewer, stronger comments over many weak comments.
+- Do not approve when there are any `IMPORTANT` findings. Important Issues are
+  merge-blocking, even though they are less severe than `BLOCKER` findings.
 - Every blocker must be supported by code evidence, diff evidence, or command output.
 - Every blocker should have a line-level comment unless no changed line can
   represent the issue. If no changed line can represent it, explain that in
