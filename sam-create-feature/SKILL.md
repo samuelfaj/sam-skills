@@ -30,6 +30,33 @@ feature works.
 - Do not skip tests. If a test cannot be implemented or run, explain exactly why.
 - Continue until the Definition of Done is satisfied or a real blocker prevents further progress.
 
+## User Experience Optimization Pass
+
+For any user-visible workflow, treat a technically correct but confusing result
+as incomplete. Keep the feature scoped to the request, but verify the experience
+a real user sees.
+
+Check, when applicable:
+
+- Show human-readable labels instead of raw internal IDs.
+- Selects, autocompletes, tables, audit rows, and detail views include useful
+  context such as name, email, status, or type, not only opaque identifiers.
+- Loading, empty, error, disabled, and permission-denied states are clear.
+- Validation and action errors explain what the user can do next.
+- Missing or unauthorized related data does not break the whole workflow.
+- Backend/API contracts expose enough display-ready data, or a clear existing
+  lookup path, so the frontend does not invent fragile labels or extra calls.
+- Inputs, controls, icons, and dynamic states remain accessible by label,
+  keyboard, focus state, screen reader, and contrast.
+- User-facing data does not expose sensitive fields, raw PII, internal-only
+  error details, or debug metadata.
+- Display-data work does not introduce obvious N+1 queries, list overfetching,
+  client-side lookup loops, or unbounded select/autocomplete payloads.
+- Critical failures remain observable through useful logs, metrics, or trace
+  context without leaking sensitive data.
+- API, data, migration, and rollout changes stay backward compatible unless the
+  feature explicitly requires a breaking change.
+
 ## Step 1: Discover Requirements And Existing Rules
 
 Before implementing, understand the requested feature completely.
@@ -41,6 +68,10 @@ Gather and document:
 - In-scope and out-of-scope behavior.
 - Existing business rules that must be preserved.
 - API, UI, data, permissions, integration, and migration expectations.
+- User-facing labels, display context, loading, empty, error, disabled, and
+  permission states.
+- Accessibility, privacy, performance, observability, rollout, and compatibility
+  expectations when they affect user trust or delivery risk.
 - Edge cases, negative cases, boundary cases, and compatibility constraints.
 - Observability, rollout, and failure-mode expectations when relevant.
 
@@ -84,6 +115,9 @@ Include, when applicable:
 - Negative scenarios.
 - Boundary cases.
 - UI loading, empty, error, and interaction states.
+- Display-label versus internal-id behavior.
+- Contract/API fields required for user-facing display context.
+- Accessibility, privacy, performance, observability, and compatibility risks.
 
 Before changing production code:
 
@@ -120,8 +154,10 @@ Analyze the feature from six perspectives:
 
 1. Product / requirements reviewer.
 2. Domain / business-rule reviewer.
-3. Backend / service-layer reviewer, if applicable.
-4. Frontend / UI-flow reviewer, if applicable.
+3. Backend / service-layer reviewer, including UI-facing contracts, DTO field
+   names, display data, and compatibility when applicable.
+4. Frontend / UI-flow reviewer, including legibility, flow states, option
+   labels, and user-facing messages when applicable.
 5. Testing / QA reviewer.
 6. Architecture / maintainability reviewer.
 
@@ -132,6 +168,10 @@ Each reviewer must answer:
 - What existing code supports or constrains the feature?
 - What risks exist in implementing it?
 - What tests are required to prove correctness?
+- What user-visible labels, states, messages, or API contract details must be
+  understandable?
+- What accessibility, privacy, performance, observability, or compatibility risk
+  could the feature introduce?
 
 Create local `ANALYSIS.md` with:
 
@@ -143,6 +183,9 @@ Create local `ANALYSIS.md` with:
 - Test strategy.
 - Implementation risks.
 - Review council notes.
+- User experience optimization notes, when the feature touches a user-visible flow.
+- Accessibility, privacy, performance, observability, and compatibility notes,
+  when relevant.
 - Recommended implementation approach.
 
 `ANALYSIS.md` is local only. Never commit it.
@@ -160,6 +203,9 @@ Create local `TDD.md` with:
 - Minimal implementation plan.
 - Refactor boundaries.
 - Risks of overengineering.
+- User-facing display or API contract assertions to verify, when applicable.
+- Accessibility, privacy, performance, observability, and compatibility checks,
+  when applicable.
 - Final validation checklist.
 
 `TDD.md` is local only. Never commit it.
@@ -180,6 +226,12 @@ Implementation requirements:
 - Keep the diff easy to review.
 - Remove dead code only if directly created by the feature work.
 - Avoid speculative abstractions.
+- Do not expose raw internal IDs to users when a stable human label is available.
+- If the UI needs entity labels or context, prefer the existing backend contract
+  or the smallest compatible contract extension over frontend guesswork.
+- Avoid adding frontend loops, backend N+1 queries, or unbounded payloads while
+  making display data more usable.
+- Keep sensitive data out of UI, logs, analytics, and error responses.
 
 `TODO.md` is local only. Never commit it.
 
@@ -217,6 +269,14 @@ Repeat until no known blockers remain:
    - Possible regressions.
    - Unhandled edge cases.
    - Inconsistent implementation.
+   - Raw IDs or ambiguous labels shown to users.
+   - Backend contract forces poor UX or fragile frontend lookups.
+   - Unclear loading, empty, error, disabled, or permission state.
+   - Accessibility regression.
+   - Sensitive data exposed in UI, logs, analytics, or errors.
+   - N+1 query, unbounded payload, or client-side lookup loop.
+   - Missing observability for critical failure paths.
+   - Unnecessary breaking contract or rollout risk.
    - PR review concerns.
 3. Consolidate blockers.
 4. Fix every valid blocker.
@@ -241,6 +301,13 @@ Include:
 - Negative cases.
 - Boundary cases.
 - UI states, if applicable.
+- Display-label versus internal-id assertions, when applicable.
+- Contract/API tests proving fields required for user-facing display context,
+  when applicable.
+- Accessibility and keyboard/focus behavior, when browser-testable.
+- Privacy/security assertions for sensitive data, when applicable.
+- Performance or query-count coverage for display-data changes, when practical.
+- Contract compatibility and observability checks, when relevant.
 - Regression risks around adjacent behavior.
 
 Implement any missing tests needed to prove the feature works.
@@ -251,7 +318,10 @@ Collect final proof:
 
 - Test commands used.
 - Passing test output summary.
-- Screenshots or videos for UI/e2e flows, when applicable.
+- Screenshots or videos for UI/e2e flows, showing human-readable labels and
+  relevant states when applicable.
+- Accessibility, privacy, performance, observability, or compatibility evidence
+  when those risks are relevant.
 - Relevant before/after evidence.
 
 ## Step 10: Local Review And Coverage Gates
@@ -323,6 +393,8 @@ Task is complete only when all are true:
 - All relevant tests pass.
 - New coverage exists for required feature behavior.
 - Edge cases were considered.
+- Applicable UX, accessibility, privacy, performance, observability, and
+  compatibility risks were checked without broadening the feature unnecessarily.
 - Six-perspective review loop reports no unresolved blockers.
 - `$sam-review-code` loop reports no remaining corrections.
 - `$create-test-coverage` has been run and all required coverage gaps are resolved.

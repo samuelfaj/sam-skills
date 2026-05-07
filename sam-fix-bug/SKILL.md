@@ -24,6 +24,32 @@ Fix the reported bug correctly, with the smallest reasonable diff, strong test c
 - Do not skip tests. If a test cannot be implemented or run, explain exactly why.
 - Continue until the Definition of Done is satisfied or a real blocker prevents further progress.
 
+## User Experience Optimization Pass
+
+For any user-visible workflow, treat a technically correct but confusing result
+as incomplete. Keep the fix surgical, but verify the experience a real user sees.
+
+Check, when applicable:
+
+- Show human-readable labels instead of raw internal IDs.
+- Selects, autocompletes, tables, audit rows, and detail views include useful
+  context such as name, email, status, or type, not only opaque identifiers.
+- Loading, empty, error, disabled, and permission-denied states are clear.
+- Validation and action errors explain what the user can do next.
+- Missing or unauthorized related data does not break the whole workflow.
+- Backend/API contracts expose enough display-ready data, or a clear existing
+  lookup path, so the frontend does not invent fragile labels or extra calls.
+- Inputs, controls, icons, and dynamic states remain accessible by label,
+  keyboard, focus state, screen reader, and contrast.
+- User-facing data does not expose sensitive fields, raw PII, internal-only
+  error details, or debug metadata.
+- Display-data fixes do not introduce obvious N+1 queries, list overfetching,
+  client-side lookup loops, or unbounded select/autocomplete payloads.
+- Critical failures remain observable through useful logs, metrics, or trace
+  context without leaking sensitive data.
+- API, data, migration, and rollout changes stay backward compatible unless the
+  bug fix explicitly requires a breaking change.
+
 ## Step 1: Reproduce And Map Tests
 
 Analyze the bug and map every relevant test that can prove it exists.
@@ -38,6 +64,8 @@ Include, when applicable:
 - Business-rule scenarios
 - Negative scenarios
 - Boundary cases
+- User-facing display labels, states, and messages
+- Accessibility, privacy, performance, observability, and compatibility risks
 
 Before changing production code:
 
@@ -68,8 +96,10 @@ Spawn subagents only if the user explicitly allows subagents in the current sess
 Analyze the bug from six perspectives:
 
 1. Domain / business-rule reviewer
-2. Backend / service-layer reviewer
-3. Frontend / UI-flow reviewer, if applicable
+2. Backend / service-layer reviewer, including UI-facing contracts, DTO field
+   names, display data, and compatibility when applicable
+3. Frontend / UI-flow reviewer, including legibility, flow states, option
+   labels, and user-facing messages when applicable
 4. Testing / QA reviewer
 5. Architecture / maintainability reviewer
 6. Edge-case / regression-risk reviewer
@@ -81,6 +111,10 @@ Each reviewer must answer:
 - What existing code supports or contradicts that rule?
 - What risks exist in fixing it?
 - What tests are required to prove correctness?
+- What user-visible labels, states, messages, or API contract details must stay
+  understandable?
+- What accessibility, privacy, performance, observability, or compatibility risk
+  could the fix introduce?
 
 Create local `ANALYSIS.md` with:
 
@@ -92,6 +126,9 @@ Create local `ANALYSIS.md` with:
 - Test strategy
 - Implementation risks
 - Review council notes
+- User experience optimization notes, when the bug touches a user-visible flow
+- Accessibility, privacy, performance, observability, and compatibility notes,
+  when relevant
 - Recommended fix approach
 
 `ANALYSIS.md` is local only. Never commit it.
@@ -108,6 +145,9 @@ Create local `TDD.md` with:
 - Minimal implementation plan
 - Refactor boundaries
 - Risks of overengineering
+- User-facing display or API contract assertions to verify, when applicable
+- Accessibility, privacy, performance, observability, and compatibility checks,
+  when applicable
 - Final validation checklist
 
 `TDD.md` is local only. Never commit it.
@@ -127,6 +167,12 @@ Implementation requirements:
 - Keep the diff easy to review.
 - Remove dead code only if directly related to the fix.
 - Avoid speculative abstractions.
+- Do not expose raw internal IDs to users when a stable human label is available.
+- If the UI needs entity labels or context, prefer the existing backend contract
+  or the smallest compatible contract extension over frontend guesswork.
+- Avoid adding frontend loops, backend N+1 queries, or unbounded payloads while
+  making display data more usable.
+- Keep sensitive data out of UI, logs, analytics, and error responses.
 
 `TODO.md` is local only. Never commit it.
 
@@ -162,6 +208,14 @@ Repeat until no known blockers remain:
    - Possible regressions
    - Unhandled edge cases
    - Inconsistent implementation
+   - Raw IDs or ambiguous labels shown to users
+   - Backend contract forces poor UX or fragile frontend lookups
+   - Unclear loading, empty, error, disabled, or permission state
+   - Accessibility regression
+   - Sensitive data exposed in UI, logs, analytics, or errors
+   - N+1 query, unbounded payload, or client-side lookup loop
+   - Missing observability for critical failure paths
+   - Unnecessary breaking contract or rollout risk
    - PR review concerns
 3. Consolidate blockers.
 4. Fix every valid blocker.
@@ -179,11 +233,18 @@ Include:
 - Unit tests
 - Integration tests
 - End-to-end tests
+- Contract/API tests, when UI data shape is involved
 - Regression tests
 - Edge cases
 - Negative cases
 - Previously failing scenario
 - Related business-rule scenarios
+- Display-label versus internal-id assertions, when applicable
+- UI loading, empty, error, disabled, and permission states, when applicable
+- Accessibility and keyboard/focus behavior, when browser-testable
+- Privacy/security assertions for sensitive data, when applicable
+- Performance or query-count coverage for display-data changes, when practical
+- Contract compatibility and observability checks, when relevant
 
 Implement any missing tests needed to prove the fix works.
 
@@ -193,7 +254,10 @@ Collect final proof:
 
 - Test commands used
 - Passing test output summary
-- Screenshots or videos for UI/e2e flows, when applicable
+- Screenshots or videos for UI/e2e flows, showing human-readable labels and
+  relevant states when applicable
+- Accessibility, privacy, performance, observability, or compatibility evidence
+  when those risks are relevant
 - Relevant before/after evidence
 
 ## Step 9: Local Review And Coverage Gates
@@ -262,6 +326,8 @@ Task is complete only when all are true:
 - All relevant tests pass.
 - New regression coverage exists.
 - Edge cases were considered.
+- Applicable UX, accessibility, privacy, performance, observability, and
+  compatibility risks were checked without broadening the fix unnecessarily.
 - Six-perspective review loop reports no unresolved blockers.
 - `$sam-review-code` loop reports no remaining corrections.
 - `$create-test-coverage` has been run and all required coverage gaps are resolved.
