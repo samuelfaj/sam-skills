@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Review PR"
+  short_description: "Rigorous PR/MR review with published comments."
+  default_prompt: "Use $sam-review-pr to review this PR/MR end-to-end and publish the platform review."
