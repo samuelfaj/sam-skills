@@ -202,12 +202,13 @@ When video evidence is requested:
 4. Verify each selected video opens and shows the tested flow working.
 5. Keep only relevant videos that demonstrate affected flows.
 6. Do not include videos containing secrets, private user data, tokens, credentials, or sensitive information.
-7. Attach selected local videos to the GitHub Pull Request using `gh` when possible.
-8. If direct video upload to the PR comment is not supported, use the best available GitHub-compatible approach:
+7. Attach selected local videos to the GitHub Pull Request using `gh` when possible, or to the GitLab Merge Request using `glab` when the repo is on GitLab.
+8. If direct video upload to the PR/MR comment is not supported, use the best available platform-specific approach:
    - Use an available `gh` extension or helper that uploads files as GitHub user attachments.
-   - Create a temporary GitHub issue or PR comment with uploaded files if supported.
-   - Upload videos as repository artifacts/files only if the repository has an accepted pattern.
-   - Clearly report that GitHub CLI cannot directly attach local video files to PR comments if no supported upload path exists.
+   - For GitLab, use the Markdown Uploads API through `glab api`.
+   - Create a temporary issue or PR/MR comment with uploaded files if supported.
+   - Do not commit video files to the repository unless the user explicitly asks for versioned video artifacts.
+   - Clearly report when the platform CLI cannot attach local video files to comments if no supported upload path exists.
 9. Add a PR comment summarizing:
    - Which E2E flows were recorded
    - Which tests passed
@@ -217,7 +218,7 @@ GitHub/GitLab note:
 
 - `gh pr comment` posts text and does not reliably upload local files by itself.
 - If a helper such as `gh image` is available, use it to upload videos and extract the raw uploaded video URL from the returned markdown.
-- To make the video render inline in GitHub or GitLab, place the raw video URL alone on its own paragraph with a blank line before and after it. Do not wrap the video URL in markdown image/link syntax in the final PR/MR comment. Example:
+- For GitHub attachment URLs, place the raw uploaded video URL alone on its own paragraph with a blank line before and after it. Do not wrap GitHub user-attachment video URLs in markdown image/link syntax. Example:
 
   ```markdown
   Aqui está o vídeo funcionando:
@@ -226,7 +227,31 @@ GitHub/GitLab note:
 
   Continua com algum texto...
   ```
-- Do not promise inline video player rendering if the host changes behavior, but always use the raw-URL-on-empty-line format because it is the expected rendering format for GitHub/GitLab video attachments.
+- For GitLab, prefer `.mp4` files because GitLab Markdown can render uploaded MP4 video attachments inline. Convert Playwright `.webm` output to `.mp4` with a browser-compatible codec before upload:
+
+  ```bash
+  mkdir -p .artifacts/playwright-mp4
+  ffmpeg -y -i .artifacts/playwright-videos/example.webm \
+    -c:v libx264 -pix_fmt yuv420p -movflags +faststart -an \
+    .artifacts/playwright-mp4/example.mp4
+  ```
+
+- Upload each MP4 to the GitLab project with the Markdown Uploads API via `glab`. Use the project placeholder `:id` from inside the target repo, or pass an explicit project id/path when needed:
+
+  ```bash
+  glab api -X POST projects/:id/uploads --form "file=@.artifacts/playwright-mp4/example.mp4"
+  ```
+
+- In GitLab MR comments, paste the exact `markdown` field returned by the upload response, for example:
+
+  ```markdown
+  ![example](/uploads/<secret>/example.mp4)
+  ```
+
+- Do not manually build GitLab upload URLs from `url`, `full_path`, project ids, or repository paths. Manually constructed upload links often 404 or fail to render inline.
+- Do not commit videos into the repository for evidence. Keep them in local artifact directories such as `.artifacts/playwright-videos/` and `.artifacts/playwright-mp4/`, upload them, and leave those artifact directories untracked.
+- After posting GitLab video evidence, re-read the MR note with `glab api projects/:id/merge_requests/<iid>/notes/<note_id>` and confirm it contains `.mp4` upload markdown using `/uploads/...`, not `/raw/...`, `/-/project/...`, or committed artifact paths.
+- Do not promise inline video player rendering if the host changes behavior, but use each platform's expected format: raw uploaded URL for GitHub user attachments, exact Markdown Uploads API `markdown` for GitLab.
 
 ## Playwright-Specific Rules
 
