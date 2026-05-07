@@ -104,6 +104,9 @@ Use `BLOCKER` when the issue should prevent merge:
 - Critical logic without meaningful tests when the repository has an established way to test it.
 - Any missing required test coverage. Required test gaps are blockers and must
   be listed in the top-level `Blockers` section, not only in `Automated Tests`.
+- Any file listed under `Production files without direct tests` or any scenario
+  requested under `Unit coverage required`, `Integration coverage required`, or
+  `E2E coverage required` is a required test gap and therefore a `BLOCKER`.
 - Any changed production component, service, controller/route, repository/model,
   middleware, worker/job, hook/store, adapter/client, or non-trivial utility
   without direct meaningful tests when the repository has any test
@@ -301,13 +304,17 @@ exact scenarios, the appropriate test level, and where the developer should
 add them.
 
 Mark any missing required test coverage as `BLOCKER`. This includes missing
-direct tests for a changed production unit and missing required unit,
-integration, API/contract, or e2e scenarios. Comment on the changed production
-line that introduces or changes the untested behavior; if many lines are
-affected, use the first representative changed line. Every missing required
-test must also appear as a blocker in the top-level `Blockers` section. The
-`Automated Tests` section should repeat the test gap details, but it must not
-be the only place where required missing tests are listed.
+test files, missing direct tests for a changed production unit, and any
+specific unit, integration, API/contract, or e2e scenario requested in the
+`Automated Tests` section. If you write a sentence such as "Add route-level
+auth coverage for ...", "Add backend route/unit tests for ...", "Add frontend
+service unit tests for ...", "Add component tests for ...", or list production
+files under `Production files without direct tests`, that exact gap must also
+be a `BLOCKER` item. Comment on the changed production line that introduces or
+changes the untested behavior; if many lines are affected, use the first
+representative changed line. The `Automated Tests` section should repeat the
+test gap details, but it must not be the only place where required missing
+tests are listed.
 
 # Publishing Reviews on GitLab
 
@@ -463,7 +470,7 @@ EN-US
 - **[BLOCKER] Missing required tests for <changed behavior or production file>**
   - **File/line:** `<changed production path:line>`
   - **Why it is a problem:** <risk left unprotected by absent required tests>
-  - **Required change:** <exact unit/integration/API/e2e tests to add and where>
+  - **Required change:** <exact unit/integration/API/e2e tests to add and where; mirror any matching Automated Tests requirement>
 
 ## Important Issues
 
@@ -474,10 +481,10 @@ EN-US
 
 ## Automated Tests
 
-- **Production files without direct tests:** <N/A or exact changed production files and the required direct test paths; every missing required test listed here must also appear under Blockers>
-- **Unit coverage required:** <specific scenarios already covered or missing, and where to add them>
-- **Integration coverage required:** <specific scenarios already covered or missing, and where to add them>
-- **E2E coverage required:** <specific scenarios already covered or missing, and where to add them; mention whether real dev data is allowed/needed>
+- **Production files without direct tests:** <N/A or exact changed production files and the required direct test paths; every file listed here must also appear as a BLOCKER>
+- **Unit coverage required:** <specific scenarios already covered or missing, and where to add them; every missing required scenario listed here must also appear as a BLOCKER>
+- **Integration coverage required:** <specific scenarios already covered or missing, and where to add them; every missing required scenario listed here must also appear as a BLOCKER>
+- **E2E coverage required:** <specific scenarios already covered or missing, and where to add them; every missing required scenario listed here must also appear as a BLOCKER; mention whether real dev data is allowed/needed>
 
 ## Final Decision
 
