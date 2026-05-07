@@ -1,0 +1,3 @@
+interface:
+  display_name: "Create Task Demo Video"
+  short_description: "Record a human-paced task demo, convert it to MP4, and attach PR/MR evidence."
