@@ -196,7 +196,29 @@ Collect final proof:
 - Screenshots or videos for UI/e2e flows, when applicable
 - Relevant before/after evidence
 
-## Step 9: Prepare Pull Request Or Merge Request
+## Step 9: Local Review And Coverage Gates
+
+Before creating a PR/MR, run the mandatory post-development gates in this order:
+
+1. Invoke `$sam-review-code` against the final local diff.
+2. Fix every valid correction from `$sam-review-code`.
+3. Rerun relevant tests after each correction.
+4. Invoke `$sam-review-code` again.
+5. Repeat until `$sam-review-code` reports no remaining correction to make.
+6. Invoke `$create-test-coverage` against the final local diff.
+7. Implement every required test or fix found by `$create-test-coverage`.
+8. If the repository supports Playwright or has existing Playwright tests/config,
+   invoke `$create-playwright-tests` for the impacted user flows and edge cases.
+9. Implement or update Playwright coverage when applicable and collect video
+   evidence when the workflow, PR/MR, or user request needs browser proof.
+10. If coverage or Playwright work changes production or test code, rerun the
+    relevant tests and invoke `$sam-review-code` again if any review risk was introduced.
+
+Do not create the PR/MR while `$sam-review-code`, `$create-test-coverage`, or
+applicable `$create-playwright-tests` work still has a required correction,
+unresolved blocker, or unknown relevant test status.
+
+## Step 10: Prepare Pull Request Or Merge Request
 
 Before creating PR/MR:
 
@@ -205,6 +227,10 @@ Before creating PR/MR:
 - Check `git diff`.
 - Check `git status`.
 - Run final test suite.
+- Confirm `$sam-review-code` has no remaining corrections.
+- Confirm `$create-test-coverage` is complete or every blocker is documented.
+- Confirm `$create-playwright-tests` was run when Playwright is available and
+  the impacted flow is browser-testable, or document why it was not applicable.
 - Confirm there are no unrelated changes.
 
 Create PR/MR using available tool:
@@ -237,6 +263,10 @@ Task is complete only when all are true:
 - New regression coverage exists.
 - Edge cases were considered.
 - Six-perspective review loop reports no unresolved blockers.
+- `$sam-review-code` loop reports no remaining corrections.
+- `$create-test-coverage` has been run and all required coverage gaps are resolved.
+- `$create-playwright-tests` has been run when Playwright is available and the
+  impacted flow is browser-testable, or a precise non-applicability reason is recorded.
 - Final diff is simple and reviewable.
 - Temporary planning files are not committed.
 - PR/MR is created.
@@ -262,6 +292,8 @@ Report in this order:
 4. Files changed
 5. Commands run and results
 6. Review-loop blockers and resolution
-7. PR/MR link
-8. Risks, gaps, or untested cases
-
+7. `$sam-review-code` loop result
+8. `$create-test-coverage` result
+9. `$create-playwright-tests` result or non-applicability reason
+10. PR/MR link
+11. Risks, gaps, or untested cases

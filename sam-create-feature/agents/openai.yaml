@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Create Feature"
+  short_description: "Feature workflow with requirements, TDD, validation, and PR evidence."
+  default_prompt: "Use $sam-create-feature to discover requirements, implement the feature with TDD, validate it, and create a draft PR/MR with evidence."
