@@ -101,6 +101,8 @@ Use `BLOCKER` when the issue should prevent merge:
   indexes or constraints when applicable.
 - User-visible behavior that is clearly incorrect.
 - Critical logic without meaningful tests when the repository has an established way to test it.
+- Any missing required test coverage. Required test gaps are blockers and must
+  be listed in the top-level `Blockers` section, not only in `Automated Tests`.
 - Any changed production component, service, controller/route, repository/model,
   middleware, worker/job, hook/store, adapter/client, or non-trivial utility
   without direct meaningful tests when the repository has any test
@@ -115,8 +117,8 @@ Use `IMPORTANT` when the issue should be fixed before or soon after merge, but m
 - Maintainability problems that create meaningful future risk.
 - Incomplete edge-case handling.
 - Performance problems likely to matter at realistic scale.
-- Narrow missing scenario coverage inside a production unit that already has
-  direct meaningful tests for the changed behavior.
+- Optional test hardening that is useful but not required for the changed
+  behavior. Do not use `IMPORTANT` for missing required tests.
 - Architecture boundary or Single Responsibility violations that are localized,
   recoverable, and do not create immediate correctness, security, data, or
   testability risk.
@@ -295,12 +297,14 @@ supported by the repo. Do not accept vague "missing tests" notes: name the
 exact scenarios, the appropriate test level, and where the developer should
 add them.
 
-Mark missing direct tests for a changed production unit as `BLOCKER` when the
-repository has test infrastructure for that layer. Comment on the changed
-production line that introduces or changes the untested behavior; if many lines
-are affected, use the first representative changed line. Mark only narrow
-scenario gaps as `IMPORTANT` when the production unit already has direct tests
-for the changed behavior.
+Mark any missing required test coverage as `BLOCKER`. This includes missing
+direct tests for a changed production unit and missing required unit,
+integration, API/contract, or e2e scenarios. Comment on the changed production
+line that introduces or changes the untested behavior; if many lines are
+affected, use the first representative changed line. Every missing required
+test must also appear as a blocker in the top-level `Blockers` section. The
+`Automated Tests` section should repeat the test gap details, but it must not
+be the only place where required missing tests are listed.
 
 # Publishing Reviews on GitLab
 
@@ -338,9 +342,12 @@ base/start/head SHAs, and whether the line is actually changed.
 cat > /tmp/gitlab-comment-body.md <<'BODY'
 **[BLOCKER] Short title**
 
-Why this matters: concrete failure mode.
+- **File/line:** `<path:line>`
+- **Why this matters:** concrete failure mode.
+- **Required change:** exact requested change.
+- **Tests required:** exact tests to add when applicable.
 
-Change this: exact requested change.
+**Suggested patch:**
 
 ```suggestion
 replacement code when small and safe
@@ -406,6 +413,31 @@ For line comments, use the pull request review comments API with the commit
 ID, path, side, and line from the diff. Then submit a final review with
 `REQUEST_CHANGES`, `COMMENT`, or `APPROVE` as appropriate.
 
+# Platform Markdown Formatting
+
+GitHub and GitLab collapse many soft line breaks. Do not rely on plain wrapped
+lines inside a list item for readability. Format every platform comment with
+Markdown that preserves structure:
+
+- Use blank lines between sections and between separate findings.
+- Use bold labels for important fields: `**File/line:**`,
+  `**Why it matters:**`, `**Why it is a problem:**`,
+  `**Required change:**`, `**Recommended change:**`, and
+  `**Tests required:**`.
+- Use nested bullets for finding details instead of indented plain text.
+- Wrap paths, commands, statuses, and identifiers in backticks.
+- Build multi-line comments with a single-quoted heredoc or a Markdown file
+  passed to the platform command/API. Do not use `echo` or escaped `\n` strings
+  for review bodies.
+- Keep each finding in this shape:
+
+```markdown
+- **[BLOCKER] <title>**
+  - **File/line:** `<path:line>`
+  - **Why it is a problem:** <plain-language impact>
+  - **Required change:** <exact fix>
+```
+
 # Mandatory Review Output
 
 The top-level GitHub/GitLab platform comment must contain only these
@@ -414,27 +446,37 @@ sections, in this order:
 ```markdown
 EN-US
 ## Blockers
-- [BLOCKER] <title>
-  File/line: <path:line>
-  Why it is a problem: <plain-language impact>
-  Required change: <exact fix>
+
+- **[BLOCKER] <title>**
+  - **File/line:** `<path:line>`
+  - **Why it is a problem:** <plain-language impact>
+  - **Required change:** <exact fix>
+
+- **[BLOCKER] Missing required tests for <changed behavior or production file>**
+  - **File/line:** `<changed production path:line>`
+  - **Why it is a problem:** <risk left unprotected by absent required tests>
+  - **Required change:** <exact unit/integration/API/e2e tests to add and where>
 
 ## Important Issues
-- [IMPORTANT] <title>
-  File/line: <path:line>
-  Why it matters: <impact>
-  Recommended change: <exact fix>
+
+- **[IMPORTANT] <title>**
+  - **File/line:** `<path:line>`
+  - **Why it matters:** <impact>
+  - **Recommended change:** <exact fix>
 
 ## Automated Tests
-- Production files without direct tests: <N/A or exact changed production files and the required direct test paths>
-- Unit coverage required: <specific scenarios already covered or missing, and where to add them>
-- Integration coverage required: <specific scenarios already covered or missing, and where to add them>
-- E2E coverage required: <specific scenarios already covered or missing, and where to add them; mention whether real dev data is allowed/needed>
+
+- **Production files without direct tests:** <N/A or exact changed production files and the required direct test paths; every missing required test listed here must also appear under Blockers>
+- **Unit coverage required:** <specific scenarios already covered or missing, and where to add them>
+- **Integration coverage required:** <specific scenarios already covered or missing, and where to add them>
+- **E2E coverage required:** <specific scenarios already covered or missing, and where to add them; mention whether real dev data is allowed/needed>
 
 ## Final Decision
-### Final Decision: <APPROVE | CHANGES REQUIRED | COMMENT ONLY>
-Confidence: <0-100%>
-Overall rating: <0-10>
+
+### Final Decision: `<APPROVE | CHANGES REQUIRED | COMMENT ONLY>`
+
+- **Confidence:** `<0-100%>`
+- **Overall rating:** `<0-10>`
 ```
 
 If a section does not apply, keep the section and write `N/A` with a short reason.
