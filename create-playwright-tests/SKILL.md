@@ -213,19 +213,23 @@ When video evidence is requested:
    - Which E2E flows were recorded
    - Which tests passed
    - Where videos were attached or linked
+   - What each video proves, written immediately before that specific video link or embed.
 
 GitHub/GitLab note:
 
 - `gh pr comment` posts text and does not reliably upload local files by itself.
 - If a helper such as `gh image` is available, use it to upload videos and extract the raw uploaded video URL from the returned markdown.
+- Every video must have a short proof description immediately before the video. Use the format `This video is proof that ...` and describe the specific behavior shown, not a vague label like "E2E proof".
 - For GitHub attachment URLs, place the raw uploaded video URL alone on its own paragraph with a blank line before and after it. Do not wrap GitHub user-attachment video URLs in markdown image/link syntax. Example:
 
   ```markdown
-  Aqui está o vídeo funcionando:
+  This video is proof that the school Camp Day Report excludes the regular scheduled student who has no final camp-day signup.
 
   https://github.com/user-attachments/assets/9d67afa2-81f8-4aa1-9ca2-173a81b63d56
 
-  Continua com algum texto...
+  This video is proof that the report error state renders after a bounded 500 retry sequence.
+
+  https://github.com/user-attachments/assets/15b4d394-a607-4fb0-8417-50f3dc0b0c57
   ```
 - For GitLab, prefer `.mp4` files because GitLab Markdown can render uploaded MP4 video attachments inline. Convert Playwright `.webm` output to `.mp4` with a browser-compatible codec before upload:
 
@@ -242,15 +246,18 @@ GitHub/GitLab note:
   glab api -X POST projects/:id/uploads --form "file=@.artifacts/playwright-mp4/example.mp4"
   ```
 
-- In GitLab MR comments, paste the exact `markdown` field returned by the upload response, for example:
+- In GitLab MR comments, paste the exact `markdown` field returned by the upload response immediately after its proof description, for example:
 
   ```markdown
+  This video is proof that the school Camp Day Report CSV export contains only final camp-day signup students.
+
   ![example](/uploads/<secret>/example.mp4)
   ```
 
 - Do not manually build GitLab upload URLs from `url`, `full_path`, project ids, or repository paths. Manually constructed upload links often 404 or fail to render inline.
 - Do not commit videos into the repository for evidence. Keep them in local artifact directories such as `.artifacts/playwright-videos/` and `.artifacts/playwright-mp4/`, upload them, and leave those artifact directories untracked.
 - After posting GitLab video evidence, re-read the MR note with `glab api projects/:id/merge_requests/<iid>/notes/<note_id>` and confirm it contains `.mp4` upload markdown using `/uploads/...`, not `/raw/...`, `/-/project/...`, or committed artifact paths.
+- Also confirm each video markdown/link is preceded by a `This video is proof that ...` sentence explaining the exact behavior proven by that video.
 - Do not promise inline video player rendering if the host changes behavior, but use each platform's expected format: raw uploaded URL for GitHub user attachments, exact Markdown Uploads API `markdown` for GitLab.
 
 ## Playwright-Specific Rules
