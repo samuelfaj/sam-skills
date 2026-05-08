@@ -260,27 +260,34 @@ Collect final proof:
   when those risks are relevant
 - Relevant before/after evidence
 
-## Step 9: Local Review And Coverage Gates
+## Step 9: Mandatory Post-Code Gates
 
-Before creating a PR/MR, run the mandatory post-development gates in this order:
+After coding, run the mandatory gates in this exact order and complete each one
+fully before moving to the next:
 
 1. Invoke `$sam-review-code` against the final local diff.
 2. Fix every valid correction from `$sam-review-code`.
 3. Rerun relevant tests after each correction.
 4. Invoke `$sam-review-code` again.
-5. Repeat until `$sam-review-code` reports no remaining correction to make.
-6. Invoke `$create-test-coverage` against the final local diff.
+5. Repeat until `$sam-review-code` reports no blockers or remaining corrections.
+6. Invoke `$create-test-coverage` against the final local diff and complete it.
 7. Implement every required test or fix found by `$create-test-coverage`.
-8. If the repository supports Playwright or has existing Playwright tests/config,
-   invoke `$create-playwright-tests` for the impacted user flows and edge cases.
-9. Implement or update Playwright coverage when applicable and collect video
-   evidence when the workflow, PR/MR, or user request needs browser proof.
-10. If coverage or Playwright work changes production or test code, rerun the
-    relevant tests and invoke `$sam-review-code` again if any review risk was introduced.
+8. Invoke `$create-playwright-tests` for the impacted user flows and edge cases
+   and complete it.
+9. Implement every required Playwright test or fix found by
+   `$create-playwright-tests`.
+10. Invoke `$create-task-demo-video` for the completed workflow and complete it.
+11. Attach or collect the generated demo-video evidence required by that skill.
 
-Do not create the PR/MR while `$sam-review-code`, `$create-test-coverage`, or
-applicable `$create-playwright-tests` work still has a required correction,
-unresolved blocker, or unknown relevant test status.
+If `$create-test-coverage`, `$create-playwright-tests`, or
+`$create-task-demo-video` changes production or test code, restart this sequence
+from `$sam-review-code` and repeat the gates in the same order until the full
+sequence completes with no blockers.
+
+Do not create the PR/MR while `$sam-review-code`, `$create-test-coverage`,
+`$create-playwright-tests`, or `$create-task-demo-video` still has a required
+correction, unresolved blocker, missing evidence artifact, or unknown relevant
+test status.
 
 ## Step 10: Prepare Pull Request Or Merge Request
 
@@ -292,9 +299,9 @@ Before creating PR/MR:
 - Check `git status`.
 - Run final test suite.
 - Confirm `$sam-review-code` has no remaining corrections.
-- Confirm `$create-test-coverage` is complete or every blocker is documented.
-- Confirm `$create-playwright-tests` was run when Playwright is available and
-  the impacted flow is browser-testable, or document why it was not applicable.
+- Confirm `$create-test-coverage` completed fully with no unresolved blocker.
+- Confirm `$create-playwright-tests` completed fully with no unresolved blocker.
+- Confirm `$create-task-demo-video` completed fully and produced demo evidence.
 - Confirm there are no unrelated changes.
 
 Create PR/MR using available tool:
@@ -329,10 +336,14 @@ Task is complete only when all are true:
 - Applicable UX, accessibility, privacy, performance, observability, and
   compatibility risks were checked without broadening the fix unnecessarily.
 - Six-perspective review loop reports no unresolved blockers.
-- `$sam-review-code` loop reports no remaining corrections.
-- `$create-test-coverage` has been run and all required coverage gaps are resolved.
-- `$create-playwright-tests` has been run when Playwright is available and the
-  impacted flow is browser-testable, or a precise non-applicability reason is recorded.
+- Mandatory post-code gate sequence completed in order:
+  `$sam-review-code`, `$create-test-coverage`, `$create-playwright-tests`,
+  `$create-task-demo-video`.
+- `$sam-review-code` loop reports no blockers or remaining corrections.
+- `$create-test-coverage` completed and all required coverage gaps are resolved.
+- `$create-playwright-tests` completed and all required browser coverage gaps
+  are resolved.
+- `$create-task-demo-video` completed and demo-video evidence is available.
 - Final diff is simple and reviewable.
 - Temporary planning files are not committed.
 - PR/MR is created.
