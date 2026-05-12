@@ -1,6 +1,6 @@
 ---
 name: sam-create-feature
-description: Run a complete autonomous feature-delivery workflow with full requirement discovery, existing-code and business-rule analysis, user clarification for unresolved questions, TDD implementation, review-loop validation, and draft PR/MR evidence.
+description: Run a complete autonomous feature-delivery workflow with full requirement discovery, existing-code and business-rule analysis, user clarification for unresolved questions, /sam-refine-task confidence loop before tests, TDD implementation, review-loop validation, and draft PR/MR evidence.
 ---
 
 # Sam Create Feature
@@ -128,6 +128,28 @@ If any requirement, rule, contract, data behavior, permission expectation, or
 UX behavior is unclear after repository exploration, ask the user concise
 blocking questions before writing production code. Do not guess high-impact
 product behavior silently.
+
+## Pre-Test Refinement Gate
+
+Before mapping, creating, updating, or running tests, run `/sam-refine-task`
+against the current feature understanding and proposed strategy.
+
+Loop until confidence is extreme:
+
+1. Run `/sam-refine-task` with the feature goal, discovered requirements,
+   existing-code evidence, proposed implementation boundary, and proposed test
+   strategy.
+2. If `/sam-refine-task` finds loopholes, unclear assumptions, weak test
+   intent, risky scope, or simpler viable approaches, update `REQUIREMENTS.html`
+   and the strategy.
+3. Run `/sam-refine-task` again.
+4. Continue until the latest refinement pass reports no blocking gaps, no major
+   unresolved assumptions, and an extreme-confidence path to implementation and
+   tests.
+
+Do not proceed to test mapping or TDD until this gate passes. If extreme
+confidence is impossible because of missing product decisions, ask the user the
+minimum blocking questions before tests.
 
 ## Step 2: Map Tests Before Implementation
 

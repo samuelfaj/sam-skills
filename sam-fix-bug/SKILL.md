@@ -1,6 +1,6 @@
 ---
 name: sam-fix-bug
-description: Run a complete autonomous bugfix workflow with test-first reproduction, six-perspective review, minimal implementation, final validation, and PR evidence.
+description: Run a complete autonomous bugfix workflow with /sam-refine-task confidence loop before tests, test-first reproduction, six-perspective review, minimal implementation, final validation, and PR evidence.
 ---
 
 # Sam Fix Bug
@@ -75,6 +75,28 @@ Check, when applicable:
   context without leaking sensitive data.
 - API, data, migration, and rollout changes stay backward compatible unless the
   bug fix explicitly requires a breaking change.
+
+## Pre-Test Refinement Gate
+
+Before mapping, creating, updating, or running tests, run `/sam-refine-task`
+against the current bug understanding and proposed strategy.
+
+Loop until confidence is extreme:
+
+1. Run `/sam-refine-task` with the reported bug, observed evidence or
+   reproduction hypothesis, affected-code evidence, proposed fix boundary, and
+   proposed regression-test strategy.
+2. If `/sam-refine-task` finds loopholes, unclear assumptions, weak regression
+   intent, risky scope, or simpler viable approaches, update `ANALYSIS.html`
+   and the strategy.
+3. Run `/sam-refine-task` again.
+4. Continue until the latest refinement pass reports no blocking gaps, no major
+   unresolved assumptions, and an extreme-confidence path to reproduction, fix,
+   and tests.
+
+Do not proceed to test mapping or TDD until this gate passes. If extreme
+confidence is impossible because of missing product or bug-report details, ask
+the user the minimum blocking questions before tests.
 
 ## Step 1: Reproduce And Map Tests
 
