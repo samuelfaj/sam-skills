@@ -1,9 +1,9 @@
 ---
-name: create-test-coverage
+name: sam-create-test-coverage
 description: Create exhaustive risk-based test coverage across unit, component, integration, API/contract, and E2E tests for backend or frontend changes, choosing the smallest reliable test layer for maximum confidence.
 ---
 
-# Create Test Coverage
+# Sam Create Test Coverage
 
 Use this skill when the user asks for tests, all tests, confidence, regression coverage, backend tests, React tests, API tests, integration tests, E2E tests, or maximum confidence for a change.
 
@@ -35,6 +35,23 @@ Before writing tests:
 - Build a coverage matrix before implementing tests.
 - Do not test implementation details directly when user/API observable behavior can prove the case.
 - Do not claim full confidence unless every meaningful matrix row is automated, manually proven, or explicitly marked redundant with rationale.
+
+## Intent-First Test Philosophy
+
+Tests verify intent, not just behavior.
+
+- Every new or updated test must encode why the behavior matters to the user,
+  business rule, API contract, permission model, or system invariant.
+- A test that only proves a hardcoded output is not enough. Example:
+  `expect(getUserName()).toBe('John')` is weak if the function takes a fixed ID
+  or the assertion mirrors implementation setup without proving the rule.
+- Prefer tests that would fail when the business logic, policy, permission,
+  data mapping, or workflow contract changes incorrectly.
+- If you cannot write a test that would fail when the intended business logic
+  changes, re-check the function boundary, requirement, or design before adding
+  shallow coverage.
+- Test names, setup, and assertions should make the intent visible without
+  requiring the reader to reverse-engineer why the case exists.
 
 ## Step 1: Analyze Task Impact
 
@@ -123,10 +140,12 @@ For each planned test, define:
 
 - Flow name
 - Matrix row covered
+- Business intent: why this behavior matters
 - Selected layer
 - Why that layer is sufficient
 - Data setup needed
 - Observable assertion
+- Failure mode: what business-logic change should make this test fail
 - Command to run it
 
 If a row needs multiple layers, add them. Example: React form serialization bug may need unit schema tests, component interaction tests, and one E2E proof for the critical workflow.
@@ -137,6 +156,11 @@ Use the project's existing test frameworks, helpers, fixtures, factories, select
 
 Implementation rules:
 
+- Each test must prove intent, not merely exercise a line or return a fixture value.
+- Avoid assertions that only restate hardcoded setup unless they prove a rule,
+  contract, permission, mapping, or invariant.
+- If the only possible assertion is trivial, improve the seam or choose a
+  higher-value test layer before claiming coverage.
 - Reuse existing utilities instead of creating duplicate helpers.
 - Prefer stable user-facing selectors and `data-testid` when available.
 - Prefer `getByRole`, `getByLabel`, and `getByText` for React/browser tests.
@@ -229,6 +253,10 @@ Coverage work is complete only when:
 
 - Every QA/acceptance criterion maps to `UNIT`, `COMPONENT`, `INTEGRATION`, `API_CONTRACT`, `E2E`, `MANUAL_PROOF`, or `REDUNDANT`.
 - Every meaningful matrix row has a status.
+- Every new or updated test states or clearly expresses the business/user/API
+  intent it protects.
+- New coverage would fail for the intended business-logic regression, not only
+  for a changed literal or mocked fixture.
 - New tests pass locally.
 - Existing affected tests pass locally.
 - Relevant suite status is known.

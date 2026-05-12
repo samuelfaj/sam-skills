@@ -400,6 +400,6 @@ Do not add platform-publication language to the output.
   represent the issue. If no changed line can represent it, explain that in
   `Blockers` or `Final Decision`.
 - When used as a pre-PR/MR gate, the review must explicitly say whether the
-  caller can proceed to `$create-test-coverage`, applicable `$create-playwright-tests`,
+  caller can proceed to `$sam-create-test-coverage`, applicable `$sam-create-playwright-tests`,
   or PR/MR creation.
 - Prefer fewer, stronger findings over many weak findings.

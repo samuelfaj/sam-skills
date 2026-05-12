@@ -1,9 +1,9 @@
 ---
-name: create-task-demo-video
+name: sam-create-task-demo-video
 description: Create human-readable task demo videos with Playwright, always convert to MP4, validate playback, upload to GitHub or GitLab, and comment on the PR or MR by default.
 ---
 
-# Create Task Demo Video
+# Sam Create Task Demo Video
 
 Use this skill when the user asks for a human presentation video of a task, feature, regression, or bug fix working from beginning to end.
 

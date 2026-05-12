@@ -1,11 +1,11 @@
 ---
-name: create-playwright-tests
+name: sam-create-playwright-tests
 description: Create comprehensive E2E tests for impacted user flows and edge cases, including Playwright video evidence and PR attachment when requested.
 ---
 
-# Create Playwright Tests
+# Sam Create Playwright Tests
 
-Use this skill when the user invokes `/create-playwright-tests` or asks for comprehensive E2E coverage for the current task, especially with Playwright, impacted-flow mapping, edge-case coverage, local video recording, and PR evidence.
+Use this skill when the user invokes `/sam-create-playwright-tests` or asks for comprehensive E2E coverage for the current task, especially with Playwright, impacted-flow mapping, edge-case coverage, local video recording, and PR evidence.
 
 ## Operating Role
 
@@ -26,6 +26,23 @@ Before writing tests:
 - Do not test implementation details directly.
 - Test observable behavior from the user or API perspective.
 - Do not claim full confidence unless every meaningful matrix row is automated, manually proven, or explicitly marked redundant with rationale.
+
+## Intent-First Test Philosophy
+
+Tests verify intent, not just behavior.
+
+- Every new or updated test must encode why the behavior matters to the user,
+  business rule, API contract, permission model, or system invariant.
+- A test that only proves a hardcoded output is not enough. Example:
+  `expect(getUserName()).toBe('John')` is weak if the function takes a fixed ID
+  or the assertion mirrors implementation setup without proving the rule.
+- Prefer tests that would fail when the business logic, policy, permission,
+  data mapping, or workflow contract changes incorrectly.
+- If you cannot write a test that would fail when the intended business logic
+  changes, re-check the function boundary, requirement, or design before adding
+  shallow coverage.
+- Test names, setup, and assertions should make the intent visible without
+  requiring the reader to reverse-engineer why the case exists.
 
 ## Real Dev Environment Requirement
 
@@ -127,9 +144,11 @@ For each planned test, define:
 
 - Flow name
 - User/API behavior under test
+- Business intent: why this behavior matters
 - Data setup needed
 - Observable assertion
 - Matrix rows covered
+- Failure mode: what business-logic change should make this test fail
 - Why the test is necessary
 
 Do not stop after the obvious happy path. Keep exploring until every meaningful matrix row has a status. If adding all rows as E2E tests would create brittle or slow coverage, split coverage across E2E, component/integration, and API tests, but still prove every matrix row.
@@ -141,6 +160,12 @@ Use the project's existing E2E framework, helpers, fixtures, factories, selector
 Implementation rules:
 
 - Tests should drive the real application UI whenever the behavior is user-facing.
+- Each test must prove intent, not merely click through a flow or assert a
+  fixture literal.
+- Avoid assertions that only restate hardcoded setup unless they prove a rule,
+  contract, permission, mapping, or invariant.
+- If the only possible assertion is trivial, improve the seam or choose a
+  higher-value test layer before claiming coverage.
 - Reuse existing utilities instead of creating duplicate helpers.
 - Prefer stable selectors and `data-testid` when available.
 - Prefer user-facing locators such as `getByRole`, `getByLabel`, and `getByText`.
@@ -213,6 +238,9 @@ The E2E work is complete only when:
 - Unit, integration, API, or contract tests that cover affected non-browser behavior pass locally.
 - No flaky waits were introduced.
 - Tests clearly cover impacted behavior.
+- Tests clearly express the business/user/API intent they protect.
+- New coverage would fail for the intended business-logic regression, not only
+  for a changed literal or mocked fixture.
 - Test data is deterministic and isolated.
 - Every QA/acceptance criterion maps to `AUTOMATED`, `MANUAL_PROOF`, or `REDUNDANT`.
 - Any `NOT_COVERED` matrix row has a clear blocker, exact residual risk, and recommended next action.

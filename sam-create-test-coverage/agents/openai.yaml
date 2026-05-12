@@ -1,0 +1,5 @@
+name: sam-create-test-coverage
+version: 1.0.0
+short_description: "Sam exhaustive risk-based test coverage across unit, component, integration, API, and E2E layers."
+author: sam
+entrypoint: SKILL.md

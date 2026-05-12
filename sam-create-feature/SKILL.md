@@ -138,10 +138,16 @@ Test requirements:
 
 - Deterministic.
 - Clear about expected feature behavior.
+- Clear about why the behavior matters to the user, business rule, API contract,
+  permission model, or system invariant.
 - Failing before implementation for the correct reason.
+- Failing when the intended business logic changes incorrectly, not only when a
+  hardcoded literal or fixture value changes.
 - No brittle assertions.
 - No implementation-detail assertions unless unavoidable.
 - Readable names that describe user or business behavior.
+- Assertions must prove intent; if the only possible assertion is trivial,
+  re-check the feature boundary or design before claiming coverage.
 
 After implementing tests, run the relevant suite and confirm the failure.
 
@@ -334,22 +340,22 @@ fully before moving to the next:
 3. Rerun relevant tests after each correction.
 4. Invoke `$sam-review-code` again.
 5. Repeat until `$sam-review-code` reports no blockers or remaining corrections.
-6. Invoke `$create-test-coverage` against the final local diff and complete it.
-7. Implement every required test or fix found by `$create-test-coverage`.
-8. Invoke `$create-playwright-tests` for the impacted user flows and edge cases
+6. Invoke `$sam-create-test-coverage` against the final local diff and complete it.
+7. Implement every required test or fix found by `$sam-create-test-coverage`.
+8. Invoke `$sam-create-playwright-tests` for the impacted user flows and edge cases
    and complete it.
 9. Implement every required Playwright test or fix found by
-   `$create-playwright-tests`.
-10. Invoke `$create-task-demo-video` for the completed workflow and complete it.
+   `$sam-create-playwright-tests`.
+10. Invoke `$sam-create-task-demo-video` for the completed workflow and complete it.
 11. Attach or collect the generated demo-video evidence required by that skill.
 
-If `$create-test-coverage`, `$create-playwright-tests`, or
-`$create-task-demo-video` changes production or test code, restart this sequence
+If `$sam-create-test-coverage`, `$sam-create-playwright-tests`, or
+`$sam-create-task-demo-video` changes production or test code, restart this sequence
 from `$sam-review-code` and repeat the gates in the same order until the full
 sequence completes with no blockers.
 
-Do not create the PR/MR while `$sam-review-code`, `$create-test-coverage`,
-`$create-playwright-tests`, or `$create-task-demo-video` still has a required
+Do not create the PR/MR while `$sam-review-code`, `$sam-create-test-coverage`,
+`$sam-create-playwright-tests`, or `$sam-create-task-demo-video` still has a required
 correction, unresolved blocker, missing evidence artifact, or unknown relevant
 test status.
 
@@ -363,9 +369,9 @@ Before creating PR/MR:
 - Check `git status`.
 - Run final test suite.
 - Confirm `$sam-review-code` has no remaining corrections.
-- Confirm `$create-test-coverage` completed fully with no unresolved blocker.
-- Confirm `$create-playwright-tests` completed fully with no unresolved blocker.
-- Confirm `$create-task-demo-video` completed fully and produced demo evidence.
+- Confirm `$sam-create-test-coverage` completed fully with no unresolved blocker.
+- Confirm `$sam-create-playwright-tests` completed fully with no unresolved blocker.
+- Confirm `$sam-create-task-demo-video` completed fully and produced demo evidence.
 - Confirm there are no unrelated changes.
 
 Create PR/MR using the available tool:
@@ -404,13 +410,13 @@ Task is complete only when all are true:
   compatibility risks were checked without broadening the feature unnecessarily.
 - Six-perspective review loop reports no unresolved blockers.
 - Mandatory post-code gate sequence completed in order:
-  `$sam-review-code`, `$create-test-coverage`, `$create-playwright-tests`,
-  `$create-task-demo-video`.
+  `$sam-review-code`, `$sam-create-test-coverage`, `$sam-create-playwright-tests`,
+  `$sam-create-task-demo-video`.
 - `$sam-review-code` loop reports no blockers or remaining corrections.
-- `$create-test-coverage` completed and all required coverage gaps are resolved.
-- `$create-playwright-tests` completed and all required browser coverage gaps
+- `$sam-create-test-coverage` completed and all required coverage gaps are resolved.
+- `$sam-create-playwright-tests` completed and all required browser coverage gaps
   are resolved.
-- `$create-task-demo-video` completed and demo-video evidence is available.
+- `$sam-create-task-demo-video` completed and demo-video evidence is available.
 - Final diff is simple and reviewable.
 - Temporary planning files are not committed.
 - Draft PR/MR is created.
@@ -438,7 +444,7 @@ Report in this order:
 6. Commands run and results.
 7. Review-loop blockers and resolution.
 8. `$sam-review-code` loop result.
-9. `$create-test-coverage` result.
-10. `$create-playwright-tests` result or non-applicability reason.
+9. `$sam-create-test-coverage` result.
+10. `$sam-create-playwright-tests` result or non-applicability reason.
 11. PR/MR link.
 12. Risks, gaps, or untested cases.
