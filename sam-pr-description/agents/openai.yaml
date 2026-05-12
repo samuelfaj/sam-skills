@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam PR Description"
+  short_description: "Create standardized English GitHub PR or GitLab MR descriptions from branch diffs."
+  default_prompt: "Use $sam-pr-description to generate a standardized English PR/MR description for the current branch."

@@ -9,6 +9,8 @@ Personal Codex skills.
 - `sam-create-test-coverage`: create exhaustive risk-based unit, component, integration, API/contract, and E2E coverage for backend or frontend changes.
 - `sam-create-feature`: autonomous feature workflow with requirements discovery, TDD implementation, validation, and PR evidence.
 - `sam-fix-bug`: autonomous bugfix workflow with failing tests first, local analysis notes, minimal implementation, validation, and PR evidence.
+- `sam-compress-talk`: force AIR-1 structured reasoning outputs with no prose, explanations, or exposed chain-of-thought.
+- `sam-pr-description`: create standardized English GitHub PR or GitLab MR descriptions from branch commits, diffs, tests, safety, and business rules.
 - `sam-refine-task`: stress-test a strategy, find loopholes, apply proper fixes, and loop until confidence is factual.
 - `sam-simplify-task`: review completed work, remove unnecessary complexity, and prove behavior stayed correct.
 - `sam-review-code`: rigorous local code review for current workspace changes, returned in Codex without PR/MR comments.
