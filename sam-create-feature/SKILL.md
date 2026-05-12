@@ -30,6 +30,32 @@ feature works.
 - Do not skip tests. If a test cannot be implemented or run, explain exactly why.
 - Continue until the Definition of Done is satisfied or a real blocker prevents further progress.
 
+## HTML Artifact Standard
+
+When this skill creates local `.html` planning documents, make them useful HTML
+artifacts, not markdown copied into HTML tags.
+
+Each artifact must:
+
+- Be a single self-contained file that opens directly in a browser without a
+  build step, network access, external assets, or CDN dependencies.
+- Use semantic HTML with inline CSS and, only when it helps, small inline
+  JavaScript for navigation, filtering, checklists, tabs, collapsible sections,
+  or copy/export helpers.
+- Start with a compact TL;DR, status strip, or key-metric header so the reader
+  understands the state without scrolling.
+- Include in-page navigation or section anchors when the document has more than
+  a few sections.
+- Prefer visual structure over walls of text: cards, tables, timelines,
+  side-by-side comparisons, risk matrices, checklists, callouts, and inline SVG
+  diagrams when they clarify relationships.
+- Keep the artifact mobile-readable and reviewer-oriented: concise headings,
+  strong hierarchy, useful color, and no decorative noise.
+- Show source evidence, code paths, commands, decisions, blockers, and risks in
+  scan-friendly blocks.
+- Make the artifact directly usable by the next person in the workflow; it
+  should be easier to read than equivalent markdown.
+
 ## User Experience Optimization Pass
 
 For any user-visible workflow, treat a technically correct but confusing result
@@ -92,6 +118,9 @@ Create local `REQUIREMENTS.html` as a valid standalone HTML document with:
 - Existing business rules found in the code.
 - Open questions.
 - Decisions received from the user.
+
+Render it as a requirements dashboard: TL;DR header, scope table, acceptance
+checklist, business-rule cards, open-question callouts, and a decision log.
 
 `REQUIREMENTS.html` is local only. Never commit it.
 
@@ -194,6 +223,10 @@ Create local `ANALYSIS.html` as a valid standalone HTML document with:
   when relevant.
 - Recommended implementation approach.
 
+Render it as an implementation-analysis artifact: top summary, affected-code map,
+reviewer-perspective cards, proposed data/API/UI shape, risk matrix, and links or
+anchors to evidence sections.
+
 `ANALYSIS.html` is local only. Never commit it.
 
 ## Step 5: TDD Implementation Plan
@@ -214,11 +247,19 @@ Create local `TDD.html` as a valid standalone HTML document with:
   when applicable.
 - Final validation checklist.
 
+Render it as a TDD control panel: test matrix, red/green/refactor timeline,
+commands, failure evidence, intent-first assertions, and final validation
+checklist.
+
 `TDD.html` is local only. Never commit it.
 
 ## Step 6: TODO And Implementation
 
 Create local `TODO.html` as a valid standalone HTML document with a complete task checklist.
+
+Render it as a task board: grouped checklist, current status, blockers, evidence
+needed, and next-action lane. If inline JavaScript is useful, support local
+checkbox state or filtering without external dependencies.
 
 Then implement the feature.
 
