@@ -19,6 +19,15 @@ Create a clear visual walkthrough that demonstrates the task or bug fix in the s
 
 - Produce a guided visual demo without required narration.
 - Show the full flow from initial state to final verified result.
+- Start the application before recording.
+- Use the real running UI whenever possible.
+- If the user explicitly says the environment is dev and the database is a dev
+  database, prefer real dev data when it makes the demo more truthful and does
+  not expose secrets or private user data.
+- If frontend and backend are separate repositories or services instead of one
+  monorepo, bring both up through Docker or the repository-supported container
+  workflow whenever possible, link the frontend to the backend, and record
+  against that linked local/dev stack.
 - Use a stable viewport and readable pacing.
 - Add temporary captions or browser overlays when they make the demo easier to understand.
 - Keep the demo focused on the requested task or bug; do not turn it into a broad product tour.
@@ -44,12 +53,20 @@ If the task involves a bug fix, prefer a before/after structure only when a befo
 Inspect the repository and current branch to determine:
 
 - How to run the app locally.
+- Whether the app is a single monorepo or needs separate frontend/backend services.
+- How to start required services through Docker or the repo-supported container workflow.
+- How the frontend should be configured to call the local/dev backend.
 - Which URL, route, or screen starts the flow.
 - Which seed data, account, feature flag, or test fixture is safe to use.
+- Whether the user explicitly confirmed dev environment and dev database access,
+  allowing safe use of real dev data.
 - Whether the repo uses GitHub or GitLab.
 - The current PR or MR, from an explicit URL, the current branch, or platform CLI lookup.
 
 Use `gh` for GitHub repositories and `glab` for GitLab repositories. If the user provided a full PR/MR URL, resolve the platform and target repo from that URL instead of assuming the current checkout.
+
+If Docker, linked-service startup, or real dev data access is blocked, record the
+exact blocker and use the closest safe runnable local/dev environment.
 
 ## Step 3: Write A Human Demo Script
 
@@ -65,13 +82,20 @@ Keep the script concrete and reviewer-oriented. Avoid implementation-only langua
 
 ## Step 4: Record With Playwright
 
-Record the flow locally with Playwright or the project's equivalent browser automation setup.
+Start the app and record the flow locally with Playwright or the project's equivalent browser automation setup.
+
+If the flow crosses frontend/backend boundaries and those services are not in a
+single monorepo, start or verify both through Docker or the repo-supported
+container workflow, configure the frontend to call the local/dev backend, and
+record only after the linked stack is reachable from the browser.
 
 Recording requirements:
 
 - Use a stable desktop viewport unless the task is mobile-specific.
 - Prefer user-facing locators and existing app routes.
 - Use deterministic data and reset state when needed.
+- Prefer real dev data only when the user has explicitly confirmed dev database
+  usage; otherwise use safe seed data, fixtures, or test accounts.
 - Slow the flow enough for human review by adding short waits at meaningful points.
 - Pause briefly on the initial state, before the key action, and on the final proof state.
 - Avoid flaky waits; wait for visible UI state, network completion, or app-specific readiness signals.
@@ -98,6 +122,8 @@ If conversion fails, report the exact blocker and keep the raw recording only as
 Before uploading or reporting completion:
 
 - Open or inspect the `.mp4` to confirm it plays.
+- Verify the recording used the real running UI and, when applicable, the linked
+  frontend/backend local/dev stack.
 - Confirm the video shows the intended beginning, action sequence, proof moment, and ending.
 - Confirm captions or overlays are readable if used.
 - Confirm no secrets, credentials, tokens, private user data, or sensitive production information are visible.

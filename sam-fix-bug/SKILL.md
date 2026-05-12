@@ -20,7 +20,7 @@ Fix the reported bug correctly, with the smallest reasonable diff, strong test c
 - Avoid overengineering.
 - Do not introduce broad refactors unless strictly necessary.
 - Keep the final diff as small and clear as possible.
-- Do not commit temporary planning documents such as `ANALYSIS.md`, `TDD.md`, or `TODO.md`.
+- Do not commit temporary planning documents such as `ANALYSIS.html`, `TDD.html`, or `TODO.html`.
 - Do not skip tests. If a test cannot be implemented or run, explain exactly why.
 - Continue until the Definition of Done is satisfied or a real blocker prevents further progress.
 
@@ -116,7 +116,7 @@ Each reviewer must answer:
 - What accessibility, privacy, performance, observability, or compatibility risk
   could the fix introduce?
 
-Create local `ANALYSIS.md` with:
+Create local `ANALYSIS.html` as a valid standalone HTML document with:
 
 - Bug summary
 - Root-cause hypothesis
@@ -131,13 +131,13 @@ Create local `ANALYSIS.md` with:
   when relevant
 - Recommended fix approach
 
-`ANALYSIS.md` is local only. Never commit it.
+`ANALYSIS.html` is local only. Never commit it.
 
 ## Step 4: TDD Implementation Plan
 
 Spawn a TDD expert subagent only if the user explicitly allows subagents. Otherwise simulate the TDD expert yourself.
 
-Create local `TDD.md` with:
+Create local `TDD.html` as a valid standalone HTML document with:
 
 - Failing tests already added
 - Additional tests to add
@@ -150,11 +150,11 @@ Create local `TDD.md` with:
   when applicable
 - Final validation checklist
 
-`TDD.md` is local only. Never commit it.
+`TDD.html` is local only. Never commit it.
 
 ## Step 5: TODO And Implementation
 
-Create local `TODO.md` with a complete task checklist.
+Create local `TODO.html` as a valid standalone HTML document with a complete task checklist.
 
 Then implement the fix.
 
@@ -174,7 +174,7 @@ Implementation requirements:
   making display data more usable.
 - Keep sensitive data out of UI, logs, analytics, and error responses.
 
-`TODO.md` is local only. Never commit it.
+`TODO.html` is local only. Never commit it.
 
 ## Step 6: Review And Refactor
 
@@ -293,7 +293,7 @@ test status.
 
 Before creating PR/MR:
 
-- Ensure `ANALYSIS.md`, `TDD.md`, and `TODO.md` are not committed.
+- Ensure `ANALYSIS.html`, `TDD.html`, and `TODO.html` are not committed.
 - Ensure only relevant source and test files are included.
 - Check `git diff`.
 - Check `git status`.
@@ -321,7 +321,7 @@ PR/MR description must include:
 - Notes for reviewers
 - Known limitations
 
-Do not include or commit `ANALYSIS.md`, `TDD.md`, or `TODO.md`.
+Do not include or commit `ANALYSIS.html`, `TDD.html`, or `TODO.html`.
 
 ## Definition Of Done
 

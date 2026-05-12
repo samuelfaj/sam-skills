@@ -25,8 +25,8 @@ feature works.
 - Avoid overengineering and speculative configurability.
 - Do not introduce broad refactors unless strictly necessary for the feature.
 - Keep the final diff as small and clear as possible.
-- Do not commit temporary planning documents such as `REQUIREMENTS.md`,
-  `ANALYSIS.md`, `TDD.md`, or `TODO.md`.
+- Do not commit temporary planning documents such as `REQUIREMENTS.html`,
+  `ANALYSIS.html`, `TDD.html`, or `TODO.html`.
 - Do not skip tests. If a test cannot be implemented or run, explain exactly why.
 - Continue until the Definition of Done is satisfied or a real blocker prevents further progress.
 
@@ -83,7 +83,7 @@ Study the existing code before asking questions:
 - Identify current contracts and behaviors the feature must not break.
 - Identify the test layers already used for similar behavior.
 
-Create local `REQUIREMENTS.md` with:
+Create local `REQUIREMENTS.html` as a valid standalone HTML document with:
 
 - Feature summary.
 - Confirmed requirements.
@@ -93,7 +93,7 @@ Create local `REQUIREMENTS.md` with:
 - Open questions.
 - Decisions received from the user.
 
-`REQUIREMENTS.md` is local only. Never commit it.
+`REQUIREMENTS.html` is local only. Never commit it.
 
 If any requirement, rule, contract, data behavior, permission expectation, or
 UX behavior is unclear after repository exploration, ask the user concise
@@ -127,7 +127,7 @@ Before changing production code:
 4. Capture the failing test command and failing output as TDD evidence.
 
 If the repository cannot express a pre-implementation failing test for the
-feature, document the reason in `TDD.md` and choose the closest meaningful
+feature, document the reason in `TDD.html` and choose the closest meaningful
 validation layer already supported by the repo.
 
 ## Step 3: Implement Failing Tests First
@@ -173,7 +173,7 @@ Each reviewer must answer:
 - What accessibility, privacy, performance, observability, or compatibility risk
   could the feature introduce?
 
-Create local `ANALYSIS.md` with:
+Create local `ANALYSIS.html` as a valid standalone HTML document with:
 
 - Feature summary.
 - Confirmed requirements and acceptance criteria.
@@ -188,14 +188,14 @@ Create local `ANALYSIS.md` with:
   when relevant.
 - Recommended implementation approach.
 
-`ANALYSIS.md` is local only. Never commit it.
+`ANALYSIS.html` is local only. Never commit it.
 
 ## Step 5: TDD Implementation Plan
 
 Spawn a TDD expert subagent only if the user explicitly allows subagents.
 Otherwise simulate the TDD expert yourself.
 
-Create local `TDD.md` with:
+Create local `TDD.html` as a valid standalone HTML document with:
 
 - Failing tests already added.
 - Additional tests to add.
@@ -208,11 +208,11 @@ Create local `TDD.md` with:
   when applicable.
 - Final validation checklist.
 
-`TDD.md` is local only. Never commit it.
+`TDD.html` is local only. Never commit it.
 
 ## Step 6: TODO And Implementation
 
-Create local `TODO.md` with a complete task checklist.
+Create local `TODO.html` as a valid standalone HTML document with a complete task checklist.
 
 Then implement the feature.
 
@@ -233,7 +233,7 @@ Implementation requirements:
   making display data more usable.
 - Keep sensitive data out of UI, logs, analytics, and error responses.
 
-`TODO.md` is local only. Never commit it.
+`TODO.html` is local only. Never commit it.
 
 ## Step 7: Review And Refactor
 
@@ -357,7 +357,7 @@ test status.
 
 Before creating PR/MR:
 
-- Ensure `REQUIREMENTS.md`, `ANALYSIS.md`, `TDD.md`, and `TODO.md` are not committed.
+- Ensure `REQUIREMENTS.html`, `ANALYSIS.html`, `TDD.html`, and `TODO.html` are not committed.
 - Ensure only relevant source and test files are included.
 - Check `git diff`.
 - Check `git status`.
@@ -386,7 +386,7 @@ PR/MR description must include:
 - Notes for reviewers.
 - Known limitations or follow-up risks.
 
-Do not include or commit `REQUIREMENTS.md`, `ANALYSIS.md`, `TDD.md`, or `TODO.md`.
+Do not include or commit `REQUIREMENTS.html`, `ANALYSIS.html`, `TDD.html`, or `TODO.html`.
 
 ## Definition Of Done
 

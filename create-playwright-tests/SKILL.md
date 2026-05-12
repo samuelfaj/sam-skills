@@ -27,6 +27,25 @@ Before writing tests:
 - Test observable behavior from the user or API perspective.
 - Do not claim full confidence unless every meaningful matrix row is automated, manually proven, or explicitly marked redundant with rationale.
 
+## Real Dev Environment Requirement
+
+Whenever possible, exercise the real running application, not a mocked UI shell.
+
+- Start the application before creating, updating, or recording Playwright tests.
+- Use the real UI route and real browser interactions for user-facing flows.
+- If the user explicitly says the environment is dev and the database is a dev
+  database, prefer real dev data over synthetic fixtures when it improves
+  confidence and does not expose secrets or private user data.
+- Never use production data, production credentials, or production services for
+  tests or recorded artifacts unless the user explicitly asks and the workflow is
+  read-only and safe.
+- If frontend and backend are separate repositories or services instead of one
+  monorepo, bring both up through Docker or the repository-supported container
+  workflow whenever possible, link the frontend to the backend, and test against
+  that linked local/dev stack.
+- If Docker or linked-service startup is blocked, record the exact blocker and
+  fall back only to the closest safe runnable environment.
+
 ## Step 1: Analyze Task Impact
 
 Read the current branch diff against the base branch.
@@ -121,6 +140,7 @@ Use the project's existing E2E framework, helpers, fixtures, factories, selector
 
 Implementation rules:
 
+- Tests should drive the real application UI whenever the behavior is user-facing.
 - Reuse existing utilities instead of creating duplicate helpers.
 - Prefer stable selectors and `data-testid` when available.
 - Prefer user-facing locators such as `getByRole`, `getByLabel`, and `getByText`.
@@ -147,12 +167,20 @@ Data rules:
 - Each test creates only the data it needs.
 - Clean up data when the project pattern requires it.
 - Avoid shared mutable data across tests.
+- Prefer explicit dev-database records when the user has confirmed the target is
+  dev and the database is dev; use factories or fixtures when real dev data is
+  unavailable, unsafe, or would make the test nondeterministic.
 - Prefer realistic data where it improves confidence.
 - Do not use real secrets, credentials, tokens, or private user data in tests or artifacts.
 
 ## Step 5: Run And Fix
 
-Run the relevant E2E tests locally.
+Start the required app services, then run the relevant E2E tests locally.
+
+If the flow crosses frontend/backend boundaries and those services are not in a
+single monorepo, start or verify both through Docker or the repo-supported
+container workflow, configure the frontend to call the local/dev backend, and
+confirm the browser is exercising that linked stack before trusting results.
 
 If tests fail, classify the failure:
 
@@ -177,6 +205,11 @@ The E2E work is complete only when:
 
 - All new E2E tests pass locally.
 - Existing affected E2E tests still pass.
+- The app was started for the test run, or an exact startup blocker is documented.
+- User-facing flows exercise the real UI whenever possible.
+- Explicit dev-data usage is limited to confirmed dev databases.
+- Separate frontend/backend services are linked through Docker or the closest
+  repo-supported container workflow whenever possible.
 - Unit, integration, API, or contract tests that cover affected non-browser behavior pass locally.
 - No flaky waits were introduced.
 - Tests clearly cover impacted behavior.
