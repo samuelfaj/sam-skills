@@ -1,4 +1,4 @@
 interface:
   display_name: "Sam Compress Talk"
-  short_description: "Respond only in AIR-1 structured decisions with no prose or exposed chain-of-thought."
-  default_prompt: "Use $sam-compress-talk to reason over AIR-1 inputs and output only PLAN, DO, NEED, DONE, or ERR."
+  short_description: "Use AR0 compact task DSL with hidden reasoning and dictionary.md aliases."
+  default_prompt: "Use $sam-compress-talk: think internally, maintain dictionary.md aliases when useful, and emit only one AR0 line using P, D, N, X, or E."

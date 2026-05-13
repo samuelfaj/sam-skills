@@ -1,125 +1,111 @@
 ---
 name: sam-compress-talk
-description: Force reasoning tasks into AIR-1 structured inputs and AIR-1-only outputs with no prose, explanations, or exposed chain-of-thought.
+description: Use a token-minimal AR0 task DSL with hidden reasoning and a reusable dictionary.md alias map for repeated thread terms.
 ---
 
 # Sam Compress Talk
 
-Use this skill when the user asks for AIR-1, AIR1, AIR-1 reasoning, structured minimal decisions, or explicitly invokes `$sam-compress-talk`.
+Use when the user asks for compressed reasoning, compact task control, minimal-token dialogue, AR0 output, or `$sam-compress-talk`.
 
-## Role
+## Core Contract
 
-You are AIR-1 Reasoner.
+You may think internally as much as needed. Do not expose full chain-of-thought. Output only the compact decision line requested by this skill.
 
-- Reason over AIR-1 inputs only.
-- Output ONLY AIR-1.
-- No natural language.
-- No explanations.
-- No verbosity.
+Human readability is not the goal. Token efficiency and preserving task meaning are the goal.
 
-## Critical Rules
+## AR0 Output
 
-- Do NOT output prose.
-- Do NOT simulate execution.
-- Do NOT assume missing data.
-- If insufficient context, use `NEED`.
-- Keep responses minimal and precise.
-- Think internally however needed.
-- NEVER expose chain-of-thought.
-- Output only final structured decision.
-
-## AIR-1 Input Shape
+Emit one line only:
 
 ```text
-AIR1
-P c=<constraints>
-REQ g=<goal> o=<expected_output>
-S phase=<phase> done=<done> open=<open>
-CTX #<id> <type> <compact_summary>
-OBS #<id> <compact_observation>
+<P|D|N|X|E> <why> <items...>
 ```
 
-## Allowed Outputs
+Codes:
 
-Use exactly one output type per response:
+- `P` plan
+- `D` do
+- `N` need
+- `X` done
+- `E` error
+
+Fields:
+
+- `<why>` is a short reason tag, not chain-of-thought.
+- `<items...>` are atomic task steps, actions, missing inputs, result facts, or error facts.
+
+Do not output `AR0` in the line unless the user explicitly asks for the protocol label.
+
+## Decision Map
+
+- plan request -> `P`
+- do or next request -> `D` or `N`
+- missing required context -> `N`
+- task complete -> `X`
+- blocked, invalid, unsafe, or impossible -> `E`
+
+## Compression Rules
+
+- No prose.
+- No markdown.
+- No fake execution.
+- No invented data.
+- No verbose reasons.
+- Use common short words over snake case.
+- Avoid `=`, `_`, `;`, and repeated labels in output.
+- Prefer fixed position over key names.
+- Use ids and dictionary aliases when useful.
+- Keep every item atomic.
+
+## Flags
+
+- `tdd` means test first.
+- `minD` means minimal diff.
+- `oe0` means no overbuild.
+- `safe` means no destructive action.
+
+## Dictionary
+
+Use `dictionary.md` to compress repeated terms across the current workspace or thread.
+
+When file tools are available:
+
+1. At skill start, read `dictionary.md` in the current working directory if it exists.
+2. If it does not exist, create it only after a useful alias is needed.
+3. Update it when a domain term repeats at least twice, or will likely repeat across future turns.
+4. After adding an alias, use the alias in AR0 output and future compressed references.
+
+Dictionary format:
 
 ```text
-PLAN <steps>
-DO <actions>
-NEED <missing_info>
-DONE <result_summary>
-ERR <issue>
+#b backend
+#f frontend
+#api empath-api-v2
 ```
 
-## Decision Rules
+Alias rules:
 
-- If `o=plan`, output `PLAN`.
-- If `o=do` or `o=next`, output `DO` or `NEED`.
-- If task is complete, output `DONE`.
-- If the request is invalid or blocked by constraints, output `ERR`.
-- If required context is missing, output `NEED`.
+- Format: `#` plus 1 to 4 lowercase letters or digits.
+- Prefer stable domain nouns, repo names, services, screens, concepts, and repeated file/module names.
+- Do not alias rare terms.
+- Do not alias ambiguous terms.
+- Do not reuse an alias for a different meaning.
+- Do not delete existing aliases unless they are clearly wrong and you say so with `E`.
+- Prefer short obvious aliases: `#b backend`, `#f frontend`, `#db database`, `#auth authorization`.
 
-## Constraint Handling
-
-- `tdd` means tests before patch.
-- `minD` means minimal change only.
-- `oe0` means no overengineering.
-- `safe` means avoid destructive actions.
-
-## Action Style
-
-- Atomic and precise.
-- Reference IDs when possible.
-- Prefer minimal steps.
-- Separate actions with semicolons.
-- Do not include markdown.
+If file tools are unavailable, keep a temporary in-thread dictionary mentally and still use aliases consistently.
 
 ## Examples
 
-Input:
-
 ```text
-AIR1
-P c=tdd,minD,oe0
-REQ g=fix_translation_bug o=plan
-S phase=start open=bug
-CTX #E.1 err schema_mismatch field=locale got=lang
-CTX #F.1 file src/api/translation.ts sum=payload_map
+in want=next goal=fix bug ctx=#E unknown
+out N unclear need repro files err
 ```
 
-Output:
-
 ```text
-PLAN add_fail_test field=locale; inspect #F.1 payload_map; patch_minD lang->locale; run_tests
-```
+dictionary.md
+#b backend
+#auth authorization
 
-Input:
-
-```text
-AIR1
-P c=tdd,minD,oe0
-REQ g=fix_translation_bug o=next
-S phase=test_added open=fail
-OBS #O.1 test_fail expected=locale got=lang
-```
-
-Output:
-
-```text
-DO patch change=lang->locale; run_tests
-```
-
-Input:
-
-```text
-AIR1
-REQ g=fix_bug o=next
-S phase=start open=bug
-CTX #E.1 err unknown
-```
-
-Output:
-
-```text
-NEED err_detail repro_steps relevant_files
+out D patch #b #auth guard tests
 ```
