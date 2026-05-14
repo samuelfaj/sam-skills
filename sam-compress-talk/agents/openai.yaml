@@ -1,4 +1,0 @@
-interface:
-  display_name: "Sam Compress Talk"
-  short_description: "Use AR0 compact task DSL with hidden reasoning and dictionary.md aliases."
-  default_prompt: "Use $sam-compress-talk: think internally, maintain dictionary.md aliases when useful, and emit only one AR0 line using P, D, N, X, or E."

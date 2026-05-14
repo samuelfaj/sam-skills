@@ -112,15 +112,24 @@ Include, when applicable:
 - Business-rule scenarios
 - Negative scenarios
 - Boundary cases
+- Browser-called route versus backend-registered route contract checks
+- Preflight, CORS, and failed-response header checks when browser/network errors
+  may hide the real API status, body, or missing route
 - User-facing display labels, states, and messages
 - Accessibility, privacy, performance, observability, and compatibility risks
 
 Before changing production code:
 
 1. Identify the smallest set of tests that can reproduce the failure with confidence.
-2. Create or update tests so they fail for the correct reason.
-3. Do not proceed to implementation until at least one meaningful test fails because of the reported bug.
-4. Capture the failing test command and failing output as evidence.
+2. For browser-to-API failures, confirm the exact method and URL observed in the
+   browser and test that exact backend route, not only a canonical or similar
+   endpoint.
+3. If the reported symptom is CORS, `Failed to fetch`, or a generic network
+   error, add coverage proving the user action reaches a real route and that
+   preflight plus failed API responses expose browser-visible headers.
+4. Create or update tests so they fail for the correct reason.
+5. Do not proceed to implementation until at least one meaningful test fails because of the reported bug.
+6. Capture the failing test command and failing output as evidence.
 
 ## Step 2: Implement Failing Tests First
 
@@ -165,6 +174,8 @@ Each reviewer must answer:
 - What existing code supports or contradicts that rule?
 - What risks exist in fixing it?
 - What tests are required to prove correctness?
+- Could a fix merely reveal a hidden route/auth/validation failure without making
+  the reported user action succeed?
 - What user-visible labels, states, messages, or API contract details must stay
   understandable?
 - What accessibility, privacy, performance, observability, or compatibility risk

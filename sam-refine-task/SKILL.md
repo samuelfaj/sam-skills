@@ -74,6 +74,8 @@ Search for loopholes from every relevant angle:
 - User-permission or security gaps
 - Data integrity and migration risks
 - Frontend/backend contract mismatch
+- Browser-called route versus backend-registered route mismatch
+- Real UI/backend startup and linking gaps for browser-facing work
 - Environment and configuration drift
 - Test coverage gaps
 - Race conditions, stale cache, retries, and partial failures
@@ -81,6 +83,8 @@ Search for loopholes from every relevant angle:
 - Performance or scalability risk
 - Deployment, release, and CI/CD failure modes
 - External API, network, auth, or secret dependencies
+- Browser/network error masking, especially CORS, opaque fetch failures, and
+  preflight failures hiding a real API status or wrong endpoint
 - Manual-step or human-process assumptions
 - Edge cases that invalidate the expected outcome
 
@@ -120,6 +124,31 @@ Define the proof needed for the refined strategy:
 - Rollback or recovery proof, when relevant
 
 Every material claim must map to a verification item.
+
+For any browser-to-API, frontend/backend, or cross-origin workflow, the
+verification plan must explicitly prove:
+
+- The real UI and backend will be started and linked unless that is impossible
+  after direct startup, Docker/container startup, local port changes, env/config
+  overrides, and dependency-service setup have all been attempted or proven
+  impossible.
+- The plan names how local ports, env vars, compose overrides, or Playwright
+  config will be changed if defaults do not make the UI call the running
+  backend.
+- The exact method and URL called by the browser match a backend route that is
+  actually registered in the running app.
+- The route-level test covers the browser-facing path, not only a legacy,
+  canonical, or similar-looking endpoint.
+- Error responses include the headers/body/status the browser needs to expose
+  the real failure instead of masking it as `Failed to fetch`, CORS, or a
+  generic network error.
+- Preflight and failed-response paths are tested when the request is
+  cross-origin, credentialed, or uses non-simple headers.
+- A fix that only makes the error visible, but leaves the user action failing,
+  is not accepted as complete.
+- Mocked UI, component previews, request-only tests, or isolated browser checks
+  are fallback proof only when the plan records the exact blocker that prevented
+  real UI plus linked backend proof.
 
 ## Step 6: Repeat Until Defensible
 

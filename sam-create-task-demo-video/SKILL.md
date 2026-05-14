@@ -20,14 +20,22 @@ Create a clear visual walkthrough that demonstrates the task or bug fix in the s
 - Produce a guided visual demo without required narration.
 - Show the full flow from initial state to final verified result.
 - Start the application before recording.
-- Use the real running UI whenever possible.
+- Use the real running UI unless it is impossible after serious startup/linking
+  effort. Mocked pages, component previews, or request-only proof are fallback
+  evidence only.
+- Do whatever local setup is necessary to open both UI and backend for the demo:
+  direct process start, Docker, compose, repo scripts, dependency services,
+  seeded data, local env overrides, and port changes are all allowed when they
+  are local/dev-safe.
+- If the default ports conflict or the UI points at the wrong API, change local
+  ports, env vars, compose overrides, or Playwright config so the browser uses
+  the running backend. Report those changes.
 - If the user explicitly says the environment is dev and the database is a dev
   database, prefer real dev data when it makes the demo more truthful and does
   not expose secrets or private user data.
 - If frontend and backend are separate repositories or services instead of one
-  monorepo, bring both up through Docker or the repository-supported container
-  workflow whenever possible, link the frontend to the backend, and record
-  against that linked local/dev stack.
+  monorepo, bring both up directly or through Docker/container workflows, link
+  the frontend to the backend, and record against that linked local/dev stack.
 - Use a stable viewport and readable pacing.
 - Add temporary captions or browser overlays when they make the demo easier to understand.
 - Keep the demo focused on the requested task or bug; do not turn it into a broad product tour.
@@ -54,8 +62,11 @@ Inspect the repository and current branch to determine:
 
 - How to run the app locally.
 - Whether the app is a single monorepo or needs separate frontend/backend services.
-- How to start required services through Docker or the repo-supported container workflow.
+- How to start required services directly, through Docker, or through the
+  repo-supported container workflow.
 - How the frontend should be configured to call the local/dev backend.
+- Which local ports/env/config can be changed if defaults conflict or do not
+  link UI to backend.
 - Which URL, route, or screen starts the flow.
 - Which seed data, account, feature flag, or test fixture is safe to use.
 - Whether the user explicitly confirmed dev environment and dev database access,
@@ -65,8 +76,9 @@ Inspect the repository and current branch to determine:
 
 Use `gh` for GitHub repositories and `glab` for GitLab repositories. If the user provided a full PR/MR URL, resolve the platform and target repo from that URL instead of assuming the current checkout.
 
-If Docker, linked-service startup, or real dev data access is blocked, record the
-exact blocker and use the closest safe runnable local/dev environment.
+If Docker, direct startup, port/config changes, linked-service startup, or real
+dev data access is blocked, record every attempted path and the exact blocker
+before using the closest safe runnable local/dev environment.
 
 ## Step 3: Write A Human Demo Script
 
@@ -82,12 +94,15 @@ Keep the script concrete and reviewer-oriented. Avoid implementation-only langua
 
 ## Step 4: Record With Playwright
 
-Start the app and record the flow locally with Playwright or the project's equivalent browser automation setup.
+Start the app, link UI and backend when the flow crosses that boundary, and
+record the flow locally with Playwright or the project's equivalent browser
+automation setup.
 
 If the flow crosses frontend/backend boundaries and those services are not in a
-single monorepo, start or verify both through Docker or the repo-supported
-container workflow, configure the frontend to call the local/dev backend, and
-record only after the linked stack is reachable from the browser.
+single monorepo, start or verify both directly or through Docker/container
+workflows, configure the frontend to call the local/dev backend, adjust local
+ports/config as needed, and record only after the linked stack is reachable from
+the browser.
 
 Recording requirements:
 
@@ -123,7 +138,9 @@ Before uploading or reporting completion:
 
 - Open or inspect the `.mp4` to confirm it plays.
 - Verify the recording used the real running UI and, when applicable, the linked
-  frontend/backend local/dev stack.
+  frontend/backend local/dev stack. If fallback proof was used, document why the
+  real UI could not be opened despite direct, Docker, port/config, and linking
+  attempts.
 - Confirm the video shows the intended beginning, action sequence, proof moment, and ending.
 - Confirm captions or overlays are readable if used.
 - Confirm no secrets, credentials, tokens, private user data, or sensitive production information are visible.

@@ -22,6 +22,27 @@ E2E tests that use real data may run only in `dev`.
 - Prefer deterministic seeded, mocked, or isolated test data over real data whenever possible.
 - If real-data E2E is required, prove the target is dev before running it and state that proof in the final output.
 
+## Linked Real UI Requirement
+
+For browser-facing behavior, E2E tests and manual/video proof must use the real
+running UI unless it is impossible after serious startup/linking effort.
+
+- Do whatever local setup is necessary to open both UI and backend: direct
+  process start, Docker, compose, repo scripts, dependency services, seeded data,
+  local env overrides, and port changes are all allowed when they are
+  local/dev-safe.
+- If default ports conflict or the UI points at the wrong API, change local
+  ports, env vars, compose overrides, or Playwright config so the browser uses
+  the running backend. Report those changes.
+- If frontend and backend are separate repositories or services, start or verify
+  both directly or through Docker/container workflows, link the frontend to the
+  backend, and test against that linked local/dev stack.
+- Mocked pages, component shells, request-only checks, or isolated browser tests
+  are fallback proof only after direct startup, Docker startup, port/config
+  adjustment, and service linking have all been attempted or proven impossible.
+- Record every attempted startup/linking path and exact blocker before claiming
+  real UI E2E proof is not possible.
+
 ## Core Context
 
 Before writing tests:
@@ -109,6 +130,12 @@ The matrix must include every meaningful equivalence class around the changed be
 - Validation boundaries
 - Save, cancel, retry, and navigation behavior
 - API method, path, query, payload, status, headers, and response-body assertions
+- Browser-called API path versus backend-registered route assertions, including
+  legacy/canonical aliases when the UI may call a different path
+- Preflight, CORS, and failed-response header assertions when the workflow is
+  cross-origin, credentialed, or uses non-simple request headers
+- Network-error masking cases where a browser `Failed to fetch`, CORS error, or
+  opaque fetch failure may hide the real API status, body, or missing route
 - Persistence, read-after-write, cache invalidation, and stale-data behavior when applicable
 - Cross-browser, mobile, or responsive variants only when changed behavior can differ by viewport/browser
 - Backward compatibility and contract compatibility when existing clients may depend on behavior
@@ -134,7 +161,7 @@ Choose the smallest reliable test layer for each matrix row:
 - Use component tests for React rendering, form behavior, field serialization, accessibility states, and UI interactions that do not require a real backend.
 - Use integration tests for service/repository/cache/persistence coordination and cross-module behavior.
 - Use API/contract tests for endpoint request/response behavior, validation, auth, permissions, and HTTP-level compatibility.
-- Use E2E tests for high-value user journeys, frontend-backend wiring, auth/navigation, real browser behavior, and flows needing video proof.
+- Use E2E tests for high-value user journeys, frontend-backend wiring, auth/navigation, real browser behavior, and flows needing video proof. These E2E tests must drive the real UI and linked backend unless impossible after the attempts required above.
 
 For each planned test, define:
 
@@ -149,6 +176,17 @@ For each planned test, define:
 - Command to run it
 
 If a row needs multiple layers, add them. Example: React form serialization bug may need unit schema tests, component interaction tests, and one E2E proof for the critical workflow.
+
+For browser-to-API fixes, include at least one `API_CONTRACT` or integration row
+that uses the exact method/path/payload the browser sends. Do not rely only on a
+nearby canonical route if the reported failure came from a different URL. If the
+browser error was CORS or `Failed to fetch`, include rows that prove both:
+
+- The user action reaches a real route and returns the intended success or
+  business error.
+- Preflight and error responses include the required browser-visible headers so
+  future route/auth/validation failures are not hidden behind generic network
+  errors.
 
 ## Step 4: Implement Tests
 
@@ -184,6 +222,8 @@ Use existing project patterns for data:
 - Existing authenticated user/session helpers
 - Existing cleanup patterns
 - Docker/dev service setup when applicable
+- Direct UI/backend startup, local port/env changes, and linked-stack setup when
+  the behavior crosses frontend/backend boundaries
 
 Data rules:
 
@@ -205,7 +245,7 @@ Run tests in this order when applicable:
 5. E2E tests for critical user journeys.
 6. Typecheck and lint for touched test/code files.
 7. Relevant full suite when practical.
-8. Docker or linked frontend/backend proof when the task crosses services.
+8. Direct or Docker linked frontend/backend proof when the task crosses services.
 
 If tests fail, classify the failure:
 
@@ -257,16 +297,21 @@ Coverage work is complete only when:
   intent it protects.
 - New coverage would fail for the intended business-logic regression, not only
   for a changed literal or mocked fixture.
+- Browser-facing route coverage uses the exact route the UI calls and would fail
+  if that route disappeared, drifted from the backend contract, or only returned
+  a CORS/network mask.
 - New tests pass locally.
 - Existing affected tests pass locally.
 - Relevant suite status is known.
 - Typecheck/lint status is known when applicable.
-- Cross-service proof exists when backend/frontend integration is part of the task.
+- Cross-service proof exists when backend/frontend integration is part of the
+  task, using the real UI linked to the running backend unless exact blockers
+  prove that is impossible.
 - Any `NOT_COVERED` row has a clear blocker, exact residual risk, and recommended next action.
 
 Full-confidence rule:
 
-- Only say `100% confidence` when every QA/acceptance criterion and every meaningful matrix row is automated, manually proven, or explicitly redundant; all affected local suites pass; linked frontend/backend services are exercised when the task crosses that boundary; E2E with real data, if any, ran only in verified dev; and PR/MR evidence is attached when requested.
+- Only say `100% confidence` when every QA/acceptance criterion and every meaningful matrix row is automated, manually proven, or explicitly redundant; all affected local suites pass; linked frontend/backend services are exercised with the real UI when the task crosses that boundary; E2E with real data, if any, ran only in verified dev; and PR/MR evidence is attached when requested.
 - If any of those conditions is missing, do not say `100% confidence`. State the exact confidence blocker instead.
 
 ## Required Output Shape

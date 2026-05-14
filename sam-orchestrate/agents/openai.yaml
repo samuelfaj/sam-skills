@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Orchestrate"
+  short_description: "Run Codex as a cost-aware controller-only orchestrator that delegates execution to subagents with controlled model effort."
+  default_prompt: "Use $sam-orchestrate to classify task cost/risk, maintain and update a shared distill Dict before each subagent spawn, delegate all execution to the cheapest safe shape using only gpt-5.4-mini or gpt-5.5, use one gpt-5.4-mini low agent for trivial tasks, write every subagent prompt in $distill S/C/D/R/O/N/P structure, and run final gpt-5.5 medium review only when risk triggers require it."

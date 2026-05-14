@@ -46,10 +46,20 @@ Tests verify intent, not just behavior.
 
 ## Real Dev Environment Requirement
 
-Whenever possible, exercise the real running application, not a mocked UI shell.
+Exercise the real running application, not a mocked UI shell, unless it is
+impossible after serious startup/linking effort.
 
 - Start the application before creating, updating, or recording Playwright tests.
 - Use the real UI route and real browser interactions for user-facing flows.
+  Mocked component shells, mocked pages, or request-only tests are fallback proof
+  only after the real UI cannot be opened.
+- Do whatever local setup is necessary to open both UI and backend for
+  browser-facing flows: direct process start, Docker, compose, repo scripts,
+  dependency services, seeded data, local env overrides, and port changes are all
+  allowed when they are local/dev-safe.
+- If the default ports conflict or the UI points at the wrong API, change local
+  ports, env vars, compose overrides, or Playwright config so the browser uses
+  the running backend. Report those changes.
 - If the user explicitly says the environment is dev and the database is a dev
   database, prefer real dev data over synthetic fixtures when it improves
   confidence and does not expose secrets or private user data.
@@ -57,11 +67,11 @@ Whenever possible, exercise the real running application, not a mocked UI shell.
   tests or recorded artifacts unless the user explicitly asks and the workflow is
   read-only and safe.
 - If frontend and backend are separate repositories or services instead of one
-  monorepo, bring both up through Docker or the repository-supported container
-  workflow whenever possible, link the frontend to the backend, and test against
-  that linked local/dev stack.
-- If Docker or linked-service startup is blocked, record the exact blocker and
-  fall back only to the closest safe runnable environment.
+  monorepo, bring both up directly or through Docker/container workflows, link
+  the frontend to the backend, and test against that linked local/dev stack.
+- If Docker, direct startup, port changes, or linked-service startup is blocked,
+  record every attempted path and the exact blocker before falling back to the
+  closest safe runnable environment.
 
 ## Step 1: Analyze Task Impact
 
@@ -110,6 +120,11 @@ The coverage matrix must include every meaningful equivalence class around the c
 - Validation boundaries
 - Save, cancel, retry, and navigation behavior
 - API method, path, query, payload, status, and response-body assertions
+- Browser-called API path versus backend-registered route assertions, including
+  legacy/canonical aliases when the UI may call a different path
+- Browser-visible network failure assertions for CORS, preflight, `Failed to
+  fetch`, opaque fetch failures, and failed API responses that must expose the
+  real status/body to the UI
 - UI persistence, read-after-write, and stale-cache behavior when applicable
 - Cross-browser, mobile, or responsive variants only when the changed behavior can differ by viewport/browser
 
@@ -131,6 +146,8 @@ Create a test plan that covers every applicable matrix row by default:
 - Empty states
 - Validation errors
 - Network/API failure states
+- CORS, preflight, and browser network-mask states when the user report includes
+  a console/network error or the flow crosses origins
 - Regression cases around nearby existing behavior
 - Loading states, when observable
 - Retry or recovery behavior, when user-visible
@@ -174,6 +191,12 @@ Implementation rules:
 - Keep tests readable and grouped by user flow.
 - Do not rely on test execution order.
 - Use route responses, visible elements, URL changes, network responses, or explicit UI state instead of sleeps.
+- When the bug is a browser-to-API failure, assert the exact request method and
+  URL the page sends. Do not accept a test that only proves a nearby canonical
+  endpoint works while the UI still calls a missing or different route.
+- For CORS or `Failed to fetch` reports, inspect browser console/network events
+  and assert that the user action reaches the intended endpoint and exposes a
+  real success or API error, not only that the generic browser error disappears.
 - If a stable selector is missing, add the smallest user-meaningful selector only when needed and consistent with the project.
 
 ## Step 4: Data Setup
@@ -200,12 +223,14 @@ Data rules:
 
 ## Step 5: Run And Fix
 
-Start the required app services, then run the relevant E2E tests locally.
+Start the required app services, link UI and backend, then run the relevant E2E
+tests locally.
 
 If the flow crosses frontend/backend boundaries and those services are not in a
-single monorepo, start or verify both through Docker or the repo-supported
-container workflow, configure the frontend to call the local/dev backend, and
-confirm the browser is exercising that linked stack before trusting results.
+single monorepo, start or verify both directly or through Docker/container
+workflows, configure the frontend to call the local/dev backend, adjust local
+ports/config as needed, and confirm the browser is exercising that linked stack
+before trusting results.
 
 If tests fail, classify the failure:
 
@@ -230,17 +255,23 @@ The E2E work is complete only when:
 
 - All new E2E tests pass locally.
 - Existing affected E2E tests still pass.
-- The app was started for the test run, or an exact startup blocker is documented.
-- User-facing flows exercise the real UI whenever possible.
+- The app was started for the test run, or every serious direct/Docker startup
+  attempt and exact blocker is documented.
+- User-facing flows exercise the real UI unless opening the real UI is blocked
+  after direct, Docker, port/config, and linking attempts.
 - Explicit dev-data usage is limited to confirmed dev databases.
-- Separate frontend/backend services are linked through Docker or the closest
-  repo-supported container workflow whenever possible.
+- Separate frontend/backend services are linked directly or through Docker and
+  the browser is confirmed to call the running backend; fallback proof documents
+  why real linked UI/backend proof was impossible.
 - Unit, integration, API, or contract tests that cover affected non-browser behavior pass locally.
 - No flaky waits were introduced.
 - Tests clearly cover impacted behavior.
 - Tests clearly express the business/user/API intent they protect.
 - New coverage would fail for the intended business-logic regression, not only
   for a changed literal or mocked fixture.
+- Browser/API coverage would fail if the UI called a route that the backend does
+  not register, if preflight failed, or if an API error was masked as a generic
+  CORS/network failure.
 - Test data is deterministic and isolated.
 - Every QA/acceptance criterion maps to `AUTOMATED`, `MANUAL_PROOF`, or `REDUNDANT`.
 - Any `NOT_COVERED` matrix row has a clear blocker, exact residual risk, and recommended next action.
