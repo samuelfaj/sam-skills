@@ -18,13 +18,9 @@ Personal Codex skills.
 
 ## Workflow defaults
 
-- `sam-create-feature` and `sam-fix-bug` use `FAST_MODE` by default: bounded
-  refinement, failing coverage when supported, smallest safe implementation,
-  targeted validation, and local review.
-- Use `FULL_MODE` only when the user asks for the strict workflow or the task
-  touches high-risk areas such as production data, migrations, security,
-  authorization, payment, release/deploy work, cross-repo integration, or a
-  critical user-facing flow.
+- `sam-create-feature` and `sam-fix-bug` use `FULL_MODE` by default.
+- Use `FAST_MODE` only when the user explicitly asks for a fast, lightweight, or
+  reduced workflow.
 - Cross-skill references are not treated as magic commands. A skill that needs
   another skill must load the sibling `SKILL.md`, pass a compact input block,
   execute only applicable steps, and report `DEPENDENCY_FALLBACK` if the sibling

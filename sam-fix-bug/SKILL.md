@@ -29,7 +29,10 @@ Fix the reported bug correctly, with the smallest reasonable diff, strong test c
 
 ## Execution Modes
 
-Use `FAST_MODE` by default for small or normal bug fixes.
+Use `FULL_MODE` by default for all bug fixes.
+
+Use `FAST_MODE` only when the user explicitly asks for a fast, lightweight, or
+reduced workflow.
 
 `FAST_MODE` requires:
 
@@ -42,10 +45,8 @@ Use `FAST_MODE` by default for small or normal bug fixes.
 - Review the final diff for blockers.
 - Create or update a PR/MR only when the user asked for it or the task clearly requires it.
 
-Use `FULL_MODE` only when the user explicitly asks for the strict/full workflow,
-the bug is high risk, or the work touches production data, migrations, security,
-authorization, payment, release/deploy behavior, cross-repo integration, or a
-critical user-facing flow.
+Use `FULL_MODE` when the user invokes this skill unless the user explicitly asks
+for `FAST_MODE`.
 
 `FULL_MODE` adds:
 
