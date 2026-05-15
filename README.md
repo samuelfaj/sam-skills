@@ -30,6 +30,11 @@ Personal Codex skills.
   visually simple: semantic HTML, inline CSS, readable typography, restrained
   colors, clear spacing, accessible contrast, status badges/tables/cards where
   useful, and no external assets or decorative clutter.
+- Video evidence tasks must upload every safe relevant video to GitHub or GitLab
+  when a PR/MR can be resolved. Comments must use the exact platform-renderable
+  format: raw `https://github.com/user-attachments/assets/...` URLs on their own
+  paragraph for GitHub, and the exact GitLab Markdown Uploads API `markdown`
+  field with `/uploads/...` for GitLab.
 
 ## Custom instructions
 

@@ -115,7 +115,8 @@ Recording requirements:
 - Pause briefly on the initial state, before the key action, and on the final proof state.
 - Avoid flaky waits; wait for visible UI state, network completion, or app-specific readiness signals.
 - Hide or avoid secrets, tokens, private user data, credentials, and sensitive production information.
-- Keep only the best recording that demonstrates the task clearly.
+- Keep every safe relevant recording that demonstrates the task clearly. Do not
+  drop a relevant video just to keep the PR/MR comment shorter.
 
 Temporary captions or overlays are allowed if they are injected only in the browser session and do not modify repository files. Captions should label steps, not explain internal implementation.
 
@@ -150,22 +151,38 @@ Do not claim a successful demo video until the `.mp4` playback has been verified
 
 ## Step 7: Upload And Comment By Default
 
-When a PR or MR can be resolved, upload the `.mp4` and add a comment by default.
+When a PR or MR can be resolved, upload every safe relevant `.mp4` and add a
+comment by default. This is mandatory for all task demo videos unless upload is
+blocked by platform or auth limitations.
 
 GitHub:
 
 - Use `gh` to find the PR for the current branch when no PR URL is provided.
-- Upload the `.mp4` using the best available GitHub attachment path.
+- Upload every safe relevant `.mp4` using the best available GitHub attachment path.
 - If direct upload is not supported by the available `gh` setup, use an available `gh` extension or helper that creates GitHub user attachments.
-- Comment on the PR with the uploaded video link or attachment.
+- Comment on the PR with each uploaded video in the exact GitHub-renderable
+  format: a raw `https://github.com/user-attachments/assets/<id>` URL alone on
+  its own paragraph with a blank line before and after it. Do not wrap GitHub
+  user-attachment video URLs in Markdown link or image syntax.
+- Re-read the posted PR comment with `gh` or `gh api` and confirm every uploaded
+  video is present in that raw URL format, not a local path or committed artifact
+  path.
 
 GitLab:
 
 - Use `glab` to find the MR for the current branch when no MR URL is provided.
-- Prefer the GitLab Markdown Uploads API through `glab api` for `.mp4` upload.
-- Comment on the MR with the uploaded video link or attachment.
+- Upload every safe relevant `.mp4` with the GitLab Markdown Uploads API through
+  `glab api`.
+- Comment on the MR with the exact `markdown` field returned by the GitLab upload
+  response for each video. Do not manually build GitLab upload URLs from `url`,
+  `full_path`, project ids, repository paths, `/raw/...`, or committed artifact
+  paths.
+- Re-read the posted MR note with `glab api` and confirm every video appears as
+  `.mp4` Markdown using `/uploads/...`, exactly from the upload response.
 
-If upload or commenting is blocked, do not fail silently. Report the exact blocker, the local `.mp4` path, and any command or auth issue that prevented upload.
+If upload or commenting is blocked for any safe relevant video, do not fail
+silently. Report the exact blocker, the local `.mp4` path, the attempted command,
+and any command or auth issue that prevented upload.
 
 Never commit video files to the repository unless the user explicitly asks for versioned video artifacts.
 
@@ -181,7 +198,7 @@ Recorded a human-paced demo of the requested task/fix.
 - Scenario: <what the video demonstrates>
 - Environment: <local/dev/staging and URL if safe>
 - Validation: playback verified; final state shows <proof moment>
-- Video: <uploaded .mp4 link or attachment>
+- Video: <GitHub raw user-attachments URL, or GitLab exact upload markdown>
 
 Limitations: <none, or exact limitation>
 ```
@@ -195,6 +212,7 @@ At the end, report only the useful evidence:
 - Local `.mp4` path.
 - PR/MR comment link when available.
 - Upload status.
+- Posted format verification status for each uploaded video.
 - Playback verification status.
 - Any limitation or blocker.
 
