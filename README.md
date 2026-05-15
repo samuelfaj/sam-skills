@@ -16,18 +16,20 @@ Personal Codex skills.
 - `sam-review-code`: rigorous local code review for current workspace changes, returned in Codex without PR/MR comments.
 - `sam-review-pr`: rigorous end-to-end GitHub/GitLab PR or MR review with published platform comments.
 
-## Workflow defaults
+## Workflow Defaults
 
-- `sam-create-feature` and `sam-fix-bug` use `FULL_MODE` by default.
-- Use `FAST_MODE` only when the user explicitly asks for a fast, lightweight, or
-  reduced workflow.
+- `sam-create-feature` and `sam-fix-bug` always use the full workflow.
 - Cross-skill references are not treated as magic commands. A skill that needs
   another skill must load the sibling `SKILL.md`, pass a compact input block,
   execute only applicable steps, and report `DEPENDENCY_FALLBACK` if the sibling
   skill is unavailable.
 - Local planning artifacts such as `REQUIREMENTS.html`, `ANALYSIS.html`,
-  `TDD.html`, and `TODO.html` are optional. Create them only in `FULL_MODE`, for
-  complex tasks, or when explicitly requested. Never commit them.
+  `TDD.html`, and `TODO.html` are optional. Create them only when they materially
+  improve handoff quality or when explicitly requested. Never commit them.
+- Any skill that creates `.html` artifacts must make them human-readable and
+  visually simple: semantic HTML, inline CSS, readable typography, restrained
+  colors, clear spacing, accessible contrast, status badges/tables/cards where
+  useful, and no external assets or decorative clutter.
 
 ## Custom instructions
 
@@ -125,7 +127,7 @@ If you can't write a test that would fail when business logic changes, the funct
 
 ## Install
 
-Install every skill in this repo:
+### Codex from GitHub
 
 ```bash
 python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
@@ -146,10 +148,42 @@ python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-githu
 
 Restart Codex after installing or updating skills.
 
-To install globally for Codex and Claude from a local checkout, copy each
-`sam-*` directory into:
+### Codex from local checkout
 
-- `~/.codex/skills/`
-- `~/.claude/skills/`
+```bash
+cd /path/to/sam-skills
+mkdir -p ~/.codex/skills
+find . -maxdepth 1 -type d -name 'sam-*' -exec sh -c '
+  for skill do
+    name=$(basename "$skill")
+    rm -rf "$HOME/.codex/skills/$name"
+    cp -R "$skill" "$HOME/.codex/skills/$name"
+  done
+' sh {} +
+```
 
-Then verify every installed skill has a `SKILL.md` with a `name:` field.
+### Claude from local checkout
+
+```bash
+cd /path/to/sam-skills
+mkdir -p ~/.claude/skills
+find . -maxdepth 1 -type d -name 'sam-*' -exec sh -c '
+  for skill do
+    name=$(basename "$skill")
+    rm -rf "$HOME/.claude/skills/$name"
+    cp -R "$skill" "$HOME/.claude/skills/$name"
+  done
+' sh {} +
+```
+
+### Verify installs
+
+```bash
+for dest in ~/.codex/skills ~/.claude/skills; do
+  echo "$dest"
+  find "$dest" -maxdepth 2 -path '*/sam-*/SKILL.md' -print | sort
+done
+```
+
+Every installed skill must have a `SKILL.md` with a `name: sam-*` field. Restart
+Codex and Claude after installing or updating skills.

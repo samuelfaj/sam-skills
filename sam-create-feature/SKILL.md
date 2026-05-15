@@ -25,37 +25,18 @@ feature works.
 - Avoid overengineering and speculative configurability.
 - Do not introduce broad refactors unless strictly necessary for the feature.
 - Keep the final diff as small and clear as possible.
-- Do not create temporary planning documents by default. Create `REQUIREMENTS.html`,
-  `ANALYSIS.html`, `TDD.html`, or `TODO.html` only in `FULL_MODE`, for complex
-  tasks, or when the user explicitly requests local artifacts.
+- Create `REQUIREMENTS.html`, `ANALYSIS.html`, `TDD.html`, or `TODO.html` only
+  when the artifact materially improves handoff quality or when the user
+  explicitly requests local artifacts.
 - Do not commit temporary planning documents.
 - Do not skip tests. If a test cannot be implemented or run, explain exactly why.
 - Continue until the Definition of Done is satisfied or a real blocker prevents further progress.
 
-## Execution Modes
+## Full Workflow
 
-Use `FULL_MODE` by default for all feature work.
+Use the full workflow for all feature work.
 
-Use `FAST_MODE` only when the user explicitly asks for a fast, lightweight, or
-reduced workflow.
-
-`FAST_MODE` requires:
-
-- Discover requirements and unclear decisions.
-- Ask blocking questions before production code when high-impact behavior is unclear.
-- Run one bounded strategy refinement pass before test mapping.
-- Add or update the smallest meaningful failing test when the repository supports it.
-- Implement the smallest safe change.
-- Run targeted validation and any affected test suites.
-- Review the final diff for blockers.
-- Create or update a PR/MR only when the user asked for it or the task clearly requires it.
-
-Use `FULL_MODE` when the user invokes this skill unless the user explicitly asks
-for `FAST_MODE`.
-
-`FULL_MODE` adds:
-
-- Optional local planning artifacts when they materially improve handoff quality.
+- Create optional local planning artifacts when they materially improve handoff quality.
 - Up to two strategy refinement passes unless new evidence appears.
 - Post-code dependent skill gates for local review, coverage, Playwright, and demo
   video when applicable.
@@ -69,16 +50,16 @@ handoff. Resolve and run the dependency as instructions:
 1. Load the sibling skill file, for example `../sam-refine-task/SKILL.md`.
 2. Pass a compact input block with `Goal`, `Scope`, `Current evidence`,
    `Changed files`, `No-go scope`, `Required output`, and `Pass criteria`.
-3. Execute only the dependency steps that apply to the current mode and task risk.
+3. Execute only the dependency steps that apply to the current task risk.
 4. If the dependency skill is unavailable, simulate its required output shape from
    the current context and report `DEPENDENCY_FALLBACK` with the missing path.
 5. Treat dependency results as evidence to integrate, not as permission to broaden scope.
 
 ## HTML Artifact Standard
 
-When this skill creates local `.html` planning documents in `FULL_MODE` or by
-explicit request, make them useful HTML artifacts, not markdown copied into HTML
-tags.
+When this skill creates local `.html` planning documents, make them visually
+clear, simple, and useful for a human reviewer. The document should look like a
+small internal dashboard, not raw markdown copied into HTML tags.
 
 Each artifact must:
 
@@ -87,6 +68,9 @@ Each artifact must:
 - Use semantic HTML with inline CSS and, only when it helps, small inline
   JavaScript for navigation, filtering, checklists, tabs, collapsible sections,
   or copy/export helpers.
+- Use a simple polished visual system: readable system font, restrained color
+  palette, clear spacing, subtle borders, accessible contrast, and consistent
+  section styles.
 - Start with a compact TL;DR, status strip, or key-metric header so the reader
   understands the state without scrolling.
 - Include in-page navigation or section anchors when the document has more than
@@ -94,8 +78,12 @@ Each artifact must:
 - Prefer visual structure over walls of text: cards, tables, timelines,
   side-by-side comparisons, risk matrices, checklists, callouts, and inline SVG
   diagrams when they clarify relationships.
+- Keep visuals functional. Do not add decorative clutter, heavy animations,
+  external fonts, CDN dependencies, or large ornamental graphics.
 - Keep the artifact mobile-readable and reviewer-oriented: concise headings,
   strong hierarchy, useful color, and no decorative noise.
+- Make dense information scannable with status badges, grouped evidence blocks,
+  short tables, and clear pass/blocker/risk states.
 - Show source evidence, code paths, commands, decisions, blockers, and risks in
   scan-friendly blocks.
 - Make the artifact directly usable by the next person in the workflow; it
@@ -154,9 +142,9 @@ Study the existing code before asking questions:
 - Identify current contracts and behaviors the feature must not break.
 - Identify the test layers already used for similar behavior.
 
-Capture these requirements in the response or working notes by default. In
-`FULL_MODE`, for complex tasks, or when explicitly requested, create local
-`REQUIREMENTS.html` as a valid standalone HTML document with:
+Capture these requirements in the response or working notes by default. For
+complex tasks or when explicitly requested, create local `REQUIREMENTS.html` as a
+valid standalone HTML document with:
 
 - Feature summary.
 - Confirmed requirements.
@@ -277,9 +265,9 @@ Each reviewer must answer:
 - What accessibility, privacy, performance, observability, or compatibility risk
   could the feature introduce?
 
-Capture the analysis in the response or working notes by default. In `FULL_MODE`,
-for complex tasks, or when explicitly requested, create local `ANALYSIS.html` as
-a valid standalone HTML document with:
+Capture the analysis in the response or working notes by default. For complex
+tasks or when explicitly requested, create local `ANALYSIS.html` as a valid
+standalone HTML document with:
 
 - Feature summary.
 - Confirmed requirements and acceptance criteria.
@@ -305,9 +293,9 @@ anchors to evidence sections.
 Spawn a TDD expert subagent only if the user explicitly allows subagents.
 Otherwise simulate the TDD expert yourself.
 
-Capture the TDD plan in the response or working notes by default. In `FULL_MODE`,
-for complex tasks, or when explicitly requested, create local `TDD.html` as a
-valid standalone HTML document with:
+Capture the TDD plan in the response or working notes by default. For complex
+tasks or when explicitly requested, create local `TDD.html` as a valid standalone
+HTML document with:
 
 - Failing tests already added.
 - Additional tests to add.
@@ -329,8 +317,8 @@ checklist.
 ## Step 6: TODO And Implementation
 
 Track the implementation checklist in the response or working notes by default.
-In `FULL_MODE`, for complex tasks, or when explicitly requested, create local
-`TODO.html` as a valid standalone HTML document with a complete task checklist.
+For complex tasks or when explicitly requested, create local `TODO.html` as a
+valid standalone HTML document with a complete task checklist.
 
 Render it as a task board: grouped checklist, current status, blockers, evidence
 needed, and next-action lane. If inline JavaScript is useful, support local
@@ -448,18 +436,7 @@ Collect final proof:
 
 ## Step 10: Post-Code Gates
 
-After coding, run the gates that match the selected mode and task risk.
-
-`FAST_MODE` gate:
-
-1. Review the final local diff for blockers using the Dependent Skill Protocol
-   for `sam-review-code` when useful, or a local self-review when the diff is tiny.
-2. Fix every valid required correction.
-3. Rerun relevant tests after each correction.
-4. Do not proceed to PR/MR creation while a required correction, unresolved
-   blocker, or unknown relevant test status remains.
-
-`FULL_MODE` gate:
+After coding, run these gates:
 
 1. Run `sam-review-code` against the final local diff.
 2. Fix every valid correction and rerun relevant tests.
@@ -483,10 +460,9 @@ Before creating PR/MR:
 - Check `git diff`.
 - Check `git status`.
 - Run final test suite.
-- Confirm the selected post-code gates have no remaining required corrections.
-- In `FULL_MODE`, confirm `sam-review-code`, `sam-create-test-coverage`,
-  applicable `sam-create-playwright-tests`, and applicable
-  `sam-create-task-demo-video` completed with no unresolved blockers.
+- Confirm `sam-review-code`, `sam-create-test-coverage`, applicable
+  `sam-create-playwright-tests`, and applicable `sam-create-task-demo-video`
+  completed with no unresolved blockers.
 - Confirm there are no unrelated changes.
 
 Create PR/MR using the available tool:
@@ -524,11 +500,10 @@ Task is complete only when all are true:
 - Applicable UX, accessibility, privacy, performance, observability, and
   compatibility risks were checked without broadening the feature unnecessarily.
 - Six-perspective review loop reports no unresolved blockers.
-- Selected post-code gates completed with no required correction remaining.
-- In `FULL_MODE`, `sam-review-code` and `sam-create-test-coverage` completed and
-  all required coverage gaps are resolved.
-- In `FULL_MODE`, applicable `sam-create-playwright-tests` and
-  `sam-create-task-demo-video` completed or have documented non-applicability.
+- `sam-review-code` and `sam-create-test-coverage` completed and all required
+  coverage gaps are resolved.
+- Applicable `sam-create-playwright-tests` and `sam-create-task-demo-video`
+  completed or have documented non-applicability.
 - Final diff is simple and reviewable.
 - Temporary planning files are not committed.
 - Draft PR/MR is created.

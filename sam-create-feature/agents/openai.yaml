@@ -1,4 +1,4 @@
 interface:
   display_name: "Sam Create Feature"
   short_description: "Feature workflow with requirements, refine loop, TDD, validation, and PR evidence."
-  default_prompt: "Use $sam-create-feature in FULL_MODE unless the user explicitly asks for FAST_MODE: discover requirements, run the refinement loop, implement with TDD, complete post-code gates, validate, and create draft PR/MR evidence."
+  default_prompt: "Use $sam-create-feature to discover requirements, run the refinement loop, implement with TDD, complete post-code gates, validate, and create draft PR/MR evidence."
