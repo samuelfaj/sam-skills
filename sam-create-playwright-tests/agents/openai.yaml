@@ -1,3 +1,4 @@
 interface:
   display_name: "Sam Create Playwright Tests"
   short_description: "Map flows, write E2E coverage, and attach Playwright evidence."
+  default_prompt: "Use $sam-create-playwright-tests to map impacted browser flows, create meaningful Playwright coverage, run it against the real linked app when possible, and attach evidence when requested."

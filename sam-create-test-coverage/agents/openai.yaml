@@ -1,5 +1,4 @@
-name: sam-create-test-coverage
-version: 1.0.0
-short_description: "Sam exhaustive risk-based test coverage across unit, component, integration, API, and E2E layers."
-author: sam
-entrypoint: SKILL.md
+interface:
+  display_name: "Sam Create Test Coverage"
+  short_description: "Risk-based test coverage across unit, component, integration, API, and E2E layers."
+  default_prompt: "Use $sam-create-test-coverage to map affected behavior, add the smallest meaningful tests for confidence, run relevant validation, and report exact blockers."

@@ -311,8 +311,8 @@ Coverage work is complete only when:
 
 Full-confidence rule:
 
-- Only say `100% confidence` when every QA/acceptance criterion and every meaningful matrix row is automated, manually proven, or explicitly redundant; all affected local suites pass; linked frontend/backend services are exercised with the real UI when the task crosses that boundary; E2E with real data, if any, ran only in verified dev; and PR/MR evidence is attached when requested.
-- If any of those conditions is missing, do not say `100% confidence`. State the exact confidence blocker instead.
+- Only say `FULL CONFIDENCE` when every QA/acceptance criterion and every meaningful matrix row is automated, manually proven, or explicitly redundant; all affected local suites pass; linked frontend/backend services are exercised with the real UI when the task crosses that boundary; E2E with real data, if any, ran only in verified dev; and PR/MR evidence is attached when requested.
+- If any of those conditions is missing, do not say `FULL CONFIDENCE`. State the exact confidence blocker instead.
 
 ## Required Output Shape
 

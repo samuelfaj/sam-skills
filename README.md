@@ -16,6 +16,23 @@ Personal Codex skills.
 - `sam-review-code`: rigorous local code review for current workspace changes, returned in Codex without PR/MR comments.
 - `sam-review-pr`: rigorous end-to-end GitHub/GitLab PR or MR review with published platform comments.
 
+## Workflow defaults
+
+- `sam-create-feature` and `sam-fix-bug` use `FAST_MODE` by default: bounded
+  refinement, failing coverage when supported, smallest safe implementation,
+  targeted validation, and local review.
+- Use `FULL_MODE` only when the user asks for the strict workflow or the task
+  touches high-risk areas such as production data, migrations, security,
+  authorization, payment, release/deploy work, cross-repo integration, or a
+  critical user-facing flow.
+- Cross-skill references are not treated as magic commands. A skill that needs
+  another skill must load the sibling `SKILL.md`, pass a compact input block,
+  execute only applicable steps, and report `DEPENDENCY_FALLBACK` if the sibling
+  skill is unavailable.
+- Local planning artifacts such as `REQUIREMENTS.html`, `ANALYSIS.html`,
+  `TDD.html`, and `TODO.html` are optional. Create them only in `FULL_MODE`, for
+  complex tasks, or when explicitly requested. Never commit them.
+
 ## Custom instructions
 
 Add to your global `CLAUDE.md` / `AGENTS.md`:
@@ -124,6 +141,7 @@ python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-githu
     sam-create-feature \
     sam-fix-bug \
     sam-orchestrate \
+    sam-pr-description \
     sam-refine-task \
     sam-simplify-task \
     sam-review-code \
@@ -131,3 +149,11 @@ python3 ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-githu
 ```
 
 Restart Codex after installing or updating skills.
+
+To install globally for Codex and Claude from a local checkout, copy each
+`sam-*` directory into:
+
+- `~/.codex/skills/`
+- `~/.claude/skills/`
+
+Then verify every installed skill has a `SKILL.md` with a `name:` field.

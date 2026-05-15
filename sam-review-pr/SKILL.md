@@ -490,7 +490,7 @@ EN-US
 
 ### Final Decision: `<APPROVE | CHANGES REQUIRED | COMMENT ONLY>`
 
-- **Confidence:** `<0-100%>`
+- **Confidence:** `<LOW|MEDIUM|HIGH>`
 - **Overall rating:** `<0-10>`
 ```
 

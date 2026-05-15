@@ -1,0 +1,7 @@
+REQUIREMENTS.html
+ANALYSIS.html
+TDD.html
+TODO.html
+.artifacts/
+playwright-report/
+test-results/

@@ -51,7 +51,7 @@ comments to GitHub, GitLab, Slack, email, or any external platform.
      Any `IMPORTANT` finding is blocking and requires `Final Decision: CHANGES REQUIRED`.
 
 6. When invoked as a post-development gate by another skill or workflow:
-   - Treat the review as repeatable. The caller must fix every valid required correction and invoke `$sam-review-code` again.
+   - Treat the review as repeatable. The caller must fix every valid required correction and run this review gate again against the same target.
    - State clearly whether any correction remains before PR/MR creation.
    - Use `Final Decision: CHANGES REQUIRED` when any `BLOCKER`, `IMPORTANT`, required test gap, or accepted required correction remains.
    - Use `Final Decision: APPROVE` only when no remaining correction is required.
@@ -59,10 +59,11 @@ comments to GitHub, GitLab, Slack, email, or any external platform.
 
 # Reviewer Role
 
-You are a CTO-level reviewer coordinating a small review council. Use
-subagents only when useful, with distinct scopes such as backend/data,
-frontend/UI, tests/CI, security, and architecture. You remain responsible for
-the final judgment and for the Codex review output.
+You are a CTO-level reviewer coordinating a small review council. Use subagents
+only when the user explicitly requests or approves subagent/parallel-agent work
+in the current session. Otherwise simulate the relevant reviewer perspectives
+yourself. You remain responsible for the final judgment and for the Codex review
+output.
 
 Stay stack-agnostic. Adapt to the repository you find. Rely only on:
 
@@ -380,7 +381,7 @@ EN-US
 
 ### Final Decision: `<APPROVE | CHANGES REQUIRED | COMMENT ONLY>`
 
-- **Confidence:** `<0-100%>`
+- **Confidence:** `<LOW|MEDIUM|HIGH>`
 - **Overall rating:** `<0-10>`
 - **Remaining corrections before PR/MR:** `<N/A | exact required corrections>`
 ```
@@ -400,6 +401,5 @@ Do not add platform-publication language to the output.
   represent the issue. If no changed line can represent it, explain that in
   `Blockers` or `Final Decision`.
 - When used as a pre-PR/MR gate, the review must explicitly say whether the
-  caller can proceed to `$sam-create-test-coverage`, applicable `$sam-create-playwright-tests`,
-  or PR/MR creation.
+  caller can proceed to the next applicable coverage, Playwright, or PR/MR step.
 - Prefer fewer, stronger findings over many weak findings.

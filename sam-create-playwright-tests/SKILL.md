@@ -278,8 +278,8 @@ The E2E work is complete only when:
 
 Full-confidence rule:
 
-- Only say `100% confidence` when every QA/acceptance criterion and every meaningful matrix row is automated, manually proven, or explicitly redundant; all affected local suites pass; linked frontend/backend services are exercised when the task crosses that boundary; and PR/MR evidence is attached when requested.
-- If any of those conditions is missing, do not say `100% confidence`. State the exact confidence blocker instead.
+- Only say `FULL CONFIDENCE` when every QA/acceptance criterion and every meaningful matrix row is automated, manually proven, or explicitly redundant; all affected local suites pass; linked frontend/backend services are exercised when the task crosses that boundary; and PR/MR evidence is attached when requested.
+- If any of those conditions is missing, do not say `FULL CONFIDENCE`. State the exact confidence blocker instead.
 
 ## Step 7: Local Playwright Video Recording And PR Attachment
 

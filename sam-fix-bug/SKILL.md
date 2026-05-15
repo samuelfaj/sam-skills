@@ -1,6 +1,6 @@
 ---
 name: sam-fix-bug
-description: Run a complete autonomous bugfix workflow with /sam-refine-task confidence loop before tests, test-first reproduction, six-perspective review, minimal implementation, final validation, and PR evidence.
+description: Run a complete autonomous bugfix workflow with strategy refinement before tests, test-first reproduction, six-perspective review, minimal implementation, final validation, and PR evidence when applicable.
 ---
 
 # Sam Fix Bug
@@ -20,14 +20,59 @@ Fix the reported bug correctly, with the smallest reasonable diff, strong test c
 - Avoid overengineering.
 - Do not introduce broad refactors unless strictly necessary.
 - Keep the final diff as small and clear as possible.
-- Do not commit temporary planning documents such as `ANALYSIS.html`, `TDD.html`, or `TODO.html`.
+- Do not create temporary planning documents by default. Create `ANALYSIS.html`,
+  `TDD.html`, or `TODO.html` only in `FULL_MODE`, for complex bugs, or when the
+  user explicitly requests local artifacts.
+- Do not commit temporary planning documents.
 - Do not skip tests. If a test cannot be implemented or run, explain exactly why.
 - Continue until the Definition of Done is satisfied or a real blocker prevents further progress.
 
+## Execution Modes
+
+Use `FAST_MODE` by default for small or normal bug fixes.
+
+`FAST_MODE` requires:
+
+- Reproduce or explain why direct reproduction is blocked.
+- Run one bounded strategy refinement pass before test mapping.
+- Add or update the smallest meaningful failing regression test when the
+  repository supports it.
+- Implement the smallest safe fix.
+- Run targeted validation and any affected test suites.
+- Review the final diff for blockers.
+- Create or update a PR/MR only when the user asked for it or the task clearly requires it.
+
+Use `FULL_MODE` only when the user explicitly asks for the strict/full workflow,
+the bug is high risk, or the work touches production data, migrations, security,
+authorization, payment, release/deploy behavior, cross-repo integration, or a
+critical user-facing flow.
+
+`FULL_MODE` adds:
+
+- Optional local planning artifacts when they materially improve handoff quality.
+- Up to two strategy refinement passes unless new evidence appears.
+- Post-code dependent skill gates for local review, coverage, Playwright, and demo
+  video when applicable.
+- PR/MR evidence by default.
+
+## Dependent Skill Protocol
+
+When this skill needs another local skill, do not assume `$sam-*` is an executable
+handoff. Resolve and run the dependency as instructions:
+
+1. Load the sibling skill file, for example `../sam-refine-task/SKILL.md`.
+2. Pass a compact input block with `Bug`, `Scope`, `Current evidence`,
+   `Changed files`, `No-go scope`, `Required output`, and `Pass criteria`.
+3. Execute only the dependency steps that apply to the current mode and task risk.
+4. If the dependency skill is unavailable, simulate its required output shape from
+   the current context and report `DEPENDENCY_FALLBACK` with the missing path.
+5. Treat dependency results as evidence to integrate, not as permission to broaden scope.
+
 ## HTML Artifact Standard
 
-When this skill creates local `.html` planning documents, make them useful HTML
-artifacts, not markdown copied into HTML tags.
+When this skill creates local `.html` planning documents in `FULL_MODE` or by
+explicit request, make them useful HTML artifacts, not markdown copied into HTML
+tags.
 
 Each artifact must:
 
@@ -78,25 +123,24 @@ Check, when applicable:
 
 ## Pre-Test Refinement Gate
 
-Before mapping, creating, updating, or running tests, run `/sam-refine-task`
-against the current bug understanding and proposed strategy.
+Before mapping, creating, updating, or running tests, refine the current bug
+understanding and proposed strategy using the Dependent Skill Protocol for
+`sam-refine-task`.
 
-Loop until confidence is extreme:
+Use a bounded loop:
 
-1. Run `/sam-refine-task` with the reported bug, observed evidence or
+1. Run one refinement pass with the reported bug, observed evidence or
    reproduction hypothesis, affected-code evidence, proposed fix boundary, and
    proposed regression-test strategy.
-2. If `/sam-refine-task` finds loopholes, unclear assumptions, weak regression
-   intent, risky scope, or simpler viable approaches, update `ANALYSIS.html`
-   and the strategy.
-3. Run `/sam-refine-task` again.
-4. Continue until the latest refinement pass reports no blocking gaps, no major
-   unresolved assumptions, and an extreme-confidence path to reproduction, fix,
-   and tests.
+2. If the pass finds blocking ambiguity, weak regression intent, risky scope, or
+   a simpler viable approach, update the strategy and ask the minimum blocking
+   questions when needed.
+3. Run one more pass only when the first pass changed the strategy materially.
+4. Stop after two passes unless new evidence appears.
 
-Do not proceed to test mapping or TDD until this gate passes. If extreme
-confidence is impossible because of missing product or bug-report details, ask
-the user the minimum blocking questions before tests.
+Do not proceed to test mapping or TDD while a blocking bug-report or product
+decision is unknown. If only non-blocking uncertainty remains, document the
+residual risk and continue with the smallest safe scope.
 
 ## Step 1: Reproduce And Map Tests
 
@@ -181,7 +225,9 @@ Each reviewer must answer:
 - What accessibility, privacy, performance, observability, or compatibility risk
   could the fix introduce?
 
-Create local `ANALYSIS.html` as a valid standalone HTML document with:
+Capture the analysis in the response or working notes by default. In `FULL_MODE`,
+for complex bugs, or when explicitly requested, create local `ANALYSIS.html` as
+a valid standalone HTML document with:
 
 - Bug summary
 - Root-cause hypothesis
@@ -206,7 +252,9 @@ risk/mitigation table.
 
 Spawn a TDD expert subagent only if the user explicitly allows subagents. Otherwise simulate the TDD expert yourself.
 
-Create local `TDD.html` as a valid standalone HTML document with:
+Capture the TDD plan in the response or working notes by default. In `FULL_MODE`,
+for complex bugs, or when explicitly requested, create local `TDD.html` as a
+valid standalone HTML document with:
 
 - Failing tests already added
 - Additional tests to add
@@ -227,7 +275,9 @@ validation checklist.
 
 ## Step 5: TODO And Implementation
 
-Create local `TODO.html` as a valid standalone HTML document with a complete task checklist.
+Track the implementation checklist in the response or working notes by default.
+In `FULL_MODE`, for complex bugs, or when explicitly requested, create local
+`TODO.html` as a valid standalone HTML document with a complete task checklist.
 
 Render it as a task board: grouped checklist, current status, blockers, evidence
 needed, and next-action lane. If inline JavaScript is useful, support local
@@ -337,34 +387,33 @@ Collect final proof:
   when those risks are relevant
 - Relevant before/after evidence
 
-## Step 9: Mandatory Post-Code Gates
+## Step 9: Post-Code Gates
 
-After coding, run the mandatory gates in this exact order and complete each one
-fully before moving to the next:
+After coding, run the gates that match the selected mode and task risk.
 
-1. Invoke `$sam-review-code` against the final local diff.
-2. Fix every valid correction from `$sam-review-code`.
+`FAST_MODE` gate:
+
+1. Review the final local diff for blockers using the Dependent Skill Protocol
+   for `sam-review-code` when useful, or a local self-review when the diff is tiny.
+2. Fix every valid required correction.
 3. Rerun relevant tests after each correction.
-4. Invoke `$sam-review-code` again.
-5. Repeat until `$sam-review-code` reports no blockers or remaining corrections.
-6. Invoke `$sam-create-test-coverage` against the final local diff and complete it.
-7. Implement every required test or fix found by `$sam-create-test-coverage`.
-8. Invoke `$sam-create-playwright-tests` for the impacted user flows and edge cases
-   and complete it.
-9. Implement every required Playwright test or fix found by
-   `$sam-create-playwright-tests`.
-10. Invoke `$sam-create-task-demo-video` for the completed workflow and complete it.
-11. Attach or collect the generated demo-video evidence required by that skill.
+4. Do not proceed to PR/MR creation while a required correction, unresolved
+   blocker, or unknown relevant test status remains.
 
-If `$sam-create-test-coverage`, `$sam-create-playwright-tests`, or
-`$sam-create-task-demo-video` changes production or test code, restart this sequence
-from `$sam-review-code` and repeat the gates in the same order until the full
-sequence completes with no blockers.
+`FULL_MODE` gate:
 
-Do not create the PR/MR while `$sam-review-code`, `$sam-create-test-coverage`,
-`$sam-create-playwright-tests`, or `$sam-create-task-demo-video` still has a required
-correction, unresolved blocker, missing evidence artifact, or unknown relevant
-test status.
+1. Run `sam-review-code` against the final local diff.
+2. Fix every valid correction and rerun relevant tests.
+3. Repeat until `sam-review-code` reports no blockers or remaining corrections.
+4. Run `sam-create-test-coverage` against the final local diff.
+5. Implement every required test or fix found by `sam-create-test-coverage`.
+6. Run `sam-create-playwright-tests` for impacted browser flows when applicable.
+7. Implement every required Playwright test or fix found by that skill.
+8. Run `sam-create-task-demo-video` only when demo evidence is requested or
+   reviewer-facing visual proof is needed.
+
+If a dependent gate changes production or test code, return to the review step
+and repeat only the affected gates.
 
 ## Step 10: Prepare Pull Request Or Merge Request
 
@@ -375,10 +424,10 @@ Before creating PR/MR:
 - Check `git diff`.
 - Check `git status`.
 - Run final test suite.
-- Confirm `$sam-review-code` has no remaining corrections.
-- Confirm `$sam-create-test-coverage` completed fully with no unresolved blocker.
-- Confirm `$sam-create-playwright-tests` completed fully with no unresolved blocker.
-- Confirm `$sam-create-task-demo-video` completed fully and produced demo evidence.
+- Confirm the selected post-code gates have no remaining required corrections.
+- In `FULL_MODE`, confirm `sam-review-code`, `sam-create-test-coverage`,
+  applicable `sam-create-playwright-tests`, and applicable
+  `sam-create-task-demo-video` completed with no unresolved blockers.
 - Confirm there are no unrelated changes.
 
 Create PR/MR using available tool:
@@ -405,7 +454,7 @@ Do not include or commit `ANALYSIS.html`, `TDD.html`, or `TODO.html`.
 Task is complete only when all are true:
 
 - Bug is reproduced by at least one failing test before the fix.
-- Real business rule is documented locally.
+- Real business rule is documented in the response, tests, or local artifact when created.
 - Fix is implemented with minimal production-code changes.
 - All relevant tests pass.
 - New regression coverage exists.
@@ -413,14 +462,11 @@ Task is complete only when all are true:
 - Applicable UX, accessibility, privacy, performance, observability, and
   compatibility risks were checked without broadening the fix unnecessarily.
 - Six-perspective review loop reports no unresolved blockers.
-- Mandatory post-code gate sequence completed in order:
-  `$sam-review-code`, `$sam-create-test-coverage`, `$sam-create-playwright-tests`,
-  `$sam-create-task-demo-video`.
-- `$sam-review-code` loop reports no blockers or remaining corrections.
-- `$sam-create-test-coverage` completed and all required coverage gaps are resolved.
-- `$sam-create-playwright-tests` completed and all required browser coverage gaps
-  are resolved.
-- `$sam-create-task-demo-video` completed and demo-video evidence is available.
+- Selected post-code gates completed with no required correction remaining.
+- In `FULL_MODE`, `sam-review-code` and `sam-create-test-coverage` completed and
+  all required coverage gaps are resolved.
+- In `FULL_MODE`, applicable `sam-create-playwright-tests` and
+  `sam-create-task-demo-video` completed or have documented non-applicability.
 - Final diff is simple and reviewable.
 - Temporary planning files are not committed.
 - PR/MR is created.
@@ -446,8 +492,8 @@ Report in this order:
 4. Files changed
 5. Commands run and results
 6. Review-loop blockers and resolution
-7. `$sam-review-code` loop result
-8. `$sam-create-test-coverage` result
-9. `$sam-create-playwright-tests` result or non-applicability reason
+7. Review gate result
+8. Test coverage gate result
+9. Playwright/demo evidence result or non-applicability reason
 10. PR/MR link
 11. Risks, gaps, or untested cases
