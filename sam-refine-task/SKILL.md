@@ -1,6 +1,6 @@
 ---
 name: sam-refine-task
-description: Run a strategy-confidence loop that finds loopholes, proposes fixes, and repeats until the strategy is factually defensible.
+description: Run a strategy-confidence loop that finds loopholes, proposes fixes, applies strict maintainability pressure, and repeats until the strategy is factually defensible.
 ---
 
 # Sam Refine Task
@@ -88,6 +88,19 @@ Search for loopholes from every relevant angle:
   preflight failures hiding a real API status or wrong endpoint
 - Manual-step or human-process assumptions
 - Edge cases that invalidate the expected outcome
+- Structural code-quality regressions hidden inside the proposed approach
+- Missed simplifications where a different framing would delete branches,
+  helpers, modes, conditionals, layers, or special cases
+- File-growth risk, especially any plan that pushes a runtime file from under
+  1000 lines to over 1000 lines without a compelling reason
+- Spaghetti-growth risk from ad-hoc conditionals or one-off flags added to busy
+  shared flows
+- Boundary, abstraction, and type-contract drift: feature logic in shared paths,
+  wrong-layer logic, thin wrappers, unnecessary casts, `any`, `unknown`, unclear
+  optionality, or bespoke helpers where a canonical helper already exists
+- Orchestration risk from unnecessary sequential work, non-atomic related
+  updates, or partial state that would be simpler to reason about if grouped
+  differently
 
 For each loophole, capture:
 
@@ -111,6 +124,19 @@ Prefer fixes that are:
 - Aligned with existing architecture and workflow
 - Easy to verify with local, CI, dev, staging, or production-safe evidence
 
+Also run a strict maintainability pass before accepting the refined strategy:
+
+- Look for a "code judo" move: a behavior-preserving reframing that makes the
+  implementation dramatically smaller, more direct, or easier to reason about.
+- Prefer deleting complexity over moving it around. A refactor that keeps the
+  same number of concepts, modes, branches, and helper layers is not enough when
+  a simpler model is visible.
+- Push logic into the canonical owning layer, existing helper, explicit typed
+  model, state machine, policy object, or focused module when that removes
+  scattered special cases.
+- Reject speculative configurability, magical generic handling, and wrappers
+  that do not earn their indirection.
+
 Do not add speculative process or implementation work that does not close a real
 loophole.
 
@@ -125,6 +151,17 @@ Define the proof needed for the refined strategy:
 - Rollback or recovery proof, when relevant
 
 Every material claim must map to a verification item.
+
+The verification plan must include proof for any structural maintainability
+claim it relies on:
+
+- File-size and decomposition checks when the plan touches large or growing
+  runtime files.
+- Direct evidence that new logic lives in the owning layer and reuses canonical
+  helpers where they exist.
+- Tests or static checks that cover any new typed boundary, dispatcher, policy,
+  state model, or orchestration change introduced to delete branching.
+- A rollback or recovery proof when the strategy groups updates more atomically.
 
 For any browser-to-API, frontend/backend, or cross-origin workflow, the
 verification plan must explicitly prove:

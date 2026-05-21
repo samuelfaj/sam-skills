@@ -1,4 +1,4 @@
 interface:
   display_name: "Sam Refine Task"
-  short_description: "Stress-test a strategy, close loopholes, and loop until confidence is factual."
-  default_prompt: "Use $sam-refine-task to challenge this strategy, find loopholes, fix them, and repeat until confidence is factually justified."
+  short_description: "Stress-test a strategy, close loopholes, apply maintainability pressure, and loop until confidence is factual."
+  default_prompt: "Use $sam-refine-task to challenge this strategy, find loopholes including structural code-quality risks, fix them, and repeat until confidence is factually justified."

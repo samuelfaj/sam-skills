@@ -1,4 +1,4 @@
 interface:
   display_name: "Sam Simplify Task"
-  short_description: "Review completed work, simplify code safely, and prove behavior stayed correct."
-  default_prompt: "Use $sam-simplify-task after the task is done to simplify the completed work, preserve behavior, and validate the result."
+  short_description: "Review completed work, simplify code aggressively but safely, and prove behavior stayed correct."
+  default_prompt: "Use $sam-simplify-task after the task is done to simplify the completed work with strict maintainability pressure, preserve behavior, and validate the result."

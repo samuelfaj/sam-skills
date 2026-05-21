@@ -1,6 +1,6 @@
 ---
 name: sam-simplify-task
-description: Run a post-task simplification loop that reviews completed work, removes unnecessary complexity, and proves behavior stayed correct.
+description: Run a post-task simplification loop that reviews completed work, removes unnecessary complexity with strict maintainability pressure, and proves behavior stayed correct.
 ---
 
 # Sam Simplify Task
@@ -35,6 +35,32 @@ Use these principles while simplifying:
   are safe.
 - Remember tests are maintainable code too; simplify brittle or overcomplicated
   tests when doing so preserves useful coverage.
+
+## Thermo-Nuclear Simplification Bar
+
+Apply this as an addition to the normal post-task simplification loop. Be
+ambitious about structural simplification, but only when behavior can remain
+unchanged and proof is available.
+
+Look for a behavior-preserving "code judo" move:
+
+- Delete whole categories of complexity instead of polishing them.
+- Reframe state so conditionals disappear instead of centralizing the same
+  branches.
+- Collapse duplicate branches into one direct flow.
+- Move feature logic to the canonical owning layer or existing helper.
+- Replace condition chains with an explicit typed model, dispatcher, policy, or
+  state machine when that removes scattered special cases.
+- Delete wrappers, identity abstractions, generic magic, casts, optionality, and
+  pass-through helpers that do not simplify callers.
+- Split a file that crossed or is about to cross 1000 lines because of the task
+  when a focused module would make the change easier to review.
+- Separate orchestration from business logic and group related updates more
+  atomically when partial state is harder to reason about.
+
+Do not accept a refactor that merely moves complexity around. A simplification
+must reduce the number of concepts, branches, states, helpers, or layers a
+future reader must hold.
 
 ## Constraints
 

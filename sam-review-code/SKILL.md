@@ -1,6 +1,6 @@
 ---
 name: sam-review-code
-description: "Run a rigorous local code review in the current workspace and return the review in Codex only. Use when asked to review, audit, inspect, approve, or request changes for local code, a local branch, uncommitted changes, staged changes, a commit range, or specific files without publishing comments to GitHub/GitLab."
+description: "Run a rigorous local code review in the current workspace and return the review in Codex only, including strict maintainability and structural simplification checks. Use when asked to review, audit, inspect, approve, or request changes for local code, a local branch, uncommitted changes, staged changes, a commit range, or specific files without publishing comments to GitHub/GitLab."
 ---
 
 # Sam Review Code
@@ -93,6 +93,54 @@ Every finding must include:
 
 Never invent findings. If you cannot prove an issue from the diff, code context,
 or command output, phrase it as a question or omit it.
+
+# Thermo-Nuclear Maintainability Bar
+
+Apply this as an addition to the normal correctness, security, architecture,
+and test bar. Be unusually strict about structural code quality.
+
+For every meaningful change, ask:
+
+- Is there a behavior-preserving "code judo" move that would make the
+  implementation dramatically simpler, smaller, or more direct?
+- Did the diff add branches, modes, helpers, wrappers, or layers that a simpler
+  framing could delete?
+- Did a cohesive file, component, service, route, or module become more tangled,
+  stateful, coupled, or harder to scan?
+- Is the logic in the canonical owning layer, using existing helpers and typed
+  boundaries, or did the diff create a bespoke path?
+- Did the change introduce ad-hoc conditionals, one-off flags, unnecessary
+  optionality, `any`, `unknown`, casts, magical generic handling, or pass-through
+  abstractions that hide a simple data shape?
+- Did the diff push a runtime file from under 1000 lines to over 1000 lines
+  without a strong decomposition reason?
+- Are related updates needlessly sequential or less atomic than the repository's
+  safer patterns require?
+
+Flag aggressively:
+
+- Structural regressions that make the codebase harder to change or test.
+- Spaghetti growth from special-case branches in busy shared flows.
+- Refactors that move complexity around without deleting concepts.
+- Feature-specific logic leaking into shared utilities, controllers, UI
+  components, models, adapters, or packages that do not own it.
+- Thin abstractions, wrappers, or generic mechanisms that add indirection
+  without making callers simpler.
+- Duplicate or near-duplicate helpers where a canonical utility exists.
+- Cast-heavy or optional-heavy contracts that obscure the real invariant.
+
+Prefer remedies that delete complexity: reframe the state model, collapse
+duplicate branches, move logic to the owning layer, reuse a canonical helper,
+extract one focused module, replace condition chains with an explicit typed
+model or dispatcher, separate orchestration from business logic, or make related
+updates atomic when partial state would be harder to reason about.
+
+Treat a clear structural regression as `IMPORTANT` by default. Escalate to
+`BLOCKER` when it bypasses an established boundary for correctness, security,
+data integrity, or testability; when it leaves critical behavior untestable; or
+when it pushes a file past the 1000-line threshold without a compelling reason.
+Do not approve just because behavior works if the implementation obviously makes
+the codebase messier and a simpler structure is visible.
 
 # Severity Policy
 
