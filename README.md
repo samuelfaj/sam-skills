@@ -10,6 +10,7 @@ Personal Codex skills.
 - `sam-create-feature`: autonomous feature workflow with requirements discovery, TDD implementation, validation, and PR evidence.
 - `sam-fix-bug`: autonomous bugfix workflow with failing tests first, local analysis notes, minimal implementation, validation, and PR evidence.
 - `sam-orchestrate`: run Codex as a controller-only orchestrator that delegates execution to subagents with controlled `gpt-5.4-mini`/`gpt-5.5` effort and a final `gpt-5.5 medium` review.
+- `sam-orchestrate-claude`: Claude port of `sam-orchestrate` that delegates execution to subagents across `haiku`/`sonnet`/`opus`/`fable` by cost and risk, with a final `opus medium` review.
 - `sam-pr-description`: create standardized English GitHub PR or GitLab MR descriptions from branch commits, diffs, tests, safety, and business rules.
 - `sam-refine-task`: stress-test a strategy, find loopholes, apply proper fixes, and loop until confidence is factual.
 - `sam-simplify-task`: review completed work, remove unnecessary complexity, and prove behavior stayed correct.
