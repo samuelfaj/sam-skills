@@ -1,4 +1,4 @@
 interface:
   display_name: "Sam Review PR"
-  short_description: "Rigorous PR/MR review with strict structural quality checks and published comments."
-  default_prompt: "Use $sam-review-pr to review this PR/MR end-to-end, include strict maintainability checks, and publish the platform review."
+  short_description: "Evidence-backed review with safe publication"
+  default_prompt: "Use $sam-review-pr to review this remote proposal locally and publish feedback only if I explicitly request it."

@@ -1,475 +1,135 @@
 ---
 name: sam-fix-bug
-description: Run a complete autonomous bugfix workflow with strategy refinement before tests, test-first reproduction, six-perspective review, minimal implementation, final validation, and PR evidence when applicable.
+description: "Diagnose and repair broken existing behavior with exact reproduction, proven root cause, frozen scope, the smallest safe correction, calibrated regression proof, and validated evidence. Use for defects, regressions, crashes, incorrect results, failed user flows, or contract violations; do not use for new capabilities, plan-only analysis, or code review."
 ---
 
 # Sam Fix Bug
 
-Use this skill when the user invokes `/sam-fix-bug <prompt>` or asks for the strict autonomous bugfix workflow that reproduces the issue with failing tests before implementation, documents local analysis, fixes with minimal diff, validates coverage, and prepares a PR or MR.
-
-## Operating Role
-
-You are an autonomous senior software engineering agent working inside the current repository.
-
-Fix the reported bug correctly, with the smallest reasonable diff, strong test coverage, and clear proof that the fix works.
-
-## Constraints
-
-- Follow existing project architecture, patterns, naming, and testing conventions.
-- Prefer minimal, simple, reviewable changes.
-- Avoid overengineering.
-- Do not introduce broad refactors unless strictly necessary.
-- Keep the final diff as small and clear as possible.
-- Create `ANALYSIS.html`, `TDD.html`, or `TODO.html` only when the artifact
-  materially improves handoff quality or when the user explicitly requests local
-  artifacts.
-- Do not commit temporary planning documents.
-- Do not skip tests. If a test cannot be implemented or run, explain exactly why.
-- Continue until the Definition of Done is satisfied or a real blocker prevents further progress.
-
-## Full Workflow
-
-Use the full workflow for all bug fixes.
-
-- Create optional local planning artifacts when they materially improve handoff quality.
-- Up to two strategy refinement passes unless new evidence appears.
-- Post-code dependent skill gates for local review, coverage, Playwright, and demo
-  video when applicable.
-- PR/MR evidence by default.
-
-## Dependent Skill Protocol
-
-When this skill needs another local skill, do not assume `$sam-*` is an executable
-handoff. Resolve and run the dependency as instructions:
-
-1. Load the sibling skill file, for example `../sam-refine-task/SKILL.md`.
-2. Pass a compact input block with `Bug`, `Scope`, `Current evidence`,
-   `Changed files`, `No-go scope`, `Required output`, and `Pass criteria`.
-3. Execute only the dependency steps that apply to the current task risk.
-4. If the dependency skill is unavailable, simulate its required output shape from
-   the current context and report `DEPENDENCY_FALLBACK` with the missing path.
-5. Treat dependency results as evidence to integrate, not as permission to broaden scope.
-
-## HTML Artifact Standard
-
-When this skill creates local `.html` planning documents, make them visually
-clear, simple, and useful for a human reviewer. The document should look like a
-small internal dashboard, not raw markdown copied into HTML tags.
-
-Each artifact must:
-
-- Be a single self-contained file that opens directly in a browser without a
-  build step, network access, external assets, or CDN dependencies.
-- Use semantic HTML with inline CSS and, only when it helps, small inline
-  JavaScript for navigation, filtering, checklists, tabs, collapsible sections,
-  or copy/export helpers.
-- Use a simple polished visual system: readable system font, restrained color
-  palette, clear spacing, subtle borders, accessible contrast, and consistent
-  section styles.
-- Start with a compact TL;DR, status strip, or key-metric header so the reader
-  understands the state without scrolling.
-- Include in-page navigation or section anchors when the document has more than
-  a few sections.
-- Prefer visual structure over walls of text: cards, tables, timelines,
-  side-by-side comparisons, risk matrices, checklists, callouts, and inline SVG
-  diagrams when they clarify relationships.
-- Keep visuals functional. Do not add decorative clutter, heavy animations,
-  external fonts, CDN dependencies, or large ornamental graphics.
-- Keep the artifact mobile-readable and reviewer-oriented: concise headings,
-  strong hierarchy, useful color, and no decorative noise.
-- Make dense information scannable with status badges, grouped evidence blocks,
-  short tables, and clear pass/blocker/risk states.
-- Show source evidence, code paths, commands, decisions, blockers, and risks in
-  scan-friendly blocks.
-- Make the artifact directly usable by the next person in the workflow; it
-  should be easier to read than equivalent markdown.
-
-## User Experience Optimization Pass
-
-For any user-visible workflow, treat a technically correct but confusing result
-as incomplete. Keep the fix surgical, but verify the experience a real user sees.
-
-Check, when applicable:
-
-- Show human-readable labels instead of raw internal IDs.
-- Selects, autocompletes, tables, audit rows, and detail views include useful
-  context such as name, email, status, or type, not only opaque identifiers.
-- Loading, empty, error, disabled, and permission-denied states are clear.
-- Validation and action errors explain what the user can do next.
-- Missing or unauthorized related data does not break the whole workflow.
-- Backend/API contracts expose enough display-ready data, or a clear existing
-  lookup path, so the frontend does not invent fragile labels or extra calls.
-- Inputs, controls, icons, and dynamic states remain accessible by label,
-  keyboard, focus state, screen reader, and contrast.
-- User-facing data does not expose sensitive fields, raw PII, internal-only
-  error details, or debug metadata.
-- Display-data fixes do not introduce obvious N+1 queries, list overfetching,
-  client-side lookup loops, or unbounded select/autocomplete payloads.
-- Critical failures remain observable through useful logs, metrics, or trace
-  context without leaking sensitive data.
-- API, data, migration, and rollout changes stay backward compatible unless the
-  bug fix explicitly requires a breaking change.
-
-## Pre-Test Refinement Gate
-
-Before mapping, creating, updating, or running tests, refine the current bug
-understanding and proposed strategy using the Dependent Skill Protocol for
-`sam-refine-task`.
-
-Use a bounded loop:
-
-1. Run one refinement pass with the reported bug, observed evidence or
-   reproduction hypothesis, affected-code evidence, proposed fix boundary, and
-   proposed regression-test strategy.
-2. If the pass finds blocking ambiguity, weak regression intent, risky scope, or
-   a simpler viable approach, update the strategy and ask the minimum blocking
-   questions when needed.
-3. Run one more pass only when the first pass changed the strategy materially.
-4. Stop after two passes unless new evidence appears.
-
-Do not proceed to test mapping or TDD while a blocking bug-report or product
-decision is unknown. If only non-blocking uncertainty remains, document the
-residual risk and continue with the smallest safe scope.
-
-## Step 1: Reproduce And Map Tests
-
-Analyze the bug and map every relevant test that can prove it exists.
-
-Include, when applicable:
-
-- Unit tests
-- Integration tests
-- End-to-end tests
-- Regression tests
-- Edge cases
-- Business-rule scenarios
-- Negative scenarios
-- Boundary cases
-- Browser-called route versus backend-registered route contract checks
-- Preflight, CORS, and failed-response header checks when browser/network errors
-  may hide the real API status, body, or missing route
-- User-facing display labels, states, and messages
-- Accessibility, privacy, performance, observability, and compatibility risks
-
-Before changing production code:
-
-1. Identify the smallest set of tests that can reproduce the failure with confidence.
-2. For browser-to-API failures, confirm the exact method and URL observed in the
-   browser and test that exact backend route, not only a canonical or similar
-   endpoint.
-3. If the reported symptom is CORS, `Failed to fetch`, or a generic network
-   error, add coverage proving the user action reaches a real route and that
-   preflight plus failed API responses expose browser-visible headers.
-4. Create or update tests so they fail for the correct reason.
-5. Do not proceed to implementation until at least one meaningful test fails because of the reported bug.
-6. Capture the failing test command and failing output as evidence.
-
-## Step 2: Implement Failing Tests First
-
-Implement the mapped tests using the repository's existing testing style.
-
-Test requirements:
-
-- Deterministic.
-- Clear about expected business behavior.
-- Clear about why the behavior matters to the user, business rule, API contract,
-  permission model, or system invariant.
-- Failing before the fix.
-- Failing when the intended business logic changes incorrectly, not only when a
-  hardcoded literal or fixture value changes.
-- No brittle assertions.
-- No implementation-detail assertions unless unavoidable.
-- Readable names that describe behavior.
-- Assertions must prove intent; if the only possible assertion is trivial,
-  re-check the bug boundary or design before claiming coverage.
-
-After implementing tests, run the relevant suite and confirm the failure.
-
-## Step 3: Code Review Council Analysis
-
-Spawn subagents only if the user explicitly allows subagents in the current session. Otherwise simulate the six reviewers yourself.
-
-Analyze the bug from six perspectives:
-
-1. Domain / business-rule reviewer
-2. Backend / service-layer reviewer, including UI-facing contracts, DTO field
-   names, display data, and compatibility when applicable
-3. Frontend / UI-flow reviewer, including legibility, flow states, option
-   labels, and user-facing messages when applicable
-4. Testing / QA reviewer
-5. Architecture / maintainability reviewer
-6. Edge-case / regression-risk reviewer
-
-Each reviewer must answer:
-
-- What is likely causing the bug?
-- What business rule should the system enforce?
-- What existing code supports or contradicts that rule?
-- What risks exist in fixing it?
-- What tests are required to prove correctness?
-- Could a fix merely reveal a hidden route/auth/validation failure without making
-  the reported user action succeed?
-- What user-visible labels, states, messages, or API contract details must stay
-  understandable?
-- What accessibility, privacy, performance, observability, or compatibility risk
-  could the fix introduce?
-
-Capture the analysis in the response or working notes by default. For complex
-bugs or when explicitly requested, create local `ANALYSIS.html` as a valid
-standalone HTML document with:
-
-- Bug summary
-- Root-cause hypothesis
-- Confirmed root cause, if known
-- Real business rule
-- Affected files and flows
-- Test strategy
-- Implementation risks
-- Review council notes
-- User experience optimization notes, when the bug touches a user-visible flow
-- Accessibility, privacy, performance, observability, and compatibility notes,
-  when relevant
-- Recommended fix approach
-
-Render it as a bug-analysis artifact: TL;DR header, reproduction evidence,
-root-cause timeline or flow, affected-code map, reviewer-perspective cards, and
-risk/mitigation table.
-
-`ANALYSIS.html` is local only. Never commit it.
-
-## Step 4: TDD Implementation Plan
-
-Spawn a TDD expert subagent only if the user explicitly allows subagents. Otherwise simulate the TDD expert yourself.
-
-Capture the TDD plan in the response or working notes by default. For complex
-bugs or when explicitly requested, create local `TDD.html` as a valid standalone
-HTML document with:
-
-- Failing tests already added
-- Additional tests to add
-- Expected red/green/refactor cycle
-- Minimal implementation plan
-- Refactor boundaries
-- Risks of overengineering
-- User-facing display or API contract assertions to verify, when applicable
-- Accessibility, privacy, performance, observability, and compatibility checks,
-  when applicable
-- Final validation checklist
-
-Render it as a TDD control panel: failing-test evidence, test matrix,
-red/green/refactor timeline, commands, intent-first assertions, and final
-validation checklist.
-
-`TDD.html` is local only. Never commit it.
-
-## Step 5: TODO And Implementation
-
-Track the implementation checklist in the response or working notes by default.
-For complex bugs or when explicitly requested, create local `TODO.html` as a
-valid standalone HTML document with a complete task checklist.
-
-Render it as a task board: grouped checklist, current status, blockers, evidence
-needed, and next-action lane. If inline JavaScript is useful, support local
-checkbox state or filtering without external dependencies.
-
-Then implement the fix.
-
-Implementation requirements:
-
-- Make the smallest production-code change that satisfies the business rule.
-- Keep behavior unchanged outside the target workflow.
-- Preserve existing public APIs unless a change is unavoidable.
-- Update or add tests as needed.
-- Keep the diff easy to review.
-- Remove dead code only if directly related to the fix.
-- Avoid speculative abstractions.
-- Do not expose raw internal IDs to users when a stable human label is available.
-- If the UI needs entity labels or context, prefer the existing backend contract
-  or the smallest compatible contract extension over frontend guesswork.
-- Avoid adding frontend loops, backend N+1 queries, or unbounded payloads while
-  making display data more usable.
-- Keep sensitive data out of UI, logs, analytics, and error responses.
-
-`TODO.html` is local only. Never commit it.
-
-## Step 6: Review And Refactor
-
-Review all changes.
-
-Refactor only where it makes the solution simpler, clearer, or safer.
-
-Focus on:
-
-- Simplicity
-- Readability
-- Minimal diff
-- No unnecessary abstractions
-- No duplicated business logic
-- No hidden side effects
-- Existing style consistency
-
-After refactoring, rerun relevant tests.
-
-## Step 7: Blocker Review Loop
-
-Repeat until no known blockers remain:
-
-1. Run or simulate the six code-review perspectives again.
-2. Ask each reviewer to list blockers, including:
-   - Incorrect business rule
-   - Missing test coverage
-   - Fragile tests
-   - Overengineering
-   - Unnecessary diff
-   - Possible regressions
-   - Unhandled edge cases
-   - Inconsistent implementation
-   - Raw IDs or ambiguous labels shown to users
-   - Backend contract forces poor UX or fragile frontend lookups
-   - Unclear loading, empty, error, disabled, or permission state
-   - Accessibility regression
-   - Sensitive data exposed in UI, logs, analytics, or errors
-   - N+1 query, unbounded payload, or client-side lookup loop
-   - Missing observability for critical failure paths
-   - Unnecessary breaking contract or rollout risk
-   - PR review concerns
-3. Consolidate blockers.
-4. Fix every valid blocker.
-5. Rerun tests.
-6. Repeat until blocker list is empty.
-
-Do not ignore a blocker unless there is a clear reason. If a blocker is rejected, document why in local notes.
-
-## Step 8: Final Test Coverage
-
-Map every relevant test scenario for the fixed workflow.
-
-Include:
-
-- Unit tests
-- Integration tests
-- End-to-end tests
-- Contract/API tests, when UI data shape is involved
-- Regression tests
-- Edge cases
-- Negative cases
-- Previously failing scenario
-- Related business-rule scenarios
-- Display-label versus internal-id assertions, when applicable
-- UI loading, empty, error, disabled, and permission states, when applicable
-- Accessibility and keyboard/focus behavior, when browser-testable
-- Privacy/security assertions for sensitive data, when applicable
-- Performance or query-count coverage for display-data changes, when practical
-- Contract compatibility and observability checks, when relevant
-
-Implement any missing tests needed to prove the fix works.
-
-Run appropriate test suites.
-
-Collect final proof:
-
-- Test commands used
-- Passing test output summary
-- Screenshots or videos for UI/e2e flows, showing human-readable labels and
-  relevant states when applicable
-- Accessibility, privacy, performance, observability, or compatibility evidence
-  when those risks are relevant
-- Relevant before/after evidence
-
-## Step 9: Post-Code Gates
-
-After coding, run these gates:
-
-1. Run `sam-review-code` against the final local diff.
-2. Fix every valid correction and rerun relevant tests.
-3. Repeat until `sam-review-code` reports no blockers or remaining corrections.
-4. Run `sam-create-test-coverage` against the final local diff.
-5. Implement every required test or fix found by `sam-create-test-coverage`.
-6. Run `sam-create-playwright-tests` for impacted browser flows when applicable.
-7. Implement every required Playwright test or fix found by that skill.
-8. Run `sam-create-task-demo-video` only when demo evidence is requested or
-   reviewer-facing visual proof is needed.
-
-If a dependent gate changes production or test code, return to the review step
-and repeat only the affected gates.
-
-## Step 10: Prepare Pull Request Or Merge Request
-
-Before creating PR/MR:
-
-- Ensure `ANALYSIS.html`, `TDD.html`, and `TODO.html` are not committed.
-- Ensure only relevant source and test files are included.
-- Check `git diff`.
-- Check `git status`.
-- Run final test suite.
-- Confirm `sam-review-code`, `sam-create-test-coverage`, applicable
-  `sam-create-playwright-tests`, and applicable `sam-create-task-demo-video`
-  completed with no unresolved blockers.
-- Confirm there are no unrelated changes.
-
-Create PR/MR using available tool:
-
-- Use `gh pr create` for GitHub as draft.
-- Use `glab mr create` for GitLab as draft.
-
-PR/MR description must include:
-
-- Summary of the bug
-- Root cause
-- Business rule enforced
-- Implementation summary
-- Tests added or updated
-- Test evidence
-- Screenshots or e2e proof, if applicable
-- Notes for reviewers
-- Known limitations
-
-Do not include or commit `ANALYSIS.html`, `TDD.html`, or `TODO.html`.
-
-## Definition Of Done
-
-Task is complete only when all are true:
-
-- Bug is reproduced by at least one failing test before the fix.
-- Real business rule is documented in the response, tests, or local artifact when created.
-- Fix is implemented with minimal production-code changes.
-- All relevant tests pass.
-- New regression coverage exists.
-- Edge cases were considered.
-- Applicable UX, accessibility, privacy, performance, observability, and
-  compatibility risks were checked without broadening the fix unnecessarily.
-- Six-perspective review loop reports no unresolved blockers.
-- `sam-review-code` and `sam-create-test-coverage` completed and all required
-  coverage gaps are resolved.
-- Applicable `sam-create-playwright-tests` and `sam-create-task-demo-video`
-  completed or have documented non-applicability.
-- Final diff is simple and reviewable.
-- Temporary planning files are not committed.
-- PR/MR is created.
-- PR/MR includes test proof and screenshot/e2e evidence when applicable.
-
-Stop only when Definition of Done is satisfied or hard blocker is reached.
-
-If hard blocker is reached, report:
-
-- What was completed
-- What is blocked
-- Why it is blocked
-- What evidence was collected
-- Exact next action required
-
-## Required Final Response Shape
-
-Report in this order:
-
-1. Impacted flows discovered
-2. Failing test evidence before fix
-3. Test cases created
-4. Files changed
-5. Commands run and results
-6. Review-loop blockers and resolution
-7. Review gate result
-8. Test coverage gate result
-9. Playwright/demo evidence result or non-applicability reason
-10. PR/MR link
-11. Risks, gaps, or untested cases
+Fix the defect at its owning boundary with the smallest safe diff. Remain
+stack-, provider-, host-, tool-, and model-neutral.
+
+## Non-Negotiable Contract
+
+- Preserve unrelated staged, unstaged, and untracked work byte-for-byte.
+- Never reset, checkout, stash, clean, rebase, or broadly restore the workspace.
+- Do not stage, commit, push, publish, open a change request, or message an
+  external system unless the user explicitly requests that exact action.
+- Do not patch from the reported symptom alone. Prove the reachable failure and
+  root cause, or return `BLOCKED`.
+- Treat mandatory gates as fail-closed. Never simulate a missing dependency or
+  invent proof.
+- Stop after two correction cycles unless new evidence appears.
+
+## Resource Routing
+
+- Read [references/evidence-policy.md](references/evidence-policy.md) before
+  choosing reproduction and regression proof.
+- Read [references/risk-lenses.md](references/risk-lenses.md) after locating the
+  failure boundary; load only applicable lenses.
+- Read [references/output-contract.md](references/output-contract.md) before
+  drafting the structured report.
+- Run `scripts/capture_scope.py` before any edit and after all edits.
+- Run `scripts/validate_report.py` before declaring completion.
+
+## 1. Freeze Target, Intent, and Scope
+
+Set the skill directory to the directory containing this file. Keep temporary
+artifacts outside the repository and remove them before returning.
+
+```bash
+SAM_BUG_DIR="<absolute directory containing this SKILL.md>"
+WORK_TMP="$(mktemp -d)"
+python3 "$SAM_BUG_DIR/scripts/capture_scope.py" --repo "$PWD" \
+  > "$WORK_TMP/baseline.json"
+```
+
+Add repeated `--path <repo-relative-path>` only for explicit user scope and
+reuse the exact arguments later.
+
+Freeze:
+
+- Observed behavior, expected behavior, and affected user or system flow.
+- Business rule or contract that must hold.
+- Behavior that must not change and system invariants.
+- Owning boundary, initial owned paths, no-go paths, and fingerprint.
+- Required reproduction, regression, behavior, and publication proof.
+
+Inspect relevant callers, routes, handlers, state, persistence, tests, logs,
+schemas, and configuration. Ask only blocking questions after available
+evidence is exhausted.
+
+## 2. Reproduce and Prove Root Cause
+
+Reproduce at the narrowest layer that still exercises the reported failure.
+Trace the causal chain; distinguish root cause from downstream symptoms.
+
+For browser-to-service failures, prove the actual method, URL, route
+registration, preflight when applicable, failed-response visibility, and final
+user action. A change that only reveals a hidden error is not a complete fix.
+
+Record one reproduction status:
+
+- `REPRODUCED`: observed directly through a meaningful test or runtime path.
+- `PROVEN_BY_CONTRACT`: direct execution is unavailable, but code and an
+  authoritative contract prove the violation.
+- `BLOCKED`: evidence cannot distinguish a defect from environment, data,
+  configuration, or external state.
+
+Do not edit production code while root cause remains speculative.
+
+## 3. Build Regression Proof and Fix Minimally
+
+Prefer a differential regression test that fails under defective behavior and
+passes after the correction. Use `ALTERNATIVE_PROOF` only when no practical
+test seam exists; state why and provide the closest behavior-level evidence.
+
+Implement only at the owning boundary. Preserve public contracts unless the
+proven defect is the contract itself. Avoid unrelated refactors, speculative
+abstractions, duplicated rules, sensitive-data exposure, N+1 work, and widened
+payloads.
+
+Map success, negative, boundary, permission, persistence, partial-failure,
+compatibility, and adjacent regression scenarios when applicable. Verify
+user-visible loading, empty, error, disabled, accessibility, and recovery states
+only when the affected flow reaches them.
+
+Stop and request approval if the correction needs more than twice the frozen
+owned scope or changes a protocol, storage model, migration strategy, owner
+boundary, release process, or destructive behavior.
+
+## 4. Validate and Run Gates
+
+Run the narrowest safe checks first, then broader checks proportional to risk.
+Inspect changed command definitions before executing them. Record exact command
+status and classify failures as `TARGET`, `INTRODUCED`, `BASELINE`,
+`ENVIRONMENT`, or `EXTERNAL`.
+
+Record user-visible behavior as `PROVEN`, `NOT_PROVEN`, or `NOT_APPLICABLE`.
+Static source review does not prove a user-visible fix.
+
+Run applicable local review and coverage gates for runtime changes. Run browser
+proof only for impacted browser flows. A missing mandatory dependency or proof
+results in `BLOCKED`; never synthesize a pass. If a gate changes code, rerun the
+affected proof. Stop after two non-converging cycles without new evidence.
+
+## 5. Validate Scope and Decision
+
+```bash
+python3 "$SAM_BUG_DIR/scripts/capture_scope.py" --repo "$PWD" \
+  > "$WORK_TMP/current.json"
+python3 "$SAM_BUG_DIR/scripts/validate_report.py" \
+  --baseline "$WORK_TMP/baseline.json" \
+  --current "$WORK_TMP/current.json" "$WORK_TMP/report.json"
+```
+
+Follow [references/output-contract.md](references/output-contract.md). Cover
+every post-baseline path exactly once. Do not weaken the validator.
+
+Return `COMPLETE` only when reproduction, root cause, regression proof,
+required scenarios, validations, mandatory gates, behavior proof, scope, and
+dirty-work preservation agree. Otherwise return `CHANGES_REQUIRED` or
+`BLOCKED` with exact remaining work.
+
+Draft publication text locally when useful. Publish only after explicit user
+authorization and record the action evidence. Remove temporary artifacts before
+the final response.

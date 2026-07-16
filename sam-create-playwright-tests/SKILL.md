@@ -1,401 +1,174 @@
 ---
 name: sam-create-playwright-tests
-description: Create comprehensive E2E tests for impacted user flows and edge cases, including Playwright video evidence and PR attachment when requested.
+description: "Create and validate risk-based Playwright browser tests for changed or reported user flows, including real linked UI/backend proof, exact route and network assertions, permissions, persistence, and optional local video evidence. Use when asked for Playwright, browser E2E, UI regression tests, cross-browser flows, route or CORS verification, or explicitly requested PR/MR test evidence."
 ---
 
 # Sam Create Playwright Tests
 
-Use this skill when the user invokes `/sam-create-playwright-tests` or asks for comprehensive E2E coverage for the current task, especially with Playwright, impacted-flow mapping, edge-case coverage, local video recording, and PR evidence.
-
-## Operating Role
-
-You are a senior QA automation engineer and senior software engineer.
-
-Create comprehensive E2E tests for all user flows and edge cases affected by the current task. By default, treat every request as a request for exhaustive, risk-based coverage of the affected behavior.
-
-## Core Context
-
-Before writing tests:
-
-- Inspect the current git diff against the base branch.
-- Inspect related files, routes, components, services, API endpoints, validations, permissions, and state changes affected by the task.
-- Inspect existing tests for the affected feature, adjacent features, and any comparable working flow mentioned by the user.
-- Inspect the user report, QA criteria, acceptance criteria, PR/MR comments, and any linked issue text available in context.
-- Infer the real user behaviors impacted by the change.
-- Build a test matrix before implementing tests.
-- Do not test implementation details directly.
-- Test observable behavior from the user or API perspective.
-- Do not claim full confidence unless every meaningful matrix row is automated, manually proven, or explicitly marked redundant with rationale.
-
-## Intent-First Test Philosophy
-
-Tests verify intent, not just behavior.
-
-- Every new or updated test must encode why the behavior matters to the user,
-  business rule, API contract, permission model, or system invariant.
-- A test that only proves a hardcoded output is not enough. Example:
-  `expect(getUserName()).toBe('John')` is weak if the function takes a fixed ID
-  or the assertion mirrors implementation setup without proving the rule.
-- Prefer tests that would fail when the business logic, policy, permission,
-  data mapping, or workflow contract changes incorrectly.
-- If you cannot write a test that would fail when the intended business logic
-  changes, re-check the function boundary, requirement, or design before adding
-  shallow coverage.
-- Test names, setup, and assertions should make the intent visible without
-  requiring the reader to reverse-engineer why the case exists.
-
-## Real Dev Environment Requirement
-
-Exercise the real running application, not a mocked UI shell, unless it is
-impossible after serious startup/linking effort.
-
-- Start the application before creating, updating, or recording Playwright tests.
-- Use the real UI route and real browser interactions for user-facing flows.
-  Mocked component shells, mocked pages, or request-only tests are fallback proof
-  only after the real UI cannot be opened.
-- Do whatever local setup is necessary to open both UI and backend for
-  browser-facing flows: direct process start, Docker, compose, repo scripts,
-  dependency services, seeded data, local env overrides, and port changes are all
-  allowed when they are local/dev-safe.
-- If the default ports conflict or the UI points at the wrong API, change local
-  ports, env vars, compose overrides, or Playwright config so the browser uses
-  the running backend. Report those changes.
-- If the user explicitly says the environment is dev and the database is a dev
-  database, prefer real dev data over synthetic fixtures when it improves
-  confidence and does not expose secrets or private user data.
-- Never use production data, production credentials, or production services for
-  tests or recorded artifacts unless the user explicitly asks and the workflow is
-  read-only and safe.
-- If frontend and backend are separate repositories or services instead of one
-  monorepo, bring both up directly or through Docker/container workflows, link
-  the frontend to the backend, and test against that linked local/dev stack.
-- If Docker, direct startup, port changes, or linked-service startup is blocked,
-  record every attempted path and the exact blocker before falling back to the
-  closest safe runnable environment.
-
-## Step 1: Analyze Task Impact
-
-Read the current branch diff against the base branch.
-
-Identify every affected:
-
-- Feature
-- Screen
-- Route
-- API behavior
-- Permission rule
-- Validation rule
-- Error state
-- Loading state
-- State change
-- Regression risk
-- Nearby behavior likely to be affected
-
-Before writing tests, list the impacted flows and build a coverage matrix.
-
-The impacted-flow list must be concrete and user/API oriented. Prefer descriptions like:
-
-- User opens help menu and starts support chat.
-- Anonymous request to protected endpoint is rejected.
-- Invalid payload returns validation error.
-- API failure is visible or safely swallowed as expected.
-
-Avoid implementation-only descriptions like:
-
-- Hook calls function.
-- Component state changes.
-- Mock was invoked.
-
-The coverage matrix must include every meaningful equivalence class around the changed behavior:
-
-- Reported failing flow
-- Comparable working flow mentioned in the task
-- Primary happy path
-- Add, remove, update, and preserve-existing-value variants
-- Existing value, missing value, `null`, `undefined`, empty string, and sentinel values when those inputs affect branching logic
-- Loading state
-- Empty state
-- Error state
-- Permission and role variants
-- Validation boundaries
-- Save, cancel, retry, and navigation behavior
-- API method, path, query, payload, status, and response-body assertions
-- Browser-called API path versus backend-registered route assertions, including
-  legacy/canonical aliases when the UI may call a different path
-- Browser-visible network failure assertions for CORS, preflight, `Failed to
-  fetch`, opaque fetch failures, and failed API responses that must expose the
-  real status/body to the UI
-- UI persistence, read-after-write, and stale-cache behavior when applicable
-- Cross-browser, mobile, or responsive variants only when the changed behavior can differ by viewport/browser
-
-For each matrix row, choose one status:
-
-- `AUTOMATED`: covered by a test file and test name
-- `MANUAL_PROOF`: covered by browser, video, API, or database proof
-- `REDUNDANT`: equivalent to another covered row, with exact reason
-- `NOT_COVERED`: not covered, with blocker and residual risk
-
-## Step 2: Create E2E Test Plan
-
-Create a test plan that covers every applicable matrix row by default:
-
-- Happy paths
-- Negative paths
-- Boundary cases
-- Permission and access cases
-- Empty states
-- Validation errors
-- Network/API failure states
-- CORS, preflight, and browser network-mask states when the user report includes
-  a console/network error or the flow crosses origins
-- Regression cases around nearby existing behavior
-- Loading states, when observable
-- Retry or recovery behavior, when user-visible
-- Existing working comparable behavior, when mentioned
-- Save-without-changing-related-field behavior
-- Explicit clearing/removal behavior
-- Null/undefined/empty/sentinel payload behavior, when applicable
-- Cache/read-after-write behavior, when applicable
-
-For each planned test, define:
-
-- Flow name
-- User/API behavior under test
-- Business intent: why this behavior matters
-- Data setup needed
-- Observable assertion
-- Matrix rows covered
-- Failure mode: what business-logic change should make this test fail
-- Why the test is necessary
-
-Do not stop after the obvious happy path. Keep exploring until every meaningful matrix row has a status. If adding all rows as E2E tests would create brittle or slow coverage, split coverage across E2E, component/integration, and API tests, but still prove every matrix row.
-
-## Step 3: Implement Tests
-
-Use the project's existing E2E framework, helpers, fixtures, factories, selectors, and test style.
-
-Implementation rules:
-
-- Tests should drive the real application UI whenever the behavior is user-facing.
-- Each test must prove intent, not merely click through a flow or assert a
-  fixture literal.
-- Avoid assertions that only restate hardcoded setup unless they prove a rule,
-  contract, permission, mapping, or invariant.
-- If the only possible assertion is trivial, improve the seam or choose a
-  higher-value test layer before claiming coverage.
-- Reuse existing utilities instead of creating duplicate helpers.
-- Prefer stable selectors and `data-testid` when available.
-- Prefer user-facing locators such as `getByRole`, `getByLabel`, and `getByText`.
-- Avoid brittle waits, sleeps, visual-position assumptions, and implementation-detail assertions.
-- Tests must be deterministic and independent.
-- Keep tests readable and grouped by user flow.
-- Do not rely on test execution order.
-- Use route responses, visible elements, URL changes, network responses, or explicit UI state instead of sleeps.
-- When the bug is a browser-to-API failure, assert the exact request method and
-  URL the page sends. Do not accept a test that only proves a nearby canonical
-  endpoint works while the UI still calls a missing or different route.
-- For CORS or `Failed to fetch` reports, inspect browser console/network events
-  and assert that the user action reaches the intended endpoint and exposes a
-  real success or API error, not only that the generic browser error disappears.
-- If a stable selector is missing, add the smallest user-meaningful selector only when needed and consistent with the project.
-
-## Step 4: Data Setup
-
-Use existing project patterns for data:
-
-- Factories
-- Fixtures
-- Seed helpers
-- API setup helpers
-- Existing authenticated user/session helpers
-- Existing cleanup patterns
-
-Data rules:
-
-- Each test creates only the data it needs.
-- Clean up data when the project pattern requires it.
-- Avoid shared mutable data across tests.
-- Prefer explicit dev-database records when the user has confirmed the target is
-  dev and the database is dev; use factories or fixtures when real dev data is
-  unavailable, unsafe, or would make the test nondeterministic.
-- Prefer realistic data where it improves confidence.
-- Do not use real secrets, credentials, tokens, or private user data in tests or artifacts.
-
-## Step 5: Run And Fix
-
-Start the required app services, link UI and backend, then run the relevant E2E
-tests locally.
-
-If the flow crosses frontend/backend boundaries and those services are not in a
-single monorepo, start or verify both directly or through Docker/container
-workflows, configure the frontend to call the local/dev backend, adjust local
-ports/config as needed, and confirm the browser is exercising that linked stack
-before trusting results.
-
-If tests fail, classify the failure:
-
-- Real product bug
-- Bad test setup
-- Flaky timing
-- Missing selector
-- Environment issue
-- Incorrect assumption about behavior
-
-Fix test issues directly.
-
-If a real product bug is found:
-
-- Document it clearly.
-- Fix it only if it is in scope for the current task.
-- If out of scope, report the bug, evidence, and recommended next action.
-
-## Step 6: Completion Criteria
-
-The E2E work is complete only when:
-
-- All new E2E tests pass locally.
-- Existing affected E2E tests still pass.
-- The app was started for the test run, or every serious direct/Docker startup
-  attempt and exact blocker is documented.
-- User-facing flows exercise the real UI unless opening the real UI is blocked
-  after direct, Docker, port/config, and linking attempts.
-- Explicit dev-data usage is limited to confirmed dev databases.
-- Separate frontend/backend services are linked directly or through Docker and
-  the browser is confirmed to call the running backend; fallback proof documents
-  why real linked UI/backend proof was impossible.
-- Unit, integration, API, or contract tests that cover affected non-browser behavior pass locally.
-- No flaky waits were introduced.
-- Tests clearly cover impacted behavior.
-- Tests clearly express the business/user/API intent they protect.
-- New coverage would fail for the intended business-logic regression, not only
-  for a changed literal or mocked fixture.
-- Browser/API coverage would fail if the UI called a route that the backend does
-  not register, if preflight failed, or if an API error was masked as a generic
-  CORS/network failure.
-- Test data is deterministic and isolated.
-- Every QA/acceptance criterion maps to `AUTOMATED`, `MANUAL_PROOF`, or `REDUNDANT`.
-- Any `NOT_COVERED` matrix row has a clear blocker, exact residual risk, and recommended next action.
-
-Full-confidence rule:
-
-- Only say `FULL CONFIDENCE` when every QA/acceptance criterion and every meaningful matrix row is automated, manually proven, or explicitly redundant; all affected local suites pass; linked frontend/backend services are exercised when the task crosses that boundary; and PR/MR evidence is attached when requested.
-- If any of those conditions is missing, do not say `FULL CONFIDENCE`. State the exact confidence blocker instead.
-
-## Step 7: Local Playwright Video Recording And PR Attachment
-
-When video evidence is requested:
-
-1. Run the affected Playwright E2E tests locally on the user's computer.
-2. Force Playwright video recording locally using `video: 'on'`, an env override, or the project's equivalent config.
-3. Save videos in a clear local folder, such as:
-   - `test-results/`
-   - `playwright-report/`
-   - `.artifacts/playwright-videos/`
-4. Verify every relevant video opens and shows the tested flow working.
-5. Keep every safe relevant video that demonstrates an affected flow. Do not
-   drop a relevant video just to keep the comment shorter.
-6. Do not include videos containing secrets, private user data, tokens, credentials, or sensitive information.
-7. Attach every safe relevant local video to the GitHub Pull Request using `gh`
-   when possible, or to the GitLab Merge Request using `glab` when the repo is
-   on GitLab.
-8. If direct video upload to the PR/MR comment is not supported, use the best available platform-specific approach:
-   - Use an available `gh` extension or helper that uploads files as GitHub user attachments.
-   - For GitLab, use the Markdown Uploads API through `glab api`.
-   - Create a temporary issue or PR/MR comment with uploaded files if supported.
-   - Do not commit video files to the repository unless the user explicitly asks for versioned video artifacts.
-   - Clearly report when the platform CLI cannot attach local video files to comments if no supported upload path exists.
-9. Add a PR comment summarizing:
-   - Which E2E flows were recorded
-   - Which tests passed
-   - Where videos were attached or linked
-   - What each video proves, written immediately before that specific video link or embed.
-
-GitHub/GitLab note:
-
-- `gh pr comment` posts text and does not reliably upload local files by itself.
-- If a helper such as `gh image` is available, use it to upload videos and extract the raw uploaded video URL from the returned markdown.
-- Upload every safe relevant video. If any video cannot be uploaded, report that
-  specific file path, the upload command attempted, and the exact blocker.
-- Every video must have a short proof description immediately before the video. Use the format `This video is proof that ...` and describe the specific behavior shown, not a vague label like "E2E proof".
-- For GitHub, the comment must use the exact format that renders uploaded videos:
-  a raw `https://github.com/user-attachments/assets/<id>` URL alone on its own
-  paragraph with a blank line before and after it. Do not wrap GitHub
-  user-attachment video URLs in markdown image/link syntax. Example:
-
-  ```markdown
-  This video is proof that the school Camp Day Report excludes the regular scheduled student who has no final camp-day signup.
-
-  https://github.com/user-attachments/assets/9d67afa2-81f8-4aa1-9ca2-173a81b63d56
-
-  This video is proof that the report error state renders after a bounded 500 retry sequence.
-
-  https://github.com/user-attachments/assets/15b4d394-a607-4fb0-8417-50f3dc0b0c57
-  ```
-- For GitLab, prefer `.mp4` files because GitLab Markdown can render uploaded MP4 video attachments inline. Convert Playwright `.webm` output to `.mp4` with a browser-compatible codec before upload:
-
-  ```bash
-  mkdir -p .artifacts/playwright-mp4
-  ffmpeg -y -i .artifacts/playwright-videos/example.webm \
-    -c:v libx264 -pix_fmt yuv420p -movflags +faststart -an \
-    .artifacts/playwright-mp4/example.mp4
-  ```
-
-- Upload each MP4 to the GitLab project with the Markdown Uploads API via `glab`. Use the project placeholder `:id` from inside the target repo, or pass an explicit project id/path when needed:
-
-  ```bash
-  glab api -X POST projects/:id/uploads --form "file=@.artifacts/playwright-mp4/example.mp4"
-  ```
-
-- In GitLab MR comments, paste the exact `markdown` field returned by the upload response immediately after its proof description. This exact field is required because it is the format GitLab renders inline. Example:
-
-  ```markdown
-  This video is proof that the school Camp Day Report CSV export contains only final camp-day signup students.
-
-  ![example](/uploads/<secret>/example.mp4)
-  ```
-
-- Do not manually build GitLab upload URLs from `url`, `full_path`, project ids, or repository paths. Manually constructed upload links often 404 or fail to render inline.
-- Do not commit videos into the repository for evidence. Keep them in local artifact directories such as `.artifacts/playwright-videos/` and `.artifacts/playwright-mp4/`, upload them, and leave those artifact directories untracked.
-- After posting GitLab video evidence, re-read the MR note with `glab api projects/:id/merge_requests/<iid>/notes/<note_id>` and confirm it contains `.mp4` upload markdown using `/uploads/...`, not `/raw/...`, `/-/project/...`, or committed artifact paths.
-- Also confirm each video markdown/link is preceded by a `This video is proof that ...` sentence explaining the exact behavior proven by that video.
-- For GitHub, re-read the PR comment with `gh` or `gh api` and confirm each
-  uploaded video appears as a raw `https://github.com/user-attachments/assets/...`
-  URL on its own paragraph, not a Markdown link, image, local path, or committed
-  artifact path.
-- Do not finish while a safe relevant video is only local and not uploaded,
-  unless upload is blocked. If blocked, report that video as a blocker or
-  limitation with the attempted command and exact error.
-- Do not promise inline video player rendering if the host changes behavior, but use each platform's expected format: raw uploaded URL for GitHub user attachments, exact Markdown Uploads API `markdown` for GitLab.
-
-## Playwright-Specific Rules
-
-- Use `getByRole`, `getByLabel`, `getByText`, and stable `data-testid` selectors.
-- Avoid `page.waitForTimeout`.
-- Prefer waiting for UI state, route response, URL change, visible element, or network response.
-- Use fixtures and page objects already present in the repo.
-- Keep tests readable and grouped by user flow.
-- Avoid asserting exact visual position unless the feature is layout-specific.
-- Avoid testing framework internals or mock call counts unless no user/API observable behavior can prove the case.
-- Prefer browser-visible assertions for UI flows and HTTP status/body assertions for API flows.
-
-## Required Output Shape
-
-Report results in this order:
-
-1. Impacted flows discovered
-2. Coverage matrix summary with `AUTOMATED`, `MANUAL_PROOF`, `REDUNDANT`, and `NOT_COVERED` rows
-3. Test cases created
-4. Files changed
-5. Commands run and results
-6. Confidence level and exact blockers, if any
-7. Risks, gaps, or cases that could not be tested
-
-## Hard Blocker Output
-
-If blocked, report:
-
-- What was completed
-- What is blocked
-- Why it is blocked
-- Evidence collected
-- Exact next action required
+Create browser tests that prove the intended user and API contract. Keep the
+workflow stack-, host-, provider-, and model-agnostic except for Playwright itself.
+
+## Non-Negotiable Contract
+
+- Honor the exact repository, path, branch, commit, diff range, and acceptance
+  criteria supplied by the user.
+- Preserve existing work. Do not reset, checkout, stash, clean, rebase, or rewrite history.
+- Keep generated media and reports local by default. Publish only when the user
+  explicitly requests publication and the exact target is known.
+- Never use production credentials, production services, customer tenants, or
+  private data for automated browser tests.
+- Fail closed when real data is requested and the environment identity is unknown
+  or is not a verified local, test, or development target.
+- Inspect every changed command definition, hook, script, container file, and test
+  configuration before executing it.
+- Do not add `.only`, `.skip`, retries, broad timeouts, snapshot refreshes, weaker
+  assertions, or mocks that bypass the contract under test.
+- Limit production changes to the in-scope correction or the smallest stable
+  selector/test seam required by an accepted scenario.
+- Track all started processes, containers, ports, data, overrides, and temporary
+  files. Clean them before completion or report the exact retained resource.
+
+## Resource Routing
+
+- Read [references/environment-safety.md](references/environment-safety.md)
+  before starting services or using persistent data.
+- Read [references/scenario-policy.md](references/scenario-policy.md) while
+  building the scenario ledger.
+- Read [references/playwright-quality.md](references/playwright-quality.md)
+  before implementing or changing browser tests.
+- Read [references/evidence-publishing.md](references/evidence-publishing.md)
+  only when video or external publication is explicitly requested.
+- Read [references/output-contract.md](references/output-contract.md) before
+  drafting the final report.
+
+## 1. Resolve and Freeze the Target
+
+Set the skill directory to the directory containing this file. Build the bundle
+without fetching or changing refs:
+
+```bash
+SAM_PLAYWRIGHT_DIR="<absolute directory containing this SKILL.md>"
+WORK_TMP="$(mktemp -d)"
+python3 "$SAM_PLAYWRIGHT_DIR/scripts/build_e2e_bundle.py" \
+  --repo "$PWD" --environment-kind unknown \
+  --environment-id "unverified" > "$WORK_TMP/baseline-bundle.json"
+```
+
+Pass `--base`, `--head`, and repeated `--path` arguments when the user specifies
+them. Rebuild with the verified environment identity before using real data.
+
+Freeze these fields before editing:
+
+- Base SHA, head SHA, target mode, and bundle fingerprint.
+- Intended behavior, invariants, acceptance criteria, and explicit no-go surfaces.
+- Changed-file ledger and command definitions.
+- Environment kind, identity, endpoints, database/tenant identity, and evidence.
+- Cleanup ledger initialized with every resource that may be created.
+
+Ask one concise question only when the target or a safety-critical environment
+identity cannot be discovered. Do not silently choose a remote, database, or tenant.
+
+## 2. Build the Traceability Ledger
+
+Use stable IDs throughout the run:
+
+- `AC-###`: acceptance criterion.
+- `R-###`: reachable risk linked to one or more criteria.
+- `S-###`: scenario linked to criteria and risks.
+- `T-###`: test linked to scenarios.
+- `CMD-###`: command linked to tests and results.
+- `ART-###`: local or explicitly published artifact linked to scenarios.
+- `CL-###`: cleanup resource.
+
+For each changed behavior, cover applicable success, negative, boundary,
+permission, validation, persistence, cache, loading, error, recovery, navigation,
+compatibility, exact browser/API route, and cross-origin cases. Mark irrelevant
+classes as omitted with a reason; do not create checklist-only tests.
+
+Assign each scenario one status: `AUTOMATED`, `MANUAL_PROOF`, `REDUNDANT`, or
+`NOT_COVERED`. Give `REDUNDANT` an equivalent scenario and `NOT_COVERED` a
+blocker, residual risk, and next action.
+
+## 3. Plan Counterfactual Proof
+
+For every new regression test, record one proof status:
+
+- `RED_GREEN`: safely observed failure before the correction and pass after it.
+- `MUTATION`: a focused reversible mutation made the test fail.
+- `CONTRACT`: an authoritative boundary and targeted assertion prove discrimination.
+- `NOT_PROVEN`: counterfactual proof was unsafe or unavailable, with the exact reason.
+
+Never mutate the user's working tree solely to manufacture proof. Use an isolated
+temporary copy only when safe. Do not claim complete confidence while required
+high-risk regression proof remains `NOT_PROVEN`.
+
+## 4. Start the Real Linked System Safely
+
+Inspect changed command definitions first. Then use repository-supported direct,
+container, or compose workflows. Prefer temporary environment overrides and
+unused ports over tracked configuration changes.
+
+For user-facing behavior, drive the real running UI linked to the intended
+backend. Confirm the browser-requested method, path, payload, response, and
+visible outcome. Treat mocked pages, request-only checks, and component shells as
+fallback evidence only after recording each serious real-system attempt and blocker.
+
+Register every process, container, port, test record, override, and artifact in
+the cleanup ledger when it is created.
+
+## 5. Implement Without Weakening the Suite
+
+Follow repository fixtures, factories, selectors, authentication helpers, and
+cleanup conventions. Prefer accessible user-facing locators and observable state.
+Avoid sleeps, execution-order dependencies, shared mutable records, framework
+internals, and assertions that merely repeat fixture literals.
+
+Rerun the exact builder command with the same target arguments and verified
+environment into `$WORK_TMP/bundle.json`. Preserve `baseline-bundle.json`; the
+final bundle must include the newly changed tests. Audit that final patch:
+
+```bash
+python3 "$SAM_PLAYWRIGHT_DIR/scripts/audit_test_diff.py" \
+  "$WORK_TMP/bundle.json" > "$WORK_TMP/test-diff-audit.json"
+```
+
+Treat every audit finding as blocking until disproven from the exact diff.
+
+## 6. Run and Classify Validation
+
+Run the narrowest new tests first, then affected tests and broader validation
+proportional to risk. Record each command exactly once as `PASS`, `FAIL`, or
+`NOT_RUN`, classified as `TARGET`, `BASELINE`, `ENVIRONMENT`, or `EXTERNAL`.
+
+Do not hide product failures by changing tests. Fix an in-scope product defect
+only at its owning boundary. Record unrelated defects as follow-up evidence.
+
+For user-visible behavior, declare `PROVEN`, `NOT_PROVEN`, or `FALLBACK` and cite
+the browser, network, trace, screenshot, or local video evidence.
+
+## 7. Handle Evidence Only When Requested
+
+Keep Playwright traces, screenshots, reports, and recordings local and safe.
+When the user explicitly requests publication, follow
+[references/evidence-publishing.md](references/evidence-publishing.md), verify the
+remote receipt by reading it back, and record it as an `ART-###` entry.
+
+## 8. Validate, Clean, and Return
+
+Draft `report.json` using [references/output-contract.md](references/output-contract.md),
+then validate it:
+
+```bash
+python3 "$SAM_PLAYWRIGHT_DIR/scripts/validate_e2e_report.py" \
+  --baseline "$WORK_TMP/baseline-bundle.json" \
+  --bundle "$WORK_TMP/bundle.json" "$WORK_TMP/report.json"
+```
+
+Do not weaken the report to force completion. Stop services, containers, and
+temporary overrides; remove temporary data and artifacts not explicitly retained.
+Update every `CL-###` entry, revalidate, then remove `WORK_TMP`.
+
+Return `COMPLETE` only when all required scenarios and validations pass, required
+counterfactual proof exists, behavior is proven, and cleanup succeeds. Return
+`PARTIAL` for honest residual gaps. Return `BLOCKED` for unsafe environment,
+scope, authorization, or execution conditions.

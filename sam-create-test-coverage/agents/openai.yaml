@@ -1,4 +1,4 @@
 interface:
   display_name: "Sam Create Test Coverage"
-  short_description: "Risk-based test coverage across unit, component, integration, API, and E2E layers."
-  default_prompt: "Use $sam-create-test-coverage to map affected behavior, add the smallest meaningful tests for confidence, run relevant validation, and report exact blockers."
+  short_description: "Create validated multi-layer regression coverage"
+  default_prompt: "Use $sam-create-test-coverage to map changed behavior, add the smallest reliable tests, and validate every proof gap."

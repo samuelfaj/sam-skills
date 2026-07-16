@@ -1,4 +1,4 @@
 interface:
   display_name: "Sam Fix Bug"
-  short_description: "Bugfix workflow with pre-test refine loop, test-first validation, and PR evidence."
-  default_prompt: "Use $sam-fix-bug to reproduce the bug, run the refinement loop, add failing regression coverage when supported, implement the smallest safe fix, complete post-code gates, validate, and produce PR/MR evidence."
+  short_description: "Root-cause bugfix with regression proof"
+  default_prompt: "Use $sam-fix-bug to reproduce this defect, prove its root cause, apply the smallest safe fix, and validate the evidence."

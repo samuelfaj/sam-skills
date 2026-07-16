@@ -1,108 +1,130 @@
 ---
 name: sam-pr-description
-description: Create a standardized English GitHub PR or GitLab MR description for the current branch, based on branch commits, diff stats, changed files, tests, safety, and business rules.
+description: "Create or update an evidence-backed description for a pull request, merge request, or equivalent change proposal using the actual base, immutable branch diff, complete file coverage, verified tests and safety claims, and deterministic validation. Use when asked to draft, rewrite, standardize, or remotely update a proposal description."
 ---
 
 # Sam PR Description
 
-Use this skill when opening, updating, or rewriting a GitHub pull request or GitLab merge request description, or when the user asks for a standardized PR/MR body.
+Generate a concise reviewer-focused description from the actual change. Default
+to a local draft and EN-US unless the user explicitly requests another language.
+Remain provider-, host-, model-, tool-, and stack-neutral.
 
-## Goal
+## Non-Negotiable Contract
 
-Generate a concise English PR/MR description for the current branch.
+- Never assume the target branch name.
+- Never infer implementation, ticket, test, architecture, business-rule, or
+  safety claims without evidence.
+- Account for every changed file exactly once.
+- Distinguish tests changed from commands actually run.
+- Use `Not applicable` or `Not verified` instead of filling evidence gaps.
+- Do not update a remote proposal unless the user explicitly requests it.
+- Re-check the remote head immediately before an authorized update.
+- Never expose secrets in context, reports, descriptions, commands, or receipts.
 
-Default target branch is `main`. If the user or platform context provides a different target branch, use that target.
+## Resource Routing
 
-## Steps
+- Run `scripts/build_change_context.py` for every draft.
+- Read [references/template.md](references/template.md) before writing the body.
+- Read [references/output-contract.md](references/output-contract.md) before
+  creating the evidence report.
+- Run `scripts/validate_description.py` before returning or updating the body.
 
-1. Identify target branch:
-   - Prefer explicit user-provided target branch.
-   - Else use platform PR/MR target branch if available.
-   - Else use `main`.
-2. Run `git log <target>..HEAD --oneline` to list commits on this branch.
-3. Run `git diff <target>...HEAD --stat` to identify files and modules changed.
-4. Read relevant changed files to understand scope, intent, tests, architecture, safety, and business rules.
-5. If available, inspect linked ticket IDs, PR/MR references, commit messages, and test output.
-6. Fill the template below in English.
+## 1. Resolve the Exact Base
 
-## Output Contract
+Resolve in this order:
 
-- Output ONLY the filled-in template.
-- Wrap output in a single markdown code block using ` ```markdown `.
-- No prose before or after the code block.
-- Keep content concise and reviewer-focused.
-- Do not invent tickets, endpoints, payloads, tests, or safety claims.
-- If a section lacks evidence, write `Not applicable` or `Not verified` instead of guessing.
-- Check the appropriate `Type of Change` box(es) based on what actually changed.
+1. Explicit user-provided target.
+2. Target of the existing remote proposal.
+3. Repository or remote default branch proved by Git or platform metadata.
+4. One concise question when the base remains unknown.
 
-## Template
+Do not fall back to a conventional branch name. Resolve base and head to
+immutable commits before inspecting the change.
 
-```markdown
-## Description
-<!-- Brief summary of what was done and why -->
+## 2. Build the Change Context
 
-## Type of Change
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Refactor
-- [ ] Documentation
-- [ ] Other: ___________
+Use a safe local checkout containing both refs. Preserve unrelated dirty work;
+use an isolated temporary clone or worktree when needed.
 
-## Scope (Files Changed)
-<!-- List the files/modules that SHOULD be changed by this PR/MR -->
-
-## How to Test
-- Affected endpoint(s):
-- Example payload: {}
-- Expected response:
-- Error cases to validate:
-
-## What Was Done
-<!-- Step-by-step summary of how this was implemented, to guide the reviewer -->
-1.
-2.
-3.
-
-## Architecture Changes
-<!-- Describe any structural/architectural changes introduced (new layers, patterns, models, etc.) -->
-
-## Trade-offs
-<!-- What alternatives were considered? What did you give up, and why was this the right call? -->
-
-## Why It's Safe
-<!-- Explain why this change is safe to merge: backward compatibility, no data loss risk, isolated impact, etc. -->
-
-## System Expected Logic
-<!-- Describe the expected behavior end-to-end after this change is live -->
-
-## Business Rules
-<!-- List any business rules this change enforces or depends on -->
-
-## Tests
-<!-- Describe or link tests added/updated in this PR/MR -->
-
-## Author Checklist
-- [ ] Code follows project guidelines
-- [ ] Tests were added/updated
-- [ ] Changes are within defined scope
-- [ ] No commented code or debug logs
-- [ ] PR/MR is within size limits
-
-## Notes for Reviewer
-<!-- Points of attention, decisions made, open questions -->
+```bash
+SAM_PR_DESCRIPTION_DIR="<absolute directory containing this SKILL.md>"
+DESCRIPTION_TMP="$(mktemp -d)"
+python3 "$SAM_PR_DESCRIPTION_DIR/scripts/build_change_context.py" \
+  --repo "$DESCRIPTION_REPO" \
+  --base "$TARGET_REF" \
+  --head "$SOURCE_REF" \
+  > "$DESCRIPTION_TMP/context.json"
 ```
 
-## Fill Rules
+Use `--comparison direct` only when the platform defines an exact base-to-head
+range. Never truncate an oversized patch or read a sensitive path into context.
 
-- Write everything in English.
-- Use PR or MR wording based on the platform when known; otherwise use `PR/MR`.
-- Fill `Scope (Files Changed)` from `git diff <target>...HEAD --stat`, grouped by module when useful.
-- For `How to Test`, include affected endpoints, real example payloads, expected responses, and edge/error cases only when evidence exists.
-- Link Linear tickets, GitHub issues, GitLab issues, or related PRs/MRs when present in commits, branch names, or user context.
-- Keep `Description` to one short paragraph.
-- Keep `What Was Done` to concrete implementation steps, not generic process.
-- `Architecture Changes` must say `None` when no structural change exists.
-- `Trade-offs` must name real alternatives only when evidence exists; otherwise write `Not applicable`.
-- `Why It's Safe` must mention only verified safety properties.
-- `Tests` must distinguish added/updated tests from commands run manually.
-- Do not leave HTML comments in the final output.
+## 3. Reconstruct Scope and Evidence
+
+Read the complete manifest, commits, and relevant changed files. Record:
+
+- Intended outcome and why the change exists.
+- Changed modules and every changed path.
+- Observable behavior before and after.
+- Architecture or ownership changes.
+- Business rules actually encoded by the diff.
+- Tests added or changed.
+- Validation commands run with exact status.
+- Compatibility, migration, rollout, rollback, and unresolved risks when
+  applicable.
+- Ticket or proposal references present in user context, metadata, branch, or
+  commits.
+
+Treat reference candidates as candidates, not verified links. A positive claim
+must cite one or more evidence IDs in the temporary report.
+
+## 4. Draft the Body
+
+Follow [references/template.md](references/template.md). Keep sections concise
+and adapt their content to the actual change:
+
+- Do not invent endpoint or payload fields for non-API work.
+- Do not claim an architecture change merely because files moved.
+- Do not mark checklist items complete without evidence.
+- State unrun or blocked validation explicitly.
+- Mention real trade-offs only when supported by context or user evidence.
+- Keep reviewer instructions focused on risk and behavior.
+
+The body must be raw Markdown without an outer code fence, placeholders, HTML
+comments, or blank template instructions.
+
+## 5. Build and Validate the Evidence Report
+
+Create `report.json` using
+[references/output-contract.md](references/output-contract.md). Link concrete
+claims to evidence. Map every changed path to one body section.
+
+```bash
+python3 "$SAM_PR_DESCRIPTION_DIR/scripts/validate_description.py" \
+  --context "$DESCRIPTION_TMP/context.json" \
+  "$DESCRIPTION_TMP/report.json"
+```
+
+Fix the body or evidence mapping when validation fails. Do not weaken the
+validator, omit changed files, or relabel unverified claims to force success.
+
+## 6. Update Remotely Only When Requested
+
+For an explicit update request:
+
+1. Set `remote_update.requested` to true.
+2. Re-read the current remote head before the first write.
+3. On head drift, set `BLOCKED`, record the error, and update nothing.
+4. Use the available platform capability to replace only the description.
+5. Record the confirmed receipt. On partial failure, preserve successful
+   receipts, set `PARTIAL`, and do not blindly retry.
+6. Revalidate the final report.
+
+A local drafting request must remain `NOT_REQUESTED` with no receipts.
+
+## 7. Return
+
+Return only the validated description body when drafting locally. When a remote
+update was explicitly requested, return the body plus the confirmed update
+status or exact blocker. Remove temporary artifacts after capturing required
+receipts.

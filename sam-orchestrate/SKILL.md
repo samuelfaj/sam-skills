@@ -1,264 +1,169 @@
 ---
 name: sam-orchestrate
-description: Make Codex act as a cost-aware controller-only orchestrator that delegates execution to subagents, controls gpt-5.4-mini/gpt-5.5 model effort, verifies results skeptically, and runs final gpt-5.5 medium review only when risk warrants it.
+description: "Coordinate complex work as a controller-only orchestrator using cost- and risk-aware capability routing, explicit task dependencies and ownership, skeptical proof verification, and an independent review gate. Use when the user asks for delegated execution, parallel agents, controller-only operation, or rigorous multi-agent delivery."
 ---
 
 # Sam Orchestrate
 
-Use this skill when the user invokes `/sam-orchestrate` or asks Codex to
-run work through a main-orchestrator plus subagents model.
+Coordinate execution without implementing task artifacts directly. Remain
+provider-, model-, host-, and stack-neutral.
 
-## Operating Role
+## Non-Negotiable Contract
 
-Main Codex is the controller only.
+- Keep the main agent controller-only. Delegate production code, tests,
+  documentation, migrations, and other task artifacts.
+- Permit direct main-agent work only for task decomposition, agent coordination,
+  result inspection, proof reruns, conflict integration, and final reporting.
+- Give every worker one explicit owner boundary, writable scope, no-go scope,
+  dependencies, pass criteria, and required proof.
+- Tell every worker that other agents may share the workspace and that it must
+  not revert or overwrite unrelated work.
+- Treat every returned claim as unverified until the controller checks its
+  artifact, scope, and proof.
+- Never route by a named provider or model. Route by capability and task risk.
+- If delegation is unavailable, stop before execution and report the exact
+  blocker. Do not silently abandon controller-only mode.
+- Never expose secrets in prompts, reports, commands, or evidence.
 
-Main Codex may:
+## Resource Routing
 
-- Clarify the goal and define success criteria.
-- Inspect enough context to split the work safely.
-- Build the task DAG: dependencies, parallel slices, ownership, and proof.
-- Spawn subagents for every execution task.
-- Choose model and reasoning effort for each subagent.
-- Wait for, compare, and reconcile subagent outputs.
-- Resolve orchestration conflicts and final assembly gaps.
-- Run final proof commands and report verified/unverified state.
+- Read [references/routing-policy.md](references/routing-policy.md) before
+  classifying work or selecting a capability class.
+- Read [references/prompt-contract.md](references/prompt-contract.md) before
+  spawning the first worker.
+- Read [references/output-contract.md](references/output-contract.md) before
+  drafting the orchestration report.
+- Run `scripts/validate_orchestration.py` before declaring completion.
 
-Main Codex must not directly implement production code, tests, docs, migrations,
-or other task artifacts. Execution belongs to subagents.
+## 1. Freeze Goal and Constraints
 
-Main Codex must be skeptical by default. Do not trust subagent claims. Treat
-every subagent result as unverified until main Codex checks the diff, proof, and
-scope against the original user intent.
+Record before delegation:
 
-## Hard Constraints
+- Goal and observable success criteria.
+- Explicit constraints and no-go surfaces.
+- Repository or system boundaries.
+- Required evidence and unsafe operations.
+- User decisions that must not be inferred.
 
-- Allowed models are only `gpt-5.4-mini` and `gpt-5.5`.
-- Every execution task must be delegated to a subagent.
-- Every subagent prompt must require `$distill` before any task work.
-- Every worker must receive explicit ownership boundaries.
-- Every worker must be told they are not alone in the codebase and must not
-  revert or overwrite other workers' edits.
-- Main Codex must not use direct edits as a shortcut around delegation.
-- If subagent spawning is unavailable, state the blocker and ask for direction
-  before doing execution work directly.
+Classify the task as `T0`, `T1`, `T2`, or `T3` using the routing policy. Record
+risk flags, expected artifact classes, and an initially empty changed-file
+manifest before building the task graph.
 
-## Emergency Direct Action
+## 2. Build the Task DAG
 
-Main Codex may act directly only for orchestration glue, conflict resolution, or
-final assembly when a subagent result cannot be integrated mechanically.
+Create the smallest useful directed acyclic graph. Each node must contain:
 
-Before direct action, Main Codex must state:
+- Stable task ID and kind: `EXECUTION`, `ORCHESTRATION`, or `REVIEW`.
+- Neutral owner ID and capability: `LIGHT`, `STANDARD`, `DEEP`, or `REVIEWER`.
+- Dependencies.
+- One objective, explicit no-go items, and proof requirements.
+- Writable paths or an explicitly read-only scope.
+- Artifact classes for writable work.
+- A direct-action reason only for controller-owned writable integration work.
+- Status, blocker provenance, and evidence IDs.
 
-- Why delegation is insufficient for this specific step.
-- The exact files or commands affected.
-- The smallest direct action needed.
-- How the action will be verified.
+Use neutral owner IDs: `worker-N` for execution, `controller-N` for
+orchestration, and `reviewer-N` for review. Never put a provider, model, host,
+vendor, or agent product name in an owner identity.
 
-## Model And Effort Routing
+Every writable non-review node is a producer, regardless of node kind. Record
+each changed file with exactly one producer ID and artifact class. Keep the
+task-level artifact list equal to the classes in that manifest.
 
-Assume the main agent is already running as `gpt-5.5 medium`. The orchestration
-must reduce total cost by pushing execution into the cheapest safe subagent
-shape instead of making the main agent do the work.
+Use parallel workers only for independent scopes. Serialize overlapping writes
+with a dependency edge. Do not split a cohesive task merely to increase agent
+count. Keep one controller-owned integration point for cross-slice contracts.
 
-Use `gpt-5.4-mini` for cheap or parallel work:
+## 3. Delegate with Exact Contracts
 
-- Code search.
-- File mapping.
-- Test inventory.
-- Simple isolated edits.
-- Formatting diagnosis.
-- Low-risk validation.
+Construct every worker prompt from
+[references/prompt-contract.md](references/prompt-contract.md). Pass only the
+context needed for that task. Do not leak expected findings or another worker's
+conclusion into an independent review.
 
-Use `gpt-5.5` for high-value work:
+Use capability classes as requirements, not implementation names:
 
-- Architecture decisions.
-- Ambiguous bugs.
-- Security, authorization, payment, or migration risks.
-- Cross-module integration.
-- Failed `gpt-5.4-mini` recovery.
-- Final review.
+- `LIGHT`: narrow discovery, inventory, or mechanical low-risk work.
+- `STANDARD`: bounded implementation and ordinary validation.
+- `DEEP`: ambiguous, cross-boundary, or high-risk reasoning and execution.
+- `REVIEWER`: independent adversarial review.
 
-Effort levels:
+When the execution environment cannot select capability explicitly, keep the
+classification in the task contract and compensate with narrower scope,
+stronger proof, or an independent reviewer.
 
-- `low`: narrow lookup or simple confirmation.
-- `medium`: normal implementation or review.
-- `high`: complex debugging, design, or risky code.
-- `xhigh`: only when `high` fails or risk is severe.
+## 4. Track and Reconcile
 
-## Cost Guard
+While workers run:
 
-Before spawning agents, classify the task and choose the cheapest safe shape.
+1. Track node state and newly discovered dependencies.
+2. Prevent overlapping edits without ordering.
+3. Reconcile every changed file to one producer scope and artifact class.
+4. Inspect returned files and diffs before accepting claims.
+5. Re-run the smallest reliable proof when safe and practical.
+6. Reject unrelated changes and unsupported completion claims.
+7. Escalate capability only after a concrete evidence or reasoning failure.
+8. Stop and request direction when a required user decision expands scope.
 
-Use `T0 trivial` when the task is a tiny lookup, one-command check, small docs
-edit, rename, or simple mechanical change with no production, data, security,
-authorization, payment, migration, or multi-file risk.
+Use direct action only for unavoidable integration glue. State why delegation
+cannot solve that step, the exact affected surface, and its proof before acting.
 
-- Spawn exactly one `gpt-5.4-mini` subagent with `low` effort.
-- Do not split the task.
-- Main verifies the result directly with the smallest reliable check.
-- Skip final `gpt-5.5 medium` review unless the task changed code/tests or a
-  risk trigger appears during verification.
+Advance a node to `RUNNING` or `COMPLETE` only after every dependency is
+`COMPLETE`. Mark a node `BLOCKED` only with evidence-backed external,
+authority, user-decision, or blocked-dependency provenance. Otherwise leave
+unfinished runnable work `PENDING` or `RUNNING` and report `IN_PROGRESS`.
 
-Use `T1 simple` when the task is bounded to one obvious area but needs normal
-implementation or test proof.
+## 5. Apply the Review Gate
 
-- Spawn exactly one `gpt-5.4-mini` subagent with `medium` effort.
-- Use `low` effort if the work is mostly search, diagnosis, or docs.
-- Use `gpt-5.5 medium` only if `gpt-5.4-mini` returns weak evidence or the task
-  becomes ambiguous.
-- Run final `gpt-5.5 medium` review only if a review trigger applies.
+Require an independent `REVIEWER` node when any trigger applies:
 
-Use `T2 normal` when the task has multiple independent slices, cross-file
-coordination, or meaningful test coverage work.
+- Code or tests changed.
+- Security, authorization, privacy, data, migration, payment, secret, release,
+  deployment, or production risk exists.
+- More than one execution worker contributed.
+- Target validation failed or was not run.
+- Integration produced uncertainty.
+- The user requested review or high confidence.
 
-- Spawn one to three subagents.
-- Prefer `gpt-5.4-mini low/medium` for search, test inventory, and simple edits.
-- Use `gpt-5.5 medium/high` only for architecture, integration, or failed mini
-  recovery.
-- Run final `gpt-5.5 medium` review.
+The reviewer must be read-only, have a distinct neutral owner, run after every
+producer, and inspect the actual combined diff or artifact, changed-file
+manifest, test coverage, scope, validation evidence, and unresolved risks. Its
+own proof must be dedicated `TARGET` evidence with `PASS` status. Do not pass
+prior conclusions as expected answers. Delegate corrections and repeat the gate
+until it passes or a concrete blocker remains.
 
-Use `T3 high-risk` when the task touches production, data loss, migrations,
-security, authorization, payment, secrets, large refactors, release/deploy, or
-uncertain cross-repo behavior.
+When no trigger applies, record `NOT_REQUIRED` and the reason.
 
-- Use multiple agents only when ownership can be split safely.
-- Use `gpt-5.5 high` or `xhigh` only for the risky slice.
-- Run final `gpt-5.5 medium` review.
+## 6. Validate Completion
 
-## Verification Contract
+Write a temporary JSON report following
+[references/output-contract.md](references/output-contract.md), then run:
 
-Main Codex must not accept subagent completion from claims alone.
-
-For every subagent result:
-
-- Inspect the changed files.
-- Compare changes to assigned ownership.
-- Confirm required tests or proof exist.
-- Run or rerun the smallest reliable proof command when feasible.
-- Check no-go scope was respected.
-- Check the result against the original user intent.
-- Record verified, skipped, and blocked proof.
-
-Completion requires:
-
-- All required proof passed, or unresolved proof is explicitly reported as
-  blocked.
-- No unrelated edits are accepted silently.
-- No subagent claim is repeated as fact unless main Codex verified it.
-- The final `gpt-5.5 medium` review passes when review is required by the Cost
-  Guard.
-
-## Subagent Prompt Contract
-
-Every spawned agent prompt must be written in `$distill` language structure, not
-natural prose sections. Do not use prose heading labels for objective,
-ownership, no-go scope, proof, or final output.
-
-Main Codex owns the shared distill Dict for the whole orchestration. Before
-spawning each new agent, update the Dict with any stable aliases the new agent
-needs. Pass the full current Dict in the prompt. Do not rely on hidden context
-or prior agents to share aliases.
-
-Every spawned agent prompt must start with the current Dict plus this distill
-block:
-
-```text
-Dict: S=state C=context D=action R=risk O=outcome N=no-go P=proof
-D use $distill first
-D use distill language for visible status, plans, summaries, final output
-N prose sections
-N vague proof claims
-N raw shell output unless exact output required or distill breaks workflow
-P constraints explicit
-P pass criteria explicit
+```bash
+SAM_ORCHESTRATE_DIR="<absolute directory containing this SKILL.md>"
+python3 "$SAM_ORCHESTRATE_DIR/scripts/validate_orchestration.py" \
+  "$ORCHESTRATION_TMP/report.json"
 ```
 
-Then write the task with `S/C/D/R/O/N/P` lines only:
+Fix the report when validation fails. Do not weaken the validator or omit state
+to force completion. Remove temporary orchestration artifacts after validation.
 
-- `S` for current state or task context.
-- `C` for background facts and model/effort reason.
-- `D` for required actions.
-- `N` for ownership boundary and no-go scope.
-- `P` for required proof.
-- `O` for expected final output.
-- `R` for known risks or blockers.
+Return `COMPLETE` only when required DAG nodes and the review gate are complete,
+every completed producer has dedicated passing target proof for every declared
+proof requirement, the changed-file manifest reconciles, and no required
+correction remains. Return `BLOCKED` only when no runnable work remains and the
+unfinished graph traces to evidence-backed external, authority, user-decision,
+or blocked-dependency provenance. Otherwise keep the run `IN_PROGRESS`.
 
-Every worker prompt must include:
+## 7. Report
 
-```text
-N other agents may edit same repo
-N do not revert/overwrite other agents
-N stay inside assigned ownership
-P cite files/tests/commands used
-O final: result, proof, skipped proof, risks
-```
+Return:
 
-When a new agent needs extra shared aliases, add them before the task lines:
+- Task classification and delegated slices by capability.
+- Changed-file manifest, artifact classes, and producer ownership.
+- Passed, failed, skipped, and blocked proof.
+- Exact blocker provenance for blocked nodes.
+- Review-gate result or exact reason it was not required.
+- Final result and remaining task IDs.
 
-```text
-Dict+: be=backend fe=frontend e2e=end-to-end cfg=config
-```
-
-Only add aliases that are useful for that agent's prompt or likely to appear in
-its final output. Keep exact paths, commands, IDs, model names, and branch names
-unaliased.
-
-## Workflow
-
-1. Capture the goal, success criteria, constraints, and no-go scope.
-2. Classify the task as `T0 trivial`, `T1 simple`, `T2 normal`, or
-   `T3 high-risk`.
-3. Inspect the repository only enough to identify boundaries and dependencies.
-4. Build a task DAG with blockers, parallel slices, owners, proof commands, and
-   shared Dict aliases.
-5. Before each spawn, update the shared Dict for that agent's task and include
-   the full current Dict in the prompt.
-6. Spawn subagents for every execution task using only `gpt-5.4-mini` or
-   `gpt-5.5` with the smallest sufficient effort.
-7. While agents run, do non-overlapping orchestration only: track state,
-   prepare integration checks, and identify proof gaps.
-8. Review returned outputs against ownership, scope, tests, and user intent.
-9. Resolve only unavoidable orchestration conflicts or final assembly gaps.
-10. Run final verification commands.
-11. Spawn a final reviewer using exactly `gpt-5.5` with `medium` effort only
-   when required by the Cost Guard.
-
-## Final Review Gate
-
-Spawn `gpt-5.5 medium` to review only when any trigger applies:
-
-- Code changed.
-- Tests changed.
-- Production, data, security, authorization, payment, migration, secret,
-  deploy, or release risk exists.
-- More than one subagent worked.
-- A subagent used `gpt-5.5`.
-- Validation was skipped or blocked.
-- Main verification found uncertainty.
-- User requested high confidence or review.
-
-When review is triggered, ask the reviewer to check:
-
-- All diffs.
-- Test coverage.
-- Risks.
-- Skipped validation.
-- Scope drift.
-- Final proof claims.
-
-If the final reviewer finds issues, delegate fixes to subagents and repeat the
-review gate until the reviewer reports no blocking issues or a real blocker is
-reached.
-
-If no review trigger applies, skip final `gpt-5.5 medium` review and report why
-the Cost Guard skipped it.
-
-## Final Response
-
-Report:
-
-- What was delegated and to which model/effort.
-- What changed.
-- What proof passed.
-- What proof was skipped and why.
-- Final `gpt-5.5 medium` review result, or the Cost Guard reason it was skipped.
+Do not repeat agent claims that the controller did not verify.

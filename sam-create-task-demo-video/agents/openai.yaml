@@ -1,4 +1,4 @@
 interface:
   display_name: "Sam Create Task Demo Video"
-  short_description: "Record a human-paced task demo, convert it to MP4, and attach PR/MR evidence."
-  default_prompt: "Use $sam-create-task-demo-video to record a human-paced demo of the completed task, convert it to MP4, verify playback, and upload/comment on the PR or MR when available."
+  short_description: "Create a validated human-paced MP4 task demo"
+  default_prompt: "Use $sam-create-task-demo-video to record and validate a safe local MP4 walkthrough of the completed task."

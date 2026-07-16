@@ -1,4 +1,4 @@
 interface:
   display_name: "Sam Review Code"
-  short_description: "Rigorous local code review with strict structural quality checks returned in Codex."
-  default_prompt: "Use $sam-review-code to review the local code changes end-to-end, include strict maintainability checks, and return the review in Codex only."
+  short_description: "Evidence-backed local review with scope control"
+  default_prompt: "Use $sam-review-code to review the exact local change with complete diff coverage, verified findings, and a validated decision."
