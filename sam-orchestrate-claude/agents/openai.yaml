@@ -1,6 +1,0 @@
-interface:
-  display_name: "Sam Orchestrate Legacy Alias"
-  short_description: "Legacy alias for the Sam Orchestrate workflow"
-  default_prompt: "Use $sam-orchestrate-claude as a compatibility alias for the canonical orchestration workflow."
-policy:
-  allow_implicit_invocation: false

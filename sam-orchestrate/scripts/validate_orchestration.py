@@ -37,7 +37,6 @@ ROUTING_SELECTION = re.compile(
     re.IGNORECASE,
 )
 PACKAGE_DIR = Path(__file__).resolve().parent.parent
-ALIAS_DIR = PACKAGE_DIR.parent / "sam-orchestrate-claude"
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -115,8 +114,7 @@ def path_within(path: tuple[str, ...], scope: tuple[str, ...]) -> bool:
 def neutrality_violations(texts: dict[str, str]) -> list[str]:
     """Return active named-routing assignments in operational text."""
     errors: list[str] = []
-    for label, raw_text in texts.items():
-        text = raw_text.replace("sam-orchestrate-claude", "legacy-orchestration-alias")
+    for label, text in texts.items():
         for line_number, line in enumerate(text.splitlines(), start=1):
             if ROUTING_ASSIGNMENT.search(line) or ROUTING_SELECTION.search(line):
                 errors.append(f"named routing in {label}:{line_number}")
@@ -125,7 +123,7 @@ def neutrality_violations(texts: dict[str, str]) -> list[str]:
 
 def package_neutrality_texts() -> dict[str, str]:
     texts: dict[str, str] = {}
-    for root_name, root in (("canonical", PACKAGE_DIR), ("alias", ALIAS_DIR)):
+    for root_name, root in (("canonical", PACKAGE_DIR),):
         candidates = [root / "SKILL.md"]
         for directory, suffix in (("references", ".md"), ("agents", ".yaml")):
             resource_root = root / directory

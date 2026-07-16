@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Work"
+  short_description: "Run the complete verified delivery workflow"
+  default_prompt: "Use $sam-work to deliver this task through every required gate and prove completion."

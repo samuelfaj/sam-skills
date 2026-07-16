@@ -13,7 +13,7 @@ Draft a JSON report and validate it against `context.json`.
   "language": "EN-US",
   "change_types": ["BUG_FIX"],
   "file_coverage": [
-    {"path": "src/example.ts", "section": "Scope", "summary": "Updates behavior"}
+    {"path": "src/example.ts", "section": "Scope and Impact", "summary": "Updates behavior"}
   ],
   "evidence": [
     {
@@ -63,5 +63,5 @@ Remote statuses are `NOT_REQUESTED`, `PLANNED`, `UPDATED`, `PARTIAL`, and
 `BLOCKED`. Receipts contain non-empty `kind`, `id`, `url`, and `status` fields.
 
 The validator checks target fingerprint, complete one-time file coverage,
-evidence references, claim/body linkage, required headings, checked change
-types, placeholders, outer code fences, and remote head drift.
+evidence references, claim/body linkage, the plain-language required headings,
+checked change types, placeholders, outer code fences, and remote head drift.

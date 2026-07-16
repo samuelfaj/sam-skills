@@ -301,29 +301,44 @@ Service returns the corrected value.
 - [ ] Documentation
 - [ ] Other: Not applicable
 
-## Scope
+## What Changed
+
+- User-visible change: The service returns the corrected value.
+- Internal change: The return value and its regression test were updated.
+
+## Behavior
+
+- Before: The service returned zero.
+- After: The service returns one.
+- Unchanged: The service interface is unchanged.
+
+## Business Rules
+
+- Added: None.
+- Changed: When the service value is requested, the system must return one.
+- Preserved: The service call remains parameterless.
+
+## Scope and Impact
 
 - `docs/new.md` — Preserves the renamed documentation note.
 - `docs/remove.md` — Removes the obsolete documentation note.
 - `src/service.py` — Corrects the service result.
 - `tests/test_service.py` — Adds regression coverage.
+- Out of scope: Other service behavior.
+- User impact: Consumers receive the corrected value.
+- Technical impact: No API, data, configuration, or compatibility change.
 
-## Behavior and Business Rules
+## Risks and Mitigations
 
-- The service value is now one.
+- Risk: Consumers may rely on the previous incorrect value.
+- Mitigation: The focused regression test proves the corrected contract.
+- Remaining risk: Broader compatibility was not verified.
 
-## What Was Done
+## Rollout and Recovery
 
-1. Updated the return value and added its regression test.
-
-## Architecture and Trade-offs
-
-- Architecture: None.
-- Trade-offs: Not applicable.
-
-## Safety and Risks
-
-- Broader compatibility was not verified.
+- Rollout: Standard deployment.
+- Monitoring: Observe service-result errors.
+- Recovery: Revert the change if consumers regress.
 
 ## Validation
 
@@ -331,19 +346,23 @@ Service returns the corrected value.
 
 ## Tests
 
+- Scenarios: The service returns one.
 - Added: `tests/test_service.py` covers the corrected value.
 - Executed: `fixture test` passed.
 
 ## Author Checklist
 
-- [x] Scope matches the proposal.
-- [x] Required validation passed.
-- [x] Risks and limitations are documented.
+- [x] Description explains the problem, outcome, and reason.
+- [x] Before/after behavior and business rules are explicit.
+- [x] Every changed file is represented in scope.
+- [x] Risks, mitigations, and recovery are documented.
+- [x] Tests and validation reflect commands actually run.
 - [x] No unrelated changes are included.
 
 ## Notes for Reviewer
 
-- Verify the value contract.
+- Review first: Verify the value contract.
+- Open questions: None.
 """
 
 
@@ -361,22 +380,22 @@ def valid_report(context: dict[str, Any]) -> dict[str, Any]:
         "file_coverage": [
             {
                 "path": "docs/new.md",
-                "section": "Scope",
+                "section": "Scope and Impact",
                 "summary": "Preserves the renamed documentation note.",
             },
             {
                 "path": "docs/remove.md",
-                "section": "Scope",
+                "section": "Scope and Impact",
                 "summary": "Removes the obsolete documentation note.",
             },
             {
                 "path": "src/service.py",
-                "section": "Scope",
+                "section": "Scope and Impact",
                 "summary": "Corrects the service result.",
             },
             {
                 "path": "tests/test_service.py",
-                "section": "Scope",
+                "section": "Scope and Impact",
                 "summary": "Adds regression coverage.",
             },
         ],

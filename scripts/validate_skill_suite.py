@@ -32,7 +32,16 @@ FORBIDDEN_TEXT = (
 )
 ALLOWED_SKILL_FILES = {"SKILL.md"}
 ALLOWED_RESOURCE_DIRS = {"agents", "assets", "references", "scripts"}
-LEGACY_ALIAS = "sam-orchestrate-claude"
+PROVIDER_SPECIFIC_REPLACEMENTS = {
+    "sam-codex-advisor": (
+        (re.compile(r"\bcodex\b", re.IGNORECASE), "advisor-runtime"),
+        (re.compile(r"\bgpt-5\.6-sol\b", re.IGNORECASE), "approved-model"),
+    ),
+    "sam-fable-advisor": (
+        (re.compile(r"\bclaude\b", re.IGNORECASE), "advisor-runtime"),
+        (re.compile(r"\bfable\b", re.IGNORECASE), "approved-model"),
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -102,13 +111,13 @@ def validate_frontmatter(skill: Skill, errors: list[str]) -> None:
     line_count = len((skill.root / "SKILL.md").read_text(encoding="utf-8").splitlines())
     if line_count > 500:
         errors.append(f"{prefix}: SKILL.md has {line_count} lines; maximum is 500")
-    if skill.name != LEGACY_ALIAS and "## Non-Negotiable Contract" not in skill.body:
+    if "## Non-Negotiable Contract" not in skill.body:
         errors.append(f"{prefix}: missing Non-Negotiable Contract")
     has_output_contract = "references/output-contract.md" in skill.body
     has_output_heading = re.search(
         r"^## .*?(?:Output|Return)", skill.body, re.MULTILINE | re.IGNORECASE
     )
-    if skill.name != LEGACY_ALIAS and not (has_output_contract or has_output_heading):
+    if not (has_output_contract or has_output_heading):
         errors.append(f"{prefix}: missing explicit output/return section")
 
 
@@ -234,9 +243,12 @@ def validate_portability(skill: Skill, errors: list[str]) -> None:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
-        text = text.replace(LEGACY_ALIAS, "legacy-orchestration-alias")
         text = text.replace("openai.yaml", "agent-metadata.yaml")
         text = text.replace("anthropic.yaml", "obsolete-metadata.yaml")
+        for pattern, replacement in PROVIDER_SPECIFIC_REPLACEMENTS.get(
+            skill.name, ()
+        ):
+            text = pattern.sub(replacement, text)
         for label, pattern in FORBIDDEN_TEXT:
             match = pattern.search(text)
             if match:
@@ -272,7 +284,9 @@ def validate_repository_docs(
     for skill in skills:
         if skill.name not in raw_text:
             errors.append(f"README.md: missing skill catalog entry for {skill.name}")
-    inspected = raw_text.replace(LEGACY_ALIAS, "legacy-orchestration-alias")
+    inspected = raw_text
+    for skill_name in PROVIDER_SPECIFIC_REPLACEMENTS:
+        inspected = inspected.replace(skill_name, "provider-specific-advisor")
     for label, pattern in FORBIDDEN_TEXT:
         match = pattern.search(inspected)
         if match:

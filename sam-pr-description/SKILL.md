@@ -63,15 +63,16 @@ range. Never truncate an oversized patch or read a sensitive path into context.
 
 Read the complete manifest, commits, and relevant changed files. Record:
 
-- Intended outcome and why the change exists.
+- Problem, intended outcome, why the change exists, and who benefits.
 - Changed modules and every changed path.
-- Observable behavior before and after.
-- Architecture or ownership changes.
-- Business rules actually encoded by the diff.
+- Observable behavior before, after, and intentionally unchanged.
+- Business rules added, changed, or preserved by the diff.
+- User, API, data, configuration, operational, and compatibility impact when
+  relevant.
+- Concrete failure modes, mitigations, remaining risks, rollout, monitoring,
+  and recovery when relevant.
 - Tests added or changed.
 - Validation commands run with exact status.
-- Compatibility, migration, rollout, rollback, and unresolved risks when
-  applicable.
 - Ticket or proposal references present in user context, metadata, branch, or
   commits.
 
@@ -83,11 +84,14 @@ must cite one or more evidence IDs in the temporary report.
 Follow [references/template.md](references/template.md). Keep sections concise
 and adapt their content to the actual change:
 
+- Write for a reader who did not implement the change.
+- Lead with the problem, outcome, and observable behavior.
+- Express business rules as conditions and outcomes.
+- Pair each material risk with a mitigation or state that none is proven.
 - Do not invent endpoint or payload fields for non-API work.
-- Do not claim an architecture change merely because files moved.
+- Do not narrate files when a behavior-level summary is clearer.
 - Do not mark checklist items complete without evidence.
 - State unrun or blocked validation explicitly.
-- Mention real trade-offs only when supported by context or user evidence.
 - Keep reviewer instructions focused on risk and behavior.
 
 The body must be raw Markdown without an outer code fence, placeholders, HTML

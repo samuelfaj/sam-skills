@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate a remote review report against its immutable Git bundle."""
+"""Validate a unified review report against its immutable Git bundle."""
 
 from __future__ import annotations
 
@@ -26,7 +26,13 @@ TEST_STATUSES = {
     "NOT_APPLICABLE",
 }
 VALIDATION_STATUSES = {"PASS", "FAIL", "NOT_RUN"}
-VALIDATION_CLASSES = {"TARGET", "BASELINE", "ENVIRONMENT", "EXTERNAL"}
+VALIDATION_CLASSES = {
+    "TARGET",
+    "INTRODUCED",
+    "BASELINE",
+    "ENVIRONMENT",
+    "EXTERNAL",
+}
 BEHAVIOR_STATUSES = {"PROVEN", "NOT_PROVEN", "NOT_APPLICABLE"}
 DECISIONS = {"APPROVE", "CHANGES_REQUIRED", "BLOCKED", "COMMENT_ONLY"}
 CONFIDENCE = {"LOW", "MEDIUM", "HIGH"}
@@ -94,6 +100,21 @@ def nonempty_string(value: Any, label: str, errors: list[str]) -> str:
     return value
 
 
+def nonnegative_integer(value: Any, label: str, errors: list[str]) -> int | None:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        errors.append(f"{label} must be a non-negative integer")
+        return None
+    return value
+
+
+def exceeds_double(baseline: Any, current: Any) -> bool:
+    if not isinstance(baseline, int) or not isinstance(current, int):
+        return False
+    if baseline == 0:
+        return current > 0
+    return current > baseline * 2
+
+
 def line_in_ranges(line: int, ranges: Any) -> bool:
     if not isinstance(ranges, list):
         return False
@@ -113,19 +134,29 @@ def validate_bundle(
         bundle,
         {
             "schema_version",
+            "repository_root",
             "target",
+            "path_filters",
+            "summary",
+            "risk_tags",
+            "command_definitions_requiring_inspection",
             "files",
             "patch",
-            "patch_sha256",
-            "bundle_fingerprint",
+            "warnings",
+            "fingerprint",
         },
         {
             "schema_version",
+            "repository_root",
             "target",
+            "path_filters",
+            "summary",
+            "risk_tags",
+            "command_definitions_requiring_inspection",
             "files",
             "patch",
-            "patch_sha256",
-            "bundle_fingerprint",
+            "warnings",
+            "fingerprint",
         },
         "bundle",
         errors,
@@ -133,16 +164,12 @@ def validate_bundle(
     if bundle.get("schema_version") != 1:
         errors.append("bundle.schema_version must be 1")
     copy_value = copy.deepcopy(bundle)
-    recorded = copy_value.pop("bundle_fingerprint", None)
+    recorded = copy_value.pop("fingerprint", None)
     if recorded != canonical_fingerprint(copy_value):
         errors.append("bundle fingerprint does not match bundle content")
     patch = bundle.get("patch")
     if not isinstance(patch, str):
         errors.append("bundle.patch must be a string")
-    elif (
-        bundle.get("patch_sha256") != hashlib.sha256(patch.encode("utf-8")).hexdigest()
-    ):
-        errors.append("bundle patch_sha256 does not match patch content")
     target = bundle.get("target")
     if not isinstance(target, dict):
         errors.append("bundle.target must be an object")
@@ -150,17 +177,15 @@ def validate_bundle(
     require_keys(
         target,
         {
-            "platform",
-            "repository",
-            "change_id",
+            "mode",
             "base_ref",
-            "head_ref",
-            "requested_base_sha",
             "base_sha",
+            "head_ref",
             "head_sha",
-            "comparison",
+            "merge_base_sha",
         },
         {
+            "mode",
             "platform",
             "repository",
             "change_id",
@@ -169,19 +194,31 @@ def validate_bundle(
             "requested_base_sha",
             "base_sha",
             "head_sha",
+            "merge_base_sha",
             "comparison",
         },
         "bundle.target",
         errors,
     )
-    for key in ("platform", "repository", "change_id", "base_ref", "head_ref"):
-        nonempty_string(target.get(key), f"bundle.target.{key}", errors)
-    for key in ("requested_base_sha", "base_sha", "head_sha"):
+    mode = target.get("mode")
+    if mode not in {"local", "branch", "commit", "range", "proposal"}:
+        errors.append("bundle.target.mode is invalid")
+    for key in ("base_sha", "head_sha", "merge_base_sha"):
         value = nonempty_string(target.get(key), f"bundle.target.{key}", errors)
         if value and not SHA_RE.fullmatch(value):
             errors.append(f"bundle.target.{key} must be a full Git object ID")
-    if target.get("comparison") not in {"direct", "merge-base"}:
-        errors.append("bundle.target.comparison must be direct or merge-base")
+    if mode == "proposal":
+        for key in (
+            "platform",
+            "repository",
+            "change_id",
+            "base_ref",
+            "head_ref",
+            "requested_base_sha",
+        ):
+            nonempty_string(target.get(key), f"bundle.target.{key}", errors)
+        if target.get("comparison") not in {"direct", "merge-base"}:
+            errors.append("bundle.target.comparison must be direct or merge-base")
     files = object_list(bundle.get("files"), "bundle.files", errors)
     if not files:
         errors.append("bundle.files must not be empty")
@@ -197,6 +234,7 @@ def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
             "schema_version",
             "target",
             "intent",
+            "scope",
             "file_coverage",
             "findings",
             "test_coverage",
@@ -209,6 +247,7 @@ def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
             "schema_version",
             "target",
             "intent",
+            "scope",
             "file_coverage",
             "findings",
             "test_coverage",
@@ -229,15 +268,15 @@ def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
         target = {}
     require_keys(
         target,
-        {"base_sha", "head_sha", "bundle_fingerprint"},
-        {"base_sha", "head_sha", "bundle_fingerprint"},
+        {"mode", "base_sha", "head_sha", "bundle_fingerprint"},
+        {"mode", "base_sha", "head_sha", "bundle_fingerprint"},
         "report.target",
         errors,
     )
-    for key in ("base_sha", "head_sha"):
+    for key in ("mode", "base_sha", "head_sha"):
         if target.get(key) != bundle_target.get(key):
             errors.append(f"report.target.{key} does not match bundle")
-    if target.get("bundle_fingerprint") != bundle.get("bundle_fingerprint"):
+    if target.get("bundle_fingerprint") != bundle.get("fingerprint"):
         errors.append("report.target.bundle_fingerprint does not match bundle")
 
     intent = report.get("intent")
@@ -274,6 +313,79 @@ def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
     nonempty_string(intent.get("owner_boundary"), "intent.owner_boundary", errors)
     if not isinstance(intent.get("user_visible_change"), bool):
         errors.append("intent.user_visible_change must be boolean")
+
+    scope = report.get("scope")
+    if not isinstance(scope, dict):
+        errors.append("scope must be an object")
+        scope = {}
+    require_keys(
+        scope,
+        {
+            "baseline_file_count",
+            "baseline_non_test_lines",
+            "current_file_count",
+            "current_non_test_lines",
+            "review_cycle",
+            "scope_expansion_approved",
+            "remaining_findings_reclassified",
+        },
+        {
+            "baseline_file_count",
+            "baseline_non_test_lines",
+            "current_file_count",
+            "current_non_test_lines",
+            "review_cycle",
+            "scope_expansion_approved",
+            "remaining_findings_reclassified",
+        },
+        "scope",
+        errors,
+    )
+    for key in (
+        "baseline_file_count",
+        "baseline_non_test_lines",
+        "current_file_count",
+        "current_non_test_lines",
+    ):
+        nonnegative_integer(scope.get(key), f"scope.{key}", errors)
+    review_cycle = nonnegative_integer(
+        scope.get("review_cycle"), "scope.review_cycle", errors
+    )
+    if review_cycle == 0:
+        errors.append("scope.review_cycle must be at least 1")
+    for key in ("scope_expansion_approved", "remaining_findings_reclassified"):
+        if not isinstance(scope.get(key), bool):
+            errors.append(f"scope.{key} must be boolean")
+    summary = bundle.get("summary")
+    if not isinstance(summary, dict):
+        errors.append("bundle.summary must be an object")
+        summary = {}
+    bundle_non_test_lines = (summary.get("non_test_added_lines") or 0) + (
+        summary.get("non_test_deleted_lines") or 0
+    )
+    if scope.get("current_file_count") != summary.get("file_count"):
+        errors.append("scope.current_file_count must match bundle.summary.file_count")
+    if scope.get("current_non_test_lines") != bundle_non_test_lines:
+        errors.append(
+            "scope.current_non_test_lines must match bundle non-test line count"
+        )
+    scope_blocked = bool(
+        (
+            exceeds_double(
+                scope.get("baseline_file_count"), scope.get("current_file_count")
+            )
+            or exceeds_double(
+                scope.get("baseline_non_test_lines"),
+                scope.get("current_non_test_lines"),
+            )
+        )
+        and not scope.get("scope_expansion_approved")
+    )
+    cycle_blocked = bool(
+        isinstance(review_cycle, int)
+        and review_cycle > 2
+        and not scope.get("remaining_findings_reclassified")
+    )
 
     file_by_path: dict[str, dict[str, Any]] = {}
     for index, item in enumerate(bundle_files):
@@ -320,6 +432,7 @@ def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
     findings = object_list(report.get("findings"), "findings", errors)
     findings_by_id: dict[str, dict[str, Any]] = {}
     accepted_required: list[str] = []
+    accepted_test_gaps: set[str] = set()
     stop_findings: list[str] = []
     for index, finding in enumerate(findings):
         label = f"findings[{index}]"
@@ -401,6 +514,11 @@ def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
                 )
             if finding.get("severity") in {"BLOCKER", "IMPORTANT"} and finding_id:
                 accepted_required.append(finding_id)
+            if finding.get("test_gap"):
+                if finding.get("severity") != "BLOCKER":
+                    errors.append(f"{label} required test gaps must be BLOCKER")
+                if finding_id:
+                    accepted_test_gaps.add(finding_id)
         elif finding.get("status") == "REJECTED":
             nonempty_string(
                 finding.get("rejection_reason"), f"{label}.rejection_reason", errors
@@ -421,6 +539,7 @@ def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
     tests = object_list(report.get("test_coverage"), "test_coverage", errors)
     if not tests:
         errors.append("test_coverage must contain at least one scenario")
+    referenced_test_gaps: set[str] = set()
     for index, item in enumerate(tests):
         label = f"test_coverage[{index}]"
         require_keys(
@@ -454,8 +573,16 @@ def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
                 )
             elif not linked_finding.get("test_gap"):
                 errors.append(f"{label} linked blocker must set test_gap true")
+            elif isinstance(test_finding_id, str):
+                referenced_test_gaps.add(test_finding_id)
         elif test_finding_id is not None and test_finding_id not in findings_by_id:
             errors.append(f"{label}.finding_id references an unknown finding")
+    unreferenced_test_gaps = sorted(accepted_test_gaps - referenced_test_gaps)
+    if unreferenced_test_gaps:
+        errors.append(
+            "accepted test-gap findings missing from test_coverage: "
+            + ", ".join(unreferenced_test_gaps)
+        )
 
     validations = object_list(report.get("validations"), "validations", errors)
     if not validations:
@@ -476,7 +603,10 @@ def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
         if item.get("classification") not in VALIDATION_CLASSES:
             errors.append(f"{label}.classification is invalid")
         nonempty_string(item.get("reason"), f"{label}.reason", errors)
-        if item.get("status") == "FAIL" and item.get("classification") == "TARGET":
+        if item.get("status") == "FAIL" and item.get("classification") in {
+            "TARGET",
+            "INTRODUCED",
+        }:
             target_failures += 1
 
     behavior = report.get("behavior_proof")
@@ -521,9 +651,9 @@ def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
     )
     expected_remaining = sorted(set(accepted_required))
     if result == "APPROVE":
-        if expected_remaining or stop_findings:
+        if expected_remaining or stop_findings or scope_blocked or cycle_blocked:
             errors.append(
-                "APPROVE cannot retain required or stop-and-escalate findings"
+                "APPROVE cannot retain required, scope, convergence, or escalation blockers"
             )
         if target_failures:
             errors.append("APPROVE cannot retain a target validation failure")
@@ -540,8 +670,10 @@ def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
         if sorted(set(remaining)) != expected_remaining:
             errors.append("remaining_corrections must match accepted required findings")
     elif result == "BLOCKED":
-        if not stop_findings and not remaining:
-            errors.append("BLOCKED requires a recorded blocker or remaining correction")
+        if not stop_findings and not remaining and not scope_blocked and not cycle_blocked:
+            errors.append(
+                "BLOCKED requires a scope, convergence, escalation, or remaining correction"
+            )
     elif result == "COMMENT_ONLY":
         if decision.get("non_gating_requested") is not True:
             errors.append("COMMENT_ONLY requires explicit non-gating request")
@@ -653,6 +785,8 @@ def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
         errors.append("publication.error must be null or a non-empty string")
     expected_head = bundle_target.get("head_sha")
     drifted = bool(observed_head and observed_head != expected_head)
+    if bundle_target.get("mode") != "proposal" and requested is True:
+        errors.append("publication is unavailable for non-proposal targets")
     if requested is False:
         if (
             action != "NONE"
@@ -722,7 +856,7 @@ def main() -> int:
             print(f"ERROR: {error}", file=sys.stderr)
         print(f"FAIL: {len(errors)} validation error(s)", file=sys.stderr)
         return 1
-    print("PASS: remote review report is internally consistent")
+    print("PASS: review report is internally consistent")
     return 0
 
 

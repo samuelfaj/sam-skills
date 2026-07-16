@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise bundle and report contracts with reproducible local review fixtures."""
+"""Exercise unified local and proposal review contracts with reproducible fixtures."""
 
 from __future__ import annotations
 
@@ -366,7 +366,7 @@ def report_for_clean_bundle(bundle: dict[str, Any], request: str) -> dict[str, A
         "intent": {
             "intended_behavior": [request],
             "must_not_change": [],
-            "invariants": [],
+            "invariants": ["Review evidence remains tied to the frozen diff"],
             "owner_boundary": "fixture repository",
             "user_visible_change": False,
         },
@@ -390,6 +390,7 @@ def report_for_clean_bundle(bundle: dict[str, Any], request: str) -> dict[str, A
                 "status": "COVERED",
                 "paths": [item["path"] for item in bundle["files"] if item["test"]],
                 "reason": "Harness contract check",
+                "finding_id": None,
             }
         ],
         "validations": [
@@ -406,6 +407,17 @@ def report_for_clean_bundle(bundle: dict[str, Any], request: str) -> dict[str, A
             "confidence": "HIGH",
             "non_gating_requested": False,
             "remaining_corrections": [],
+        },
+        "publication": {
+            "requested": False,
+            "expected_head_sha": bundle["target"]["head_sha"],
+            "observed_head_sha": bundle["target"]["head_sha"],
+            "review_id": "fixture-review-0001",
+            "action": "NONE",
+            "status": "NOT_REQUESTED",
+            "inline_comments": [],
+            "receipts": [],
+            "error": None,
         },
     }
 
@@ -464,7 +476,7 @@ def self_test() -> None:
     script_dir = Path(__file__).resolve().parent
     builder = script_dir / "build_review_bundle.py"
     validator = script_dir / "validate_review.py"
-    with tempfile.TemporaryDirectory(prefix="sam-review-code-harness-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="sam-review-harness-") as temporary:
         temp = Path(temporary)
         bundles: dict[str, dict[str, Any]] = {}
         for name, fixture in FIXTURES.items():
@@ -525,6 +537,22 @@ def self_test() -> None:
             "branch": ["--mode", "branch", "--base", "HEAD^", "--head", "HEAD"],
             "range": ["--mode", "range", "--range", "HEAD^..HEAD"],
             "auto": ["--mode", "auto", "--base", "HEAD^"],
+            "proposal": [
+                "--mode",
+                "proposal",
+                "--base",
+                "HEAD^",
+                "--head",
+                "HEAD",
+                "--platform",
+                "fixture",
+                "--repository",
+                "example/repository",
+                "--change-id",
+                "42",
+                "--comparison",
+                "direct",
+            ],
         }
         for expected_mode, mode_args in mode_commands.items():
             mode_result = run(
@@ -537,6 +565,134 @@ def self_test() -> None:
                 raise RuntimeError(
                     f"target mode {expected_mode}: got {actual_mode}, expected {normalized_expected}"
                 )
+
+        proposal_result = run(
+            [
+                sys.executable,
+                str(builder),
+                "--repo",
+                str(mode_repo),
+                *mode_commands["proposal"],
+            ],
+            mode_repo,
+        )
+        proposal_bundle = json.loads(proposal_result.stdout)
+        proposal_target = proposal_bundle["target"]
+        if (
+            proposal_target.get("platform") != "fixture"
+            or proposal_target.get("repository") != "example/repository"
+            or proposal_target.get("change_id") != "42"
+            or proposal_target.get("comparison") != "direct"
+        ):
+            raise RuntimeError("proposal identity was not preserved in the bundle")
+        if not all(
+            "old_changed_ranges" in item and "new_changed_ranges" in item
+            for item in proposal_bundle["files"]
+        ):
+            raise RuntimeError("proposal bundle omitted changed-side ranges")
+
+        proposal_bundle_path = temp / "proposal-bundle.json"
+        proposal_report_path = temp / "proposal-report.json"
+        proposal_bundle_path.write_text(
+            json.dumps(proposal_bundle), encoding="utf-8"
+        )
+        proposal_report = report_for_clean_bundle(
+            proposal_bundle, "Review the fixture proposal"
+        )
+        proposal_report_path.write_text(
+            json.dumps(proposal_report), encoding="utf-8"
+        )
+        proposal_valid = run(
+            [
+                sys.executable,
+                str(validator),
+                "--bundle",
+                str(proposal_bundle_path),
+                str(proposal_report_path),
+            ],
+            temp,
+            check=False,
+        )
+        if proposal_valid.returncode != 0:
+            raise RuntimeError(
+                f"valid unrequested proposal review rejected: {proposal_valid.stderr}"
+            )
+
+        planned_approval = copy.deepcopy(proposal_report)
+        planned_approval["publication"].update(
+            {"requested": True, "action": "APPROVE", "status": "PLANNED"}
+        )
+        proposal_report_path.write_text(
+            json.dumps(planned_approval), encoding="utf-8"
+        )
+        planned_valid = run(
+            [
+                sys.executable,
+                str(validator),
+                "--bundle",
+                str(proposal_bundle_path),
+                str(proposal_report_path),
+            ],
+            temp,
+            check=False,
+        )
+        if planned_valid.returncode != 0:
+            raise RuntimeError(
+                f"authorized planned approval rejected: {planned_valid.stderr}"
+            )
+
+        incompatible_action = copy.deepcopy(planned_approval)
+        incompatible_action["publication"]["action"] = "REQUEST_CHANGES"
+        proposal_report_path.write_text(
+            json.dumps(incompatible_action), encoding="utf-8"
+        )
+        incompatible_rejected = run(
+            [
+                sys.executable,
+                str(validator),
+                "--bundle",
+                str(proposal_bundle_path),
+                str(proposal_report_path),
+            ],
+            temp,
+            check=False,
+        )
+        if (
+            incompatible_rejected.returncode != 1
+            or "REQUEST_CHANGES action requires CHANGES_REQUIRED"
+            not in incompatible_rejected.stderr
+        ):
+            raise RuntimeError("validator accepted an incompatible publication action")
+
+        local_publication = report_for_clean_bundle(
+            bundles["test-only-clean"], FIXTURES["test-only-clean"]["request"]
+        )
+        local_publication["publication"].update(
+            {"requested": True, "action": "APPROVE", "status": "PLANNED"}
+        )
+        local_bundle_path = temp / "local-publication-bundle.json"
+        local_report_path = temp / "local-publication-report.json"
+        local_bundle_path.write_text(
+            json.dumps(bundles["test-only-clean"]), encoding="utf-8"
+        )
+        local_report_path.write_text(json.dumps(local_publication), encoding="utf-8")
+        local_publication_rejected = run(
+            [
+                sys.executable,
+                str(validator),
+                "--bundle",
+                str(local_bundle_path),
+                str(local_report_path),
+            ],
+            temp,
+            check=False,
+        )
+        if (
+            local_publication_rejected.returncode != 1
+            or "publication is unavailable for non-proposal targets"
+            not in local_publication_rejected.stderr
+        ):
+            raise RuntimeError("validator allowed publication for a local target")
 
         remote = temp / "remote.git"
         run(["git", "init", "--bare", "--initial-branch=trunk", str(remote)], temp)
@@ -952,6 +1108,7 @@ def self_test() -> None:
                 "scope": "IN_SCOPE",
                 "path": changed_file["path"],
                 "line": changed_line,
+                "side": "NEW",
                 "failure_mode": "Synthetic failure",
                 "impact": "Synthetic impact",
                 "evidence": ["Synthetic evidence"],
@@ -972,7 +1129,7 @@ def self_test() -> None:
             temp,
             check=False,
         )
-        if rejected.returncode != 1 or "APPROVE is invalid" not in rejected.stderr:
+        if rejected.returncode != 1 or "APPROVE cannot retain" not in rejected.stderr:
             raise RuntimeError("validator accepted an inconsistent approval")
         invalid_score, _ = score_report("test-only-clean", report_path)
         if invalid_score:
@@ -1044,7 +1201,7 @@ def self_test() -> None:
         )
         if (
             behavior_rejected.returncode != 1
-            or "requires PROVEN behavior" not in behavior_rejected.stderr
+            or "requires proof for a user-visible change" not in behavior_rejected.stderr
         ):
             raise RuntimeError("validator approved an unproven user-visible change")
 
@@ -1064,7 +1221,7 @@ def self_test() -> None:
         )
         if (
             coverage_rejected.returncode != 1
-            or "missing bundle paths" not in coverage_rejected.stderr
+            or "file_coverage missing paths" not in coverage_rejected.stderr
         ):
             raise RuntimeError("validator accepted incomplete changed-file coverage")
 
@@ -1104,7 +1261,7 @@ def self_test() -> None:
         )
         if (
             validations_rejected.returncode != 1
-            or "at least one PASS" not in validations_rejected.stderr
+            or "at least one entry" not in validations_rejected.stderr
         ):
             raise RuntimeError("validator accepted an empty validation ledger")
 
@@ -1131,7 +1288,7 @@ def self_test() -> None:
         )
         if (
             introduced_rejected.returncode != 1
-            or "introduced validation failure" not in introduced_rejected.stderr
+            or "target validation failure" not in introduced_rejected.stderr
         ):
             raise RuntimeError("validator approved an introduced validation failure")
 
@@ -1199,7 +1356,7 @@ def main() -> int:
         print(
             f"PASS: {len(FIXTURES)} semantic fixtures; target modes, path filters, "
             "rename/delete, Git isolation, bundle safety, strict semantic scoring, "
-            "and report validation"
+            "proposal publication states, and report validation"
         )
         return 0
     except (OSError, RuntimeError, json.JSONDecodeError) as error:

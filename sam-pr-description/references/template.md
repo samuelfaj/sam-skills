@@ -1,12 +1,17 @@
 # Description Template
 
-Use these sections in order. Replace every instruction with evidence-backed
-content or `Not applicable` / `Not verified`.
+Write for a reader who did not implement the change. In two minutes, they must
+understand why the change exists, what behavior changed, which business rules
+apply, what can go wrong, and how the result was verified.
+
+Use these sections in order. Keep each section short. Replace every instruction
+with evidence-backed content or `Not applicable` / `Not verified`.
 
 ```markdown
 ## Description
 
-One short paragraph explaining the outcome and reason.
+In two to four sentences, explain the problem, the outcome, and why it matters.
+Lead with behavior and value, not files or implementation details.
 
 ## Type of Change
 
@@ -16,49 +21,72 @@ One short paragraph explaining the outcome and reason.
 - [ ] Documentation
 - [ ] Other: <specific type>
 
-## Scope
+## What Changed
 
-- `<module or path>` — concrete change.
+- User-visible change: concise outcome or `None`.
+- Internal change: concise implementation summary or `None`.
 
-## Behavior and Business Rules
+## Behavior
 
-- Expected behavior or `Not applicable`.
+- Before: previous observable behavior.
+- After: new observable behavior.
+- Unchanged: important behavior intentionally preserved.
 
-## What Was Done
+## Business Rules
 
-1. Concrete implementation step.
+- Added: new rule or `None`.
+- Changed: changed rule or `None`.
+- Preserved: rule that must continue to hold.
+- Write rules as conditions and outcomes: “When X, the system must Y.”
 
-## Architecture and Trade-offs
+## Scope and Impact
 
-- Architecture: `None` or supported change.
-- Trade-offs: supported decision or `Not applicable`.
+- In scope: changed components and paths, including every changed file.
+- Out of scope: nearby behavior intentionally not changed.
+- User impact: who is affected and how, or `None`.
+- Technical impact: API, data, configuration, operations, or compatibility, or
+  `None`.
 
-## Safety and Risks
+## Risks and Mitigations
 
-- Verified compatibility, recovery, rollout, or risk facts.
-- Use `Not verified` when proof is unavailable.
+- Risk: concrete failure mode and affected users or systems.
+- Mitigation: prevention, detection, containment, or `None`.
+- Remaining risk: what is still uncertain, or `None known`.
+- Use `Not verified` when evidence is unavailable.
+
+## Rollout and Recovery
+
+- Rollout: deployment, migration, feature flag, or `Not applicable`.
+- Monitoring: signal that confirms healthy behavior, or `Not applicable`.
+- Recovery: rollback or corrective action if the change fails, or `Not
+  applicable`.
 
 ## Validation
 
-- `<command>` — `PASS`, `FAIL`, or `NOT RUN`: reason.
+- `<command>` — `PASS`, `FAIL`, or `NOT RUN`: concise result or reason.
 
 ## Tests
 
-- Added or updated: exact paths/scenarios, or `None`.
-- Executed: exact commands/status, or `Not run`.
+- Scenarios: business and technical behavior covered, or `None`.
+- Added or updated: exact test paths, or `None`.
+- Executed: exact commands and status, or `Not run`.
 
 ## Author Checklist
 
-- [ ] Scope matches the proposal.
-- [ ] Required validation passed.
-- [ ] Risks and limitations are documented.
+- [ ] Description explains the problem, outcome, and reason.
+- [ ] Before/after behavior and business rules are explicit.
+- [ ] Every changed file is represented in scope.
+- [ ] Risks, mitigations, and recovery are documented.
+- [ ] Tests and validation reflect commands actually run.
 - [ ] No unrelated changes are included.
 
 ## Notes for Reviewer
 
-- Highest-value review focus, open question, or `None`.
+- Review first: highest-risk rule, behavior, or file.
+- Open questions: unresolved decision or `None`.
 ```
 
-Mark a checkbox only when its claim has evidence. Do not add endpoint, payload,
-migration, deployment, or rollback fields unless the change makes them relevant.
-Do not wrap the final body in a code fence.
+Mark a checkbox only when its claim has evidence. Prefer behavior and business
+language over file-by-file narration. Do not add endpoint, payload, migration,
+deployment, or rollback details unless the change makes them relevant. Do not
+wrap the final body in a code fence.

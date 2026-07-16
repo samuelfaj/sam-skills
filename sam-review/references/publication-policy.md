@@ -8,6 +8,10 @@ Publication is an external mutation. The local review contract never grants it.
   approve, request changes, or update the remote review.
 - A URL, proposal ID, or request to review authorizes read access only.
 - Do not broaden a request for one comment into approval or other state change.
+- When a proposal review ends without publication authorization, return the
+  complete validated decision first, then ask one concise question offering
+  only actions compatible with that decision.
+- Do not ask a publication question for local, branch, commit, or range targets.
 
 ## Preflight
 

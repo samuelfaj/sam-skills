@@ -18,6 +18,9 @@ and orchestration.
 
 ## Skills
 
+- `sam-work`: deliver a bug or feature through mandatory implementation,
+  refinement, review, simplification, coverage, proposal, browser-proof, and
+  published demo-video gates with fresh-head receipts.
 - `sam-create-feature`: deliver a new capability from frozen requirements to
   validated behavior proof.
 - `sam-fix-bug`: reproduce, diagnose, minimally repair, and regression-test
@@ -32,16 +35,17 @@ and orchestration.
   unit, component, integration, contract, and browser tests.
 - `sam-create-task-demo-video`: record and validate a privacy-reviewed local MP4
   tied to acceptance criteria.
-- `sam-review-code`: review an immutable local change bundle and return only
-  evidence-backed findings and residual risks.
-- `sam-review-pr`: review an immutable pull/merge-request change bundle; produce
-  a local draft unless publication is explicitly requested.
+- `sam-review`: review an immutable local change or remote proposal through one
+  evidence-backed decision workflow; ask before publishing when no action was
+  explicitly authorized.
 - `sam-pr-description`: generate a traceable pull/merge-request description from
   the real base, commits, diff, and validation evidence.
 - `sam-orchestrate`: coordinate complex work through capability- and risk-based
   delegation, skeptical verification, and an independent review gate.
-- `sam-orchestrate-claude`: legacy compatibility entry point for
-  `sam-orchestrate`; it does not select a provider or model.
+- `sam-codex-advisor`: obtain a bounded read-only second opinion through a
+  fixed-model advisor with explicit effort routing.
+- `sam-fable-advisor`: obtain a bounded read-only second opinion through a
+  fixed-model advisor with explicit effort routing.
 
 ## Repository Quality Gate
 
@@ -64,5 +68,4 @@ skill-installation mechanism. Preserve the directory name and all bundled
 `agents/`, `references/`, and `scripts/` resources.
 
 After installation, restart or reload the host so it discovers the updated
-skills. The legacy orchestration alias requires `sam-orchestrate` to be installed
-beside it.
+skills.

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Review"
+  short_description: "Review local changes or remote proposals"
+  default_prompt: "Use $sam-review to review this change end-to-end."

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a complete, deterministic, read-only Git review bundle."""
+"""Build a complete, deterministic, read-only review bundle."""
 
 from __future__ import annotations
 
@@ -130,7 +130,9 @@ RISK_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     ),
 }
 
-HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+HUNK_RE = re.compile(
+    r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@"
+)
 FILTER_COMMAND = re.compile(r"^filter\..*\.(clean|process)$", re.I)
 
 
@@ -147,7 +149,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--mode",
-        choices=("auto", "local", "branch", "commit", "range"),
+        choices=("auto", "local", "branch", "commit", "range", "proposal"),
         default="auto",
     )
     parser.add_argument("--base", help="Base ref for branch mode.")
@@ -158,6 +160,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--range", dest="range_ref", help="Git diff range for range mode."
     )
+    parser.add_argument(
+        "--comparison",
+        choices=("merge-base", "direct"),
+        default="merge-base",
+        help="Proposal comparison semantics.",
+    )
+    parser.add_argument("--platform", help="Remote platform kind for proposal mode.")
+    parser.add_argument(
+        "--repository", help="Remote repository identity for proposal mode."
+    )
+    parser.add_argument("--change-id", help="Remote proposal identifier.")
     parser.add_argument(
         "--path",
         action="append",
@@ -561,6 +574,57 @@ def target_spec(
             False,
         )
 
+    if mode == "proposal":
+        missing = [
+            flag
+            for flag, value in (
+                ("--base", args.base),
+                ("--head", args.head),
+                ("--platform", args.platform),
+                ("--repository", args.repository),
+                ("--change-id", args.change_id),
+            )
+            if not value
+        ]
+        if missing:
+            raise BundleError(
+                "proposal mode requires " + ", ".join(missing)
+            )
+        requested_base_sha = rev_parse(git, repo, args.base, index_file)
+        head_sha = rev_parse(git, repo, args.head, index_file)
+        if args.comparison == "merge-base":
+            base_sha = (
+                run_git(
+                    git,
+                    repo,
+                    ("merge-base", requested_base_sha, head_sha),
+                    index_file=index_file,
+                )
+                .stdout.decode()
+                .strip()
+            )
+        else:
+            base_sha = requested_base_sha
+        if base_sha == head_sha:
+            raise BundleError("proposal contains no reviewable changes")
+        return (
+            {
+                "mode": mode,
+                "platform": args.platform,
+                "repository": args.repository,
+                "change_id": args.change_id,
+                "base_ref": args.base,
+                "requested_base_sha": requested_base_sha,
+                "base_sha": base_sha,
+                "head_ref": args.head,
+                "head_sha": head_sha,
+                "merge_base_sha": base_sha,
+                "comparison": args.comparison,
+            },
+            f"{base_sha}..{head_sha}",
+            False,
+        )
+
     raise BundleError(f"unsupported mode: {mode}")
 
 
@@ -640,25 +704,44 @@ def parse_numstat(data: bytes) -> dict[str, tuple[int | None, int | None]]:
     return stats
 
 
-def parse_changed_lines(patch: str) -> dict[str, list[list[int]]]:
-    changed: dict[str, list[list[int]]] = {}
-    current_path: str | None = None
+def parse_changed_ranges(
+    patch: str,
+) -> dict[str, dict[str, list[list[int]]]]:
+    changed: dict[str, dict[str, list[list[int]]]] = {}
+    old_path: str | None = None
+    new_path: str | None = None
     for line in patch.splitlines():
+        if line.startswith("--- "):
+            value = line[4:]
+            old_path = None if value == "/dev/null" else (
+                value[2:] if value.startswith("a/") else value
+            )
+            if old_path is not None:
+                changed.setdefault(old_path, {"OLD": [], "NEW": []})
+            continue
         if line.startswith("+++ "):
             value = line[4:]
-            if value == "/dev/null":
-                current_path = None
-            else:
-                current_path = value[2:] if value.startswith("b/") else value
-                changed.setdefault(current_path, [])
+            new_path = None if value == "/dev/null" else (
+                value[2:] if value.startswith("b/") else value
+            )
+            if new_path is not None:
+                changed.setdefault(new_path, {"OLD": [], "NEW": []})
             continue
         match = HUNK_RE.match(line)
-        if not match or current_path is None:
+        if not match:
             continue
-        start = int(match.group(1))
-        count = int(match.group(2) or "1")
-        if count > 0:
-            changed[current_path].append([start, start + count - 1])
+        old_start = int(match.group(1))
+        old_count = int(match.group(2) or "1")
+        new_start = int(match.group(3))
+        new_count = int(match.group(4) or "1")
+        if old_path is not None and old_count > 0:
+            changed[old_path]["OLD"].append(
+                [old_start, old_start + old_count - 1]
+            )
+        if new_path is not None and new_count > 0:
+            changed[new_path]["NEW"].append(
+                [new_start, new_start + new_count - 1]
+            )
     return changed
 
 
@@ -716,6 +799,8 @@ def untracked_snapshot(
             "deleted_lines": 0,
             "binary": False,
             "symlink": True,
+            "old_changed_ranges": [],
+            "new_changed_ranges": [[1, 1]],
             "changed_lines": [[1, 1]],
         }
         return patch, record, target
@@ -748,6 +833,8 @@ def untracked_snapshot(
             "deleted_lines": None,
             "binary": True,
             "symlink": False,
+            "old_changed_ranges": [],
+            "new_changed_ranges": [],
             "changed_lines": [],
         }
         return patch, record, ""
@@ -773,6 +860,8 @@ def untracked_snapshot(
         "deleted_lines": 0,
         "binary": False,
         "symlink": False,
+        "old_changed_ranges": [],
+        "new_changed_ranges": [[1, count]] if count else [],
         "changed_lines": [[1, count]] if count else [],
     }
     return patch, record, content
@@ -809,7 +898,7 @@ def build_bundle(args: argparse.Namespace) -> dict[str, Any]:
     root = repository_root(git, repo_hint)
     paths = normalize_paths(args.path)
     source_index = repository_index(git, root)
-    with tempfile.TemporaryDirectory(prefix="sam-review-code-index-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="sam-review-index-") as temporary:
         index_file = Path(temporary) / "index"
         shutil.copyfile(source_index, index_file)
         return build_bundle_with_index(args, git, root, paths, index_file)
@@ -864,7 +953,7 @@ def build_bundle_with_index(
         index_file,
     )
     try:
-        changed_lines = parse_changed_lines(changed_patch.decode("utf-8"))
+        changed_ranges = parse_changed_ranges(changed_patch.decode("utf-8"))
     except UnicodeDecodeError as error:
         raise BundleError(
             "tracked patch contains non-UTF-8 text; review the affected path as binary"
@@ -885,7 +974,15 @@ def build_bundle_with_index(
                 "deleted_lines": deleted,
                 "binary": added is None and deleted is None,
                 "symlink": False,
-                "changed_lines": changed_lines.get(record["path"], []),
+                "old_changed_ranges": changed_ranges.get(
+                    record.get("old_path") or record["path"], {}
+                ).get("OLD", []),
+                "new_changed_ranges": changed_ranges.get(record["path"], {}).get(
+                    "NEW", []
+                ),
+                "changed_lines": changed_ranges.get(record["path"], {}).get(
+                    "NEW", []
+                ),
             }
         )
 

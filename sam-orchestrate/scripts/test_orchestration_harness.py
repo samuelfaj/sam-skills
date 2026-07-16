@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise orchestration validation and legacy alias conformance."""
+"""Exercise orchestration validation and neutrality conformance."""
 
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 VALIDATOR = SCRIPT_DIR / "validate_orchestration.py"
 SKILL_DIR = SCRIPT_DIR.parent
 REPO_ROOT = SKILL_DIR.parent
-ALIAS_DIR = REPO_ROOT / "sam-orchestrate-claude"
 SUITE_VALIDATOR = REPO_ROOT / "scripts" / "validate_skill_suite.py"
 
 
@@ -335,40 +334,9 @@ def run_validator(
         )
 
 
-def validate_alias() -> None:
-    skill_path = ALIAS_DIR / "SKILL.md"
-    metadata_path = ALIAS_DIR / "agents" / "openai.yaml"
-    old_metadata = ALIAS_DIR / "agents" / "anthropic.yaml"
-    if not skill_path.is_file() or not metadata_path.is_file():
-        raise AssertionError(
-            "legacy alias must contain SKILL.md and agents/openai.yaml"
-        )
-    if old_metadata.exists():
-        raise AssertionError("legacy alias must not retain provider-specific metadata")
-    text = skill_path.read_text(encoding="utf-8")
-    if "../sam-orchestrate/SKILL.md" not in text:
-        raise AssertionError("legacy alias must redirect to the canonical skill")
-    metadata = metadata_path.read_text(encoding="utf-8")
-    if "allow_implicit_invocation: false" not in metadata:
-        raise AssertionError("legacy alias must disable implicit invocation")
-    actual_violations = neutrality_violations(
-        {
-            "canonical/SKILL.md": (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8"),
-            "alias/SKILL.md": text,
-            "reference/routing-policy.md": (
-                SKILL_DIR / "references" / "routing-policy.md"
-            ).read_text(encoding="utf-8"),
-            "metadata/agent.yaml": metadata,
-        }
-    )
-    if actual_violations:
-        raise AssertionError(f"operational named routing found: {actual_violations}")
-
-
 def validate_neutrality_adversaries() -> None:
     for label in (
         "canonical/SKILL.md",
-        "alias/SKILL.md",
         "reference/routing-policy.md",
         "metadata/agent.yaml",
     ):
@@ -381,14 +349,12 @@ def validate_neutrality_adversaries() -> None:
     forbidden_identity = "Cl" + "aude"
     relative_targets = (
         Path("sam-orchestrate/SKILL.md"),
-        Path("sam-orchestrate-claude/SKILL.md"),
         Path("sam-orchestrate/references/routing-policy.md"),
         Path("sam-orchestrate/agents/openai.yaml"),
     )
     with tempfile.TemporaryDirectory(prefix="sam-orchestrate-neutrality-") as temp_dir:
         baseline_root = Path(temp_dir) / "baseline"
         shutil.copytree(SKILL_DIR, baseline_root / SKILL_DIR.name)
-        shutil.copytree(ALIAS_DIR, baseline_root / ALIAS_DIR.name)
         baseline = subprocess.run(
             [sys.executable, "-B", str(SUITE_VALIDATOR), str(baseline_root)],
             check=False,
@@ -630,9 +596,8 @@ def main() -> int:
         "review_gate.required must be true for recorded triggers",
     )
 
-    validate_alias()
     validate_neutrality_adversaries()
-    print("PASS: orchestration contract, adversarial fixtures, and alias conformance")
+    print("PASS: orchestration contract, adversarial fixtures, and neutrality conformance")
     return 0
 
 

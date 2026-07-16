@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Fable Advisor"
+  short_description: "Consult Claude Fable as a read-only advisor"
+  default_prompt: "Use $sam-fable-advisor to get a focused second opinion."

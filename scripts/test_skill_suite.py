@@ -119,6 +119,47 @@ def main() -> int:
         expect_error(module, root, "not executable")
         script.chmod(0o755)
 
+        advisor = root / "sam-codex-advisor"
+        (advisor / "agents").mkdir(parents=True)
+        (advisor / "SKILL.md").write_text(
+            """---
+name: sam-codex-advisor
+description: "Consult Codex on gpt-5.6-sol as an advisor. Use when a fixed provider-specific second opinion is requested."
+---
+
+# Sam Codex Advisor
+
+## Non-Negotiable Contract
+
+- Keep the advisor read-only.
+
+## Output
+
+Return the recommendation and model used.
+""",
+            encoding="utf-8",
+        )
+        (advisor / "agents/openai.yaml").write_text(
+            """interface:
+  display_name: "Sam Codex Advisor"
+  short_description: "Consult a fixed provider-specific advisor"
+  default_prompt: "Use $sam-codex-advisor for a second opinion."
+""",
+            encoding="utf-8",
+        )
+        advisor_errors = module.validate_root(root)
+        if advisor_errors:
+            raise RuntimeError(
+                f"provider-specific advisor fixture rejected: {advisor_errors}"
+            )
+        advisor_skill = advisor / "SKILL.md"
+        original_advisor = advisor_skill.read_text(encoding="utf-8")
+        advisor_skill.write_text(
+            original_advisor.replace("gpt-5.6-sol", "GPT-9"), encoding="utf-8"
+        )
+        expect_error(module, root, "named GPT model")
+        advisor_skill.write_text(original_advisor, encoding="utf-8")
+
         skill_md.write_text(
             original_skill.replace(
                 "](references/policy.md)", "](references/missing.md)"
@@ -127,7 +168,7 @@ def main() -> int:
         )
         expect_error(module, root, "broken relative link")
 
-    print("PASS: valid package and six adversarial regressions")
+    print("PASS: valid packages, provider-specific advisor, and seven adversarial regressions")
     return 0
 
 
