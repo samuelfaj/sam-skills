@@ -28,6 +28,8 @@ review, privacy pass, and linked scenarios.
 `READY_LOCAL` and `PUBLISHED` are invalid with unsafe environment, failed plan
 audit, uninspected changed commands, failed proof commands, invalid media, missing
 privacy/playback proof, dishonest real-UI claims, or blocked cleanup. `PUBLISHED`
-also requires explicit authorization and successful remote readback. When
-publication is requested, the result cannot remain `READY_LOCAL` or
-`NOT_REQUESTED`; a blocked publication requires a concrete reason or error.
+also requires explicit authorization, host upload (not a git commit), player-or-
+image embed markup (never a hyperlink-only body), and successful remote readback
+showing a rendered video player or image. When publication is requested, the
+result cannot remain `READY_LOCAL` or `NOT_REQUESTED`; a blocked publication
+requires a concrete reason or error.

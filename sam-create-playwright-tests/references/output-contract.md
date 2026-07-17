@@ -30,4 +30,6 @@ review, and receipt when uploaded.
 `COMPLETE` is invalid when a required scenario is uncovered, target validation
 fails, behavior is unproven, high-risk regression proof is `NOT_PROVEN`, changed
 commands were not inspected, publication lacks authorization or receipt, the
-test-diff audit fails, or cleanup is blocked.
+test-diff audit fails, or cleanup is blocked. When publication is requested,
+every uploaded video or image must use host player/image embed markup (never a
+hyperlink-only body or git-committed media) and pass remote readback.

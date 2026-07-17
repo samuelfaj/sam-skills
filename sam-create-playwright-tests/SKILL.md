@@ -13,8 +13,17 @@ workflow stack-, host-, provider-, and model-agnostic except for Playwright itse
 - Honor the exact repository, path, branch, commit, diff range, and acceptance
   criteria supplied by the user.
 - Preserve existing work. Do not reset, checkout, stash, clean, rebase, or rewrite history.
-- Keep generated media and reports local by default. Publish only when the user
-  explicitly requests publication and the exact target is known.
+- Keep generated media and reports local until a remote proposal target is
+  authorized. Publish only when the user (or parent workflow) explicitly
+  requests publication and the exact target is known.
+- **Never commit** generated videos, screenshots, traces, or reports to the
+  task branch, LFS, or product-tree history.
+- When publication is authorized, **always upload** via the host CLI (`gh` /
+  `glab` platform uploads) and place media in the PR/MR **description** or a
+  **comment/note** using player/image embed markup. Follow
+  [references/evidence-publishing.md](references/evidence-publishing.md).
+- **Video → inline/native player. Image → inline image. Never a hyperlink**
+  (`[label](url)`, “Download MP4”, blob/raw repo URLs, or HTML download anchors).
 - Never use production credentials, production services, customer tenants, or
   private data for automated browser tests.
 - Fail closed when real data is requested and the environment identity is unknown
@@ -148,10 +157,23 @@ the browser, network, trace, screenshot, or local video evidence.
 
 ## 7. Handle Evidence Only When Requested
 
-Keep Playwright traces, screenshots, reports, and recordings local and safe.
-When the user explicitly requests publication, follow
-[references/evidence-publishing.md](references/evidence-publishing.md), verify the
-remote receipt by reading it back, and record it as an `ART-###` entry.
+Keep Playwright traces, screenshots, reports, and recordings local and safe by
+default. Never `git add` / commit them.
+
+When the user (or parent workflow) explicitly requests publication, follow
+[references/evidence-publishing.md](references/evidence-publishing.md):
+
+1. Inventory every video (and required screenshots) with path + SHA-256.
+2. Upload each file with `glab` (GitLab project uploads) or `gh` (GitHub
+   user-attachments / equivalent). Do not commit media.
+3. Embed in the PR/MR description or comment:
+   - **GitLab video:** `![scenario title](/uploads/<hash>/file.webm)`
+   - **GitHub video:** bare `https://github.com/user-attachments/assets/<id>`
+     alone on its own line
+   - **Images (either host):** `![descriptive alt](<upload-url>)`
+4. Forbid `[Download](url)`, HTML-only download links, and repo blob/raw URLs.
+5. Read the remote body back; require a rendered **player** (video) or **image**.
+6. Record each as `ART-###` with receipt, markup, and player/image verification.
 
 ## 8. Validate, Clean, and Return
 

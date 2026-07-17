@@ -20,8 +20,17 @@ coverage. Remain host-, provider-, tool-, and model-agnostic.
   as fallback after documenting real-system attempts and blockers.
 - Fail closed when real data is requested and the environment is unknown or is
   not a verified local, test, or development target.
-- Keep final and intermediate media local by default. Publish only when the user
-  explicitly requests it and the exact remote target is known.
+- Keep final and intermediate media local until a remote proposal target is
+  authorized. Publish only when the user (or parent workflow) explicitly
+  requests it and the exact remote target is known.
+- **Never commit** generated videos, screenshots, contact sheets, or recordings
+  to the task branch, LFS, or product-tree history.
+- When publication is authorized, **always upload** via the host CLI (`gh` /
+  `glab` platform uploads) and place the media in the PR/MR **description** or
+  a **comment/note** using player/image embed markup. Follow
+  [references/evidence-publishing.md](references/evidence-publishing.md).
+- **Video → inline/native player. Image → inline image. Never a hyperlink**
+  (`[label](url)`, “Download MP4”, blob/raw repo URLs, or HTML download anchors).
 - Never expose secrets, tokens, credentials, private customer data, internal
   identifiers, or sensitive production information.
 - Record and clean every process, container, port, record, override, raw video,
@@ -129,12 +138,23 @@ pretend raw WebM is the requested MP4.
 ## 6. Publish Only When Explicitly Requested
 
 Without explicit authorization, retain only the safe local MP4 requested by the
-user. Do not upload or comment.
+user. Do not upload or comment. Never `git add` / commit the MP4.
 
 When publication is explicit, follow
-[references/evidence-publishing.md](references/evidence-publishing.md). Reconfirm
-the remote target and head, publish the exact validated MP4, read the receipt back,
-and record it under `ART-###`. Stop if the target drifted.
+[references/evidence-publishing.md](references/evidence-publishing.md):
+
+1. Reconfirm host, repository, proposal ID, and head SHA.
+2. Upload the exact validated MP4 with `glab` (GitLab project uploads) or `gh`
+   (GitHub user-attachments / equivalent). Do not commit media.
+3. Embed in the PR/MR description or comment:
+   - **GitLab video:** `![scenario title](/uploads/<hash>/file.mp4)`
+   - **GitHub video:** bare `https://github.com/user-attachments/assets/<id>`
+     alone on its own line
+   - **Images (either host):** `![descriptive alt](<upload-url>)`
+4. Forbid `[Download](url)`, HTML-only download links, and repo blob/raw URLs.
+5. Read the remote body back; require a rendered **player** (video) or **image**.
+6. Record receipt, markup, and `player_verified` under `ART-###`. Stop on drift
+   or link-only readback.
 
 ## 7. Validate, Clean, and Return
 
