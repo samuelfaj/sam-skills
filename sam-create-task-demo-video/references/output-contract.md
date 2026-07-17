@@ -33,3 +33,8 @@ image embed markup (never a hyperlink-only body), and successful remote readback
 showing a rendered video player or image. When publication is requested, the
 result cannot remain `READY_LOCAL` or `NOT_REQUESTED`; a blocked publication
 requires a concrete reason or error.
+
+`recording.real_ui` must be `true` when the demo used the product UI and linked
+backend. If `real_ui` is `false`, `fallback_reason` is required and the demo must
+not be described as a real linked UI walkthrough. Do not claim success for a
+demo-only component built while the real product surface was available.

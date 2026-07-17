@@ -16,8 +16,18 @@ coverage. Remain host-, provider-, tool-, and model-agnostic.
 - Preserve existing work. Do not reset, checkout, stash, clean, or rewrite history.
 - Inspect changed scripts, hooks, command definitions, containers, and browser
   configuration before executing them.
-- Use the real linked UI by default. Label mocked or isolated recording honestly
-  as fallback after documenting real-system attempts and blockers.
+- **Real product UI first for every demo.** Record the actual application pages,
+  routes, and flows a user would see—linked to the intended backend—not a
+  throwaway page, component shell, Storybook mount, or mock screen built only
+  for the recording.
+- **Do not create a new component, route, or demo-only UI** to stage the walkthrough
+  when the real product surface can show the behavior. Prefer seed data, demo
+  accounts, and existing navigation.
+- Demos must be as faithful to reality as possible: real boot path, real auth
+  (or existing demo login), real navigation, real actions, real visible outcomes.
+- Label mocked or isolated recording honestly as **fallback only after**
+  documenting real-system attempts and blockers. Never present fallback as a
+  real linked UI demonstration.
 - Fail closed when real data is requested and the environment is unknown or is
   not a verified local, test, or development target.
 - Keep final and intermediate media local until a remote proposal target is
@@ -86,22 +96,30 @@ Use stable traceability IDs:
 - `ART-###`: local or explicitly published artifact.
 - `CL-###`: cleanup resource.
 
-For each scenario define initial state, exact human actions, visible proof moment,
-final stable state, linked criteria/risks/checks, and expected artifact. Keep the
-story focused. Use before/after only when the defective state is safely available.
+For each scenario define the **real product entry route**, initial state, exact
+human actions on that surface, visible proof moment, final stable state, linked
+criteria/risks/checks, and expected artifact. Keep the story focused. Use
+before/after only when the defective state is safely available.
+
+Storyboard against shipping UI only. Do not plan a custom demo component unless
+the storyboard already records why the real page cannot be used.
 
 ## 3. Prepare the Real Linked System
 
 Inspect changed command definitions first. Start the app with repository-supported
 direct, container, or compose workflows. Prefer temporary overrides and unused
-ports. Confirm the browser reaches the frozen UI and backend.
+ports. Confirm the browser reaches the frozen **product** UI and backend—not a
+test harness URL invented for the video.
 
-Use deterministic seed data or a dedicated demo account. Use real data only on a
-verified local, test, or dev target. Register every created resource immediately.
+Use deterministic seed data or a dedicated demo account on the real app. Use real
+data only on a verified local, test, or dev target. Register every created
+resource immediately.
 
-If the real UI cannot run after serious direct, container, port/config, and
-linking attempts, record the exact attempts and blocker. Continue only with an
-honestly labeled fallback that still proves useful visible behavior.
+If the real UI cannot run after serious direct, container, port/config, auth,
+seed, and linking attempts, record the exact attempts and blocker. Continue only
+with an honestly labeled fallback that still proves useful visible behavior. Do
+not build a permanent product component solely to make the demo possible when a
+config/seed fix would restore the real page.
 
 ## 4. Audit and Record
 

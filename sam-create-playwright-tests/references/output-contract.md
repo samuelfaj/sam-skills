@@ -33,3 +33,8 @@ commands were not inspected, publication lacks authorization or receipt, the
 test-diff audit fails, or cleanup is blocked. When publication is requested,
 every uploaded video or image must use host player/image embed markup (never a
 hyperlink-only body or git-committed media) and pass remote readback.
+
+`behavior_proof.status` is `PROVEN` only for real product UI + linked backend
+paths. `FALLBACK` requires documented real-system attempts and blockers and is
+not full confidence. Do not claim `COMPLETE` with silent test-only components or
+shells when the real UI was available.

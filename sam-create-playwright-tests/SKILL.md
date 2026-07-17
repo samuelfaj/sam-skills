@@ -32,8 +32,23 @@ workflow stack-, host-, provider-, and model-agnostic except for Playwright itse
   configuration before executing it.
 - Do not add `.only`, `.skip`, retries, broad timeouts, snapshot refreshes, weaker
   assertions, or mocks that bypass the contract under test.
+- **Real product UI first.** Drive the actual application pages, routes, and
+  components users hit in production-like local/dev/test. Prefer the real linked
+  UI + backend over any substitute.
+- **Do not create a new page, route, component, story, harness shell, or fixture
+  UI solely to host a browser test** when the real product surface can exercise
+  the behavior. Add only the smallest stable selector or test-id seam on the
+  existing product UI when needed.
+- Tests must be as faithful to reality as possible: real navigation, real
+  auth/session helpers already used by the app, real network to the intended
+  backend, real persistence, and user-visible assertions—not isolated component
+  mounts that bypass routing, layout, providers, or API wiring.
+- **Fallback only when the real UI is not reasonably reachable** after serious
+  attempts (boot, auth, data seed, port/config, linked backend). Document each
+  attempt and blocker, label proof `FALLBACK`, and only then use a minimal
+  isolated harness or test-only surface. Never present fallback as real-UI proof.
 - Limit production changes to the in-scope correction or the smallest stable
-  selector/test seam required by an accepted scenario.
+  selector/test seam required by an accepted scenario on the real product UI.
 - Track all started processes, containers, ports, data, overrides, and temporary
   files. Clean them before completion or report the exact retained resource.
 
@@ -117,10 +132,26 @@ Inspect changed command definitions first. Then use repository-supported direct,
 container, or compose workflows. Prefer temporary environment overrides and
 unused ports over tracked configuration changes.
 
-For user-facing behavior, drive the real running UI linked to the intended
-backend. Confirm the browser-requested method, path, payload, response, and
-visible outcome. Treat mocked pages, request-only checks, and component shells as
-fallback evidence only after recording each serious real-system attempt and blocker.
+For user-facing behavior, **default and preferred path is the real running app**:
+
+1. Boot the product UI and the intended backend with repo-supported commands.
+2. Authenticate through the app’s normal session path (or existing shared auth
+   fixtures that exercise that path)—not a test-only fake page.
+3. Navigate the real product route/page that owns the changed behavior.
+4. Perform the same user actions a person would (click, type, submit, open menus).
+5. Confirm browser-requested method, path, payload, response, and visible outcome
+   against the linked backend.
+
+**Forbidden as the first choice:** new throwaway components, mini-apps,
+Storybook-only mounts, component-test wrappers, or route stubs created only so
+Playwright has something to open. Prefer extending an existing e2e against the
+real page.
+
+**Fallback** (mocked page, request-only check, component shell, new test-only
+surface) is allowed only after recording each serious real-system attempt and
+exact blocker. Mark behavior proof `FALLBACK`. Prefer the thinnest fallback that
+still proves useful contract pieces; still do not invent product UI permanently
+if a temporary local seed or config fix would unlock the real page.
 
 Register every process, container, port, test record, override, and artifact in
 the cleanup ledger when it is created.
@@ -128,9 +159,14 @@ the cleanup ledger when it is created.
 ## 5. Implement Without Weakening the Suite
 
 Follow repository fixtures, factories, selectors, authentication helpers, and
-cleanup conventions. Prefer accessible user-facing locators and observable state.
-Avoid sleeps, execution-order dependencies, shared mutable records, framework
-internals, and assertions that merely repeat fixture literals.
+cleanup conventions on the **existing product tree**. Prefer accessible
+user-facing locators and observable state on real pages. Avoid sleeps,
+execution-order dependencies, shared mutable records, framework internals, and
+assertions that merely repeat fixture literals.
+
+When a selector is unstable, add the smallest production-safe test seam on the
+real component already shipping in the app. Do not replace that component with a
+parallel test-only implementation.
 
 Rerun the exact builder command with the same target arguments and verified
 environment into `$WORK_TMP/bundle.json`. Preserve `baseline-bundle.json`; the
@@ -153,7 +189,9 @@ Do not hide product failures by changing tests. Fix an in-scope product defect
 only at its owning boundary. Record unrelated defects as follow-up evidence.
 
 For user-visible behavior, declare `PROVEN`, `NOT_PROVEN`, or `FALLBACK` and cite
-the browser, network, trace, screenshot, or local video evidence.
+the browser, network, trace, screenshot, or local video evidence. `PROVEN`
+requires the real product UI and linked backend path. `FALLBACK` requires the
+attempt/blocker ledger and must not be reported as full real-UI confidence.
 
 ## 7. Handle Evidence Only When Requested
 

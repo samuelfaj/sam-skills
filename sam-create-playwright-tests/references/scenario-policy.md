@@ -16,10 +16,12 @@ Build scenarios from reachable changed behavior, not from a generic checklist.
 - Stable ID and concise observable behavior.
 - Linked acceptance and risk IDs.
 - Preconditions and deterministic data setup.
-- Exact user actions and observable assertions.
+- **Product surface:** real app route/page (or explicit fallback surface + reason).
+- Exact user actions and observable assertions as a person would perform them.
 - Expected method, route, payload, status, response, and visible state when applicable.
 - Test IDs, command IDs, artifact IDs, and status.
 - Counterfactual proof status and evidence.
+- Fidelity status: real linked UI (`PROVEN` path) or documented `FALLBACK`.
 
 ## Calibration
 
