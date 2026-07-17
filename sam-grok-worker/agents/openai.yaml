@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Grok Worker"
+  short_description: "Delegate scoped work to fixed Grok worker"
+  default_prompt: "Use $sam-grok-worker to run this scoped task on Grok."

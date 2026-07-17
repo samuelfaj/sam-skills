@@ -46,6 +46,8 @@ and orchestration.
   fixed-model advisor with explicit effort routing.
 - `sam-fable-advisor`: obtain a bounded read-only second opinion through a
   fixed-model advisor with explicit effort routing.
+- `sam-grok-worker`: delegate a bounded implementation task to a fixed worker
+  runtime under workspace sandbox and headless execution.
 
 ## Repository Quality Gate
 
