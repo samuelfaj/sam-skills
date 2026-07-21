@@ -11,9 +11,17 @@ from pathlib import Path
 from typing import Any
 
 
-STATUSES = {"APPROVED", "APPROVED_WITH_CONDITIONS", "REVISE", "BLOCKED"}
+STATUSES = {
+    "APPROVED",
+    "APPROVED_WITH_CONDITIONS",
+    "REVISE",
+    "TRIAGE_PASS",
+    "ESCALATE_TO_FULL",
+    "BLOCKED",
+}
+PROFILES = {"fast", "full"}
 MODES = {"single-host", "multi-provider"}
-PROVIDERS = {"codex", "claude-code", "grok"}
+PROVIDER_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 REQUIRED_REVIEWERS = {
     "logic",
     "assumptions",
@@ -22,6 +30,8 @@ REQUIRED_REVIEWERS = {
     "alternatives",
     "problem-frame",
 }
+FAST_REVIEWERS = {"frame-evidence", "delivery-failure", "simplification"}
+FAST_VERIFIERS = {"triage-arbiter"}
 REQUIRED_VERIFIERS_SINGLE = {"closure-verifier", "system-verifier", "arbiter"}
 REQUIRED_VERIFIERS_MULTI = {
     "closure-verifier",
@@ -39,18 +49,10 @@ CONDITIONAL_REVIEWERS = {
     "product-ux",
     "compliance-governance",
 }
-PROVIDER_RUNTIME_MODELS = {
-    "codex": {"gpt-5.6-sol"},
-    "claude-code": {"opus", "fable"},
-    "grok": {"grok-4.5"},
-}
-PROVIDER_RUNTIME_EFFORTS = {
-    "codex": {"high", "xhigh", "max"},
-    "claude-code": {"high", "xhigh"},
-    "grok": {"high"},
-}
+REVIEWER_EFFORTS = {"medium", "host-default"}
+ARBITER_EFFORTS = {"high", "host-default"}
 NAMESPACED_SEAT = re.compile(
-    r"^(?P<provider>codex|claude-code|grok)/(?P<seat>[a-z0-9-]+)$"
+    r"^(?P<provider>[a-z0-9]+(?:-[a-z0-9]+)*)/(?P<seat>[a-z0-9-]+)$"
 )
 ASSUMPTION_STATES = {"VERIFIED", "EXPERIMENT_PLANNED", "UNRESOLVED"}
 SEVERITIES = {"BLOCKER", "HIGH", "MEDIUM", "LOW", "UNSUPPORTED"}
@@ -150,17 +152,22 @@ def provider_of(reviewer_id: str) -> str | None:
     return None
 
 
-def expected_required_reviewers(mode: str, providers: list[str]) -> set[str]:
+def expected_required_reviewers(
+    profile: str, mode: str, providers: list[str]
+) -> set[str]:
+    seats = FAST_REVIEWERS if profile == "fast" else REQUIRED_REVIEWERS
     if mode == "multi-provider":
         return {
             f"{provider}/{seat}"
             for provider in providers
-            for seat in REQUIRED_REVIEWERS
+            for seat in seats
         }
-    return set(REQUIRED_REVIEWERS)
+    return set(seats)
 
 
-def expected_required_verifiers(mode: str) -> set[str]:
+def expected_required_verifiers(profile: str, mode: str) -> set[str]:
+    if profile == "fast":
+        return set(FAST_VERIFIERS)
     if mode == "multi-provider":
         return set(REQUIRED_VERIFIERS_MULTI)
     return set(REQUIRED_VERIFIERS_SINGLE)
@@ -169,12 +176,52 @@ def expected_required_verifiers(mode: str) -> set[str]:
 def validate_report(report: Any) -> list[str]:
     errors: list[str] = []
     root = mapping(report, "report", errors)
-    if root.get("schema_version") != 1:
-        errors.append("schema_version: expected 1")
+    if root.get("schema_version") != 2:
+        errors.append("schema_version: expected 2")
+
+    profile = root.get("profile")
+    if profile not in PROFILES:
+        errors.append(f"profile: expected one of {sorted(PROFILES)}")
+        profile = "full"
 
     status = root.get("status")
     if status not in STATUSES:
         errors.append(f"status: expected one of {sorted(STATUSES)}")
+
+    if profile == "fast" and status not in {
+        "TRIAGE_PASS",
+        "ESCALATE_TO_FULL",
+        "BLOCKED",
+    }:
+        errors.append(
+            "status: fast profile permits TRIAGE_PASS, ESCALATE_TO_FULL, or BLOCKED"
+        )
+    if profile == "full" and status not in {
+        "APPROVED",
+        "APPROVED_WITH_CONDITIONS",
+        "REVISE",
+        "BLOCKED",
+    }:
+        errors.append("status: full profile cannot return a triage status")
+
+    policy = mapping(root.get("execution_policy"), "execution_policy", errors)
+    expected_hard_limit = 1 if profile == "fast" else 3
+    expected_policy = {
+        "default_round_limit": 1,
+        "hard_round_limit": expected_hard_limit,
+        "max_objections_per_reviewer": 3,
+        "max_response_words": 1000,
+        "packet_strategy": "RELEVANT_ONLY",
+        "parallelism": "MAX_AVAILABLE",
+        "initial_effort": "medium",
+        "arbiter_effort": "high",
+    }
+    for field, expected in expected_policy.items():
+        if policy.get(field) != expected:
+            errors.append(f"execution_policy.{field}: expected {expected!r}")
+    continuation_authorized = policy.get("continuation_authorized")
+    if not isinstance(continuation_authorized, bool):
+        errors.append("execution_policy.continuation_authorized: expected boolean")
 
     evidence_items = sequence(root.get("evidence"), "evidence", errors)
     evidence_ids: set[str] = set()
@@ -258,7 +305,9 @@ def validate_report(report: Any) -> list[str]:
             errors,
             required=status != "BLOCKED",
         )
-    invalid_providers = sorted(set(providers) - PROVIDERS)
+    invalid_providers = sorted(
+        provider for provider in providers if not PROVIDER_ID.fullmatch(provider)
+    )
     if invalid_providers:
         errors.append(f"independence.providers: invalid values {invalid_providers}")
     if mode == "multi-provider" and status != "BLOCKED" and len(providers) < 2:
@@ -269,6 +318,8 @@ def validate_report(report: Any) -> list[str]:
         errors.append(
             "independence.providers: single-host allows at most one provider"
         )
+    if mode == "multi-provider" and profile != "full":
+        errors.append("independence.mode: multi-provider requires profile full")
     provider_runtimes = independence.get("provider_runtimes")
     if provider_runtimes is None and status == "BLOCKED":
         runtime_map: dict[str, Any] = {}
@@ -285,20 +336,35 @@ def validate_report(report: Any) -> list[str]:
         for provider, raw_runtime in runtime_map.items():
             runtime_path = f"independence.provider_runtimes.{provider}"
             runtime = mapping(raw_runtime, runtime_path, errors)
-            model = text(runtime.get("model"), f"{runtime_path}.model", errors)
-            effort = text(runtime.get("effort"), f"{runtime_path}.effort", errors)
-            if provider in PROVIDER_RUNTIME_MODELS and model:
-                if model not in PROVIDER_RUNTIME_MODELS[provider]:
-                    errors.append(
-                        f"{runtime_path}.model: expected one of "
-                        f"{sorted(PROVIDER_RUNTIME_MODELS[provider])}"
-                    )
-            if provider in PROVIDER_RUNTIME_EFFORTS and effort:
-                if effort not in PROVIDER_RUNTIME_EFFORTS[provider]:
-                    errors.append(
-                        f"{runtime_path}.effort: expected one of "
-                        f"{sorted(PROVIDER_RUNTIME_EFFORTS[provider])}"
-                    )
+            text(runtime.get("adapter"), f"{runtime_path}.adapter", errors)
+            text(runtime.get("model"), f"{runtime_path}.model", errors)
+            reviewer_effort = text(
+                runtime.get("reviewer_effort"),
+                f"{runtime_path}.reviewer_effort",
+                errors,
+            )
+            arbiter_effort = text(
+                runtime.get("arbiter_effort"),
+                f"{runtime_path}.arbiter_effort",
+                errors,
+            )
+            if reviewer_effort and reviewer_effort not in REVIEWER_EFFORTS:
+                errors.append(
+                    f"{runtime_path}.reviewer_effort: expected one of "
+                    f"{sorted(REVIEWER_EFFORTS)}"
+                )
+            if arbiter_effort and arbiter_effort not in ARBITER_EFFORTS:
+                errors.append(
+                    f"{runtime_path}.arbiter_effort: expected one of "
+                    f"{sorted(ARBITER_EFFORTS)}"
+                )
+            max_workers = integer(
+                runtime.get("max_parallel_workers"),
+                f"{runtime_path}.max_parallel_workers",
+                errors,
+            )
+            if max_workers is not None and max_workers < 1:
+                errors.append(f"{runtime_path}.max_parallel_workers: must be positive")
     blind = independence.get("blind_first_pass")
     peer_leak = independence.get("reviewers_saw_peer_reviews_before_submission")
     if not isinstance(blind, bool):
@@ -348,10 +414,15 @@ def validate_report(report: Any) -> list[str]:
                 f"independence.conditional_seat_selection.{seat_id}",
                 errors,
             )
-            if reason and not reason.startswith(("SELECTED: ", "NOT_APPLICABLE: ")):
+            allowed_prefixes = (
+                ("ESCALATE: ", "NOT_APPLICABLE: ")
+                if profile == "fast"
+                else ("SELECTED: ", "NOT_APPLICABLE: ")
+            )
+            if reason and not reason.startswith(allowed_prefixes):
                 errors.append(
                     f"independence.conditional_seat_selection.{seat_id}: "
-                    "expected SELECTED: or NOT_APPLICABLE: reason"
+                    f"expected {' or '.join(prefix.strip() for prefix in allowed_prefixes)} reason"
                 )
             if reason.startswith("SELECTED: "):
                 if mode == "multi-provider":
@@ -371,6 +442,83 @@ def validate_report(report: Any) -> list[str]:
                         f"independence.conditional_seat_selection.{seat_id}: "
                         "selected seat absent from reviewer_ids"
                     )
+
+    batch_plan = sequence(
+        independence.get("batch_plan"), "independence.batch_plan", errors
+    )
+    scheduled_invocations: list[tuple[int, str]] = []
+    scheduled_by_batch_key: dict[tuple[int, str, str], int] = {}
+    batch_count_by_key: dict[tuple[int, str, str], int] = {}
+    verifier_rounds: set[int] = set()
+    last_batch_round = 0
+    for index, raw_batch in enumerate(batch_plan):
+        batch_path = f"independence.batch_plan[{index}]"
+        batch = mapping(raw_batch, batch_path, errors)
+        batch_round = integer(batch.get("round"), f"{batch_path}.round", errors)
+        if batch_round is None:
+            batch_round = 0
+        elif batch_round < 1:
+            errors.append(f"{batch_path}.round: must be positive")
+        if batch_round < last_batch_round:
+            errors.append(f"{batch_path}.round: batches must be ordered by round")
+        last_batch_round = max(last_batch_round, batch_round)
+        phase = batch.get("phase")
+        if phase not in {"blind", "verification"}:
+            errors.append(f"{batch_path}.phase: expected blind or verification")
+        if phase == "verification":
+            verifier_rounds.add(batch_round)
+        elif phase == "blind" and batch_round in verifier_rounds:
+            errors.append(
+                f"{batch_path}: blind batch cannot follow verification in its round"
+            )
+        provider = text(batch.get("provider"), f"{batch_path}.provider", errors)
+        if provider and provider not in providers:
+            errors.append(f"{batch_path}.provider: not in independence.providers")
+        seat_ids = text_list(
+            batch.get("seat_ids"), f"{batch_path}.seat_ids", errors, required=True
+        )
+        scheduled_invocations.extend((batch_round, seat_id) for seat_id in seat_ids)
+        batch_key = (batch_round, str(phase), provider)
+        scheduled_by_batch_key[batch_key] = (
+            scheduled_by_batch_key.get(batch_key, 0) + len(seat_ids)
+        )
+        batch_count_by_key[batch_key] = batch_count_by_key.get(batch_key, 0) + 1
+        runtime = runtime_map.get(provider, {}) if isinstance(runtime_map, dict) else {}
+        capacity = (
+            runtime.get("max_parallel_workers")
+            if isinstance(runtime, dict)
+            else None
+        )
+        if isinstance(capacity, int) and len(seat_ids) > capacity:
+            errors.append(f"{batch_path}.seat_ids: exceeds provider capacity {capacity}")
+        expected_phase_ids = verifier_ids if phase == "verification" else reviewer_ids
+        unknown = sorted(set(seat_ids) - set(expected_phase_ids))
+        if unknown:
+            errors.append(f"{batch_path}.seat_ids: wrong phase or unknown IDs {unknown}")
+        if mode == "multi-provider" and phase == "blind":
+            wrong_provider = sorted(
+                seat_id
+                for seat_id in seat_ids
+                if provider_of(seat_id) != provider
+            )
+            if wrong_provider:
+                errors.append(
+                    f"{batch_path}.seat_ids: do not match provider {wrong_provider}"
+                )
+    for (batch_round, phase, provider), seat_count in scheduled_by_batch_key.items():
+        runtime = runtime_map.get(provider, {}) if isinstance(runtime_map, dict) else {}
+        capacity = (
+            runtime.get("max_parallel_workers")
+            if isinstance(runtime, dict)
+            else None
+        )
+        if isinstance(capacity, int) and capacity > 0:
+            minimum_batches = (seat_count + capacity - 1) // capacity
+            if batch_count_by_key[(batch_round, phase, provider)] != minimum_batches:
+                errors.append(
+                    f"independence.batch_plan: round {batch_round} {phase}/{provider} "
+                    "does not use minimum batches"
+                )
 
     confrontation = root.get("confrontation")
     if mode == "single-host":
@@ -447,8 +595,11 @@ def validate_report(report: Any) -> list[str]:
             text(confrontation_obj.get("rationale"), "confrontation.rationale", errors)
 
     rounds = sequence(root.get("rounds"), "rounds", errors)
-    if len(rounds) > 3:
-        errors.append("rounds: maximum is 3")
+    hard_round_limit = 1 if profile == "fast" else 3
+    if len(rounds) > hard_round_limit:
+        errors.append(f"rounds: maximum is {hard_round_limit} for profile {profile}")
+    if len(rounds) > 1 and continuation_authorized is not True:
+        errors.append("rounds: additional rounds require continuation_authorized=true")
     if status != "BLOCKED" and not rounds:
         errors.append("rounds: non-blocked report requires at least one round")
 
@@ -460,6 +611,7 @@ def validate_report(report: Any) -> list[str]:
     last_output_thesis_id = ""
     final_panel_ids: set[str] = set()
     dispatched_reviewers: set[str] = set()
+    expected_invocations: list[tuple[int, str]] = []
     for index, raw_round in enumerate(rounds):
         path = f"rounds[{index}]"
         round_item = mapping(raw_round, path, errors)
@@ -489,7 +641,10 @@ def validate_report(report: Any) -> list[str]:
             required=True,
         )
         dispatched_reviewers.update(round_reviewers)
-        expected_round_one = expected_required_reviewers(mode, providers)
+        expected_invocations.extend(
+            (expected_number, seat_id) for seat_id in round_reviewers
+        )
+        expected_round_one = expected_required_reviewers(profile, mode, providers)
         if index == 0 and not expected_round_one.issubset(set(round_reviewers)):
             missing = sorted(expected_round_one - set(round_reviewers))
             errors.append(f"{path}.reviewer_ids: missing required reviewers {missing}")
@@ -545,6 +700,7 @@ def validate_report(report: Any) -> list[str]:
             round_item.get("objections"), f"{path}.objections", errors
         )
         objection_reviewers: set[str] = set()
+        objection_count_by_reviewer: dict[str, int] = {}
         for objection_index, raw_objection in enumerate(objections):
             objection_path = f"{path}.objections[{objection_index}]"
             objection = mapping(raw_objection, objection_path, errors)
@@ -584,6 +740,10 @@ def validate_report(report: Any) -> list[str]:
                         f"{supporting_reviewer} absent from round reviewer_ids"
                     )
             objection_reviewers.update(supporting_reviewers)
+            for supporting_reviewer in supporting_reviewers:
+                objection_count_by_reviewer[supporting_reviewer] = (
+                    objection_count_by_reviewer.get(supporting_reviewer, 0) + 1
+                )
             text(objection.get("claim"), f"{objection_path}.claim", errors)
             text(
                 objection.get("failure_mode"), f"{objection_path}.failure_mode", errors
@@ -671,6 +831,12 @@ def validate_report(report: Any) -> list[str]:
                 errors.append(f"{objection_path}: UNSUPPORTED requires REJECT")
             objection_records[objection_id] = (str(severity), str(objection_status))
 
+        for reviewer_id, count in objection_count_by_reviewer.items():
+            if count > 3:
+                errors.append(
+                    f"{path}.objections: {reviewer_id} supports {count}; maximum is 3"
+                )
+
         for reviewer_id, verdict in result_verdict_by_id.items():
             if verdict == "OBJECTIONS" and reviewer_id not in objection_reviewers:
                 errors.append(
@@ -716,6 +882,9 @@ def validate_report(report: Any) -> list[str]:
                 errors,
             )
         final_panel_ids = round_panel_ids
+        expected_invocations.extend(
+            (expected_number, verifier_id) for verifier_id in round_panel_ids
+        )
         final_verification_verdicts = round_verification_verdicts
         new_count = integer(
             round_item.get("new_material_objections"),
@@ -732,6 +901,13 @@ def validate_report(report: Any) -> list[str]:
                     f"{path}: NEW_RISK verdict and positive "
                     "new_material_objections must agree"
                 )
+
+    if status != "BLOCKED" and sorted(scheduled_invocations) != sorted(
+        expected_invocations
+    ):
+        errors.append(
+            "independence.batch_plan: require every round reviewer and verifier invocation exactly once"
+        )
 
     if status != "BLOCKED":
         if set(reviewer_ids) != dispatched_reviewers:
@@ -862,13 +1038,13 @@ def validate_report(report: Any) -> list[str]:
             errors.append("approval requires blind_first_pass=true")
         if peer_leak is not False:
             errors.append("approval forbids peer reviews before blind submission")
-        required_reviewers = expected_required_reviewers(mode, providers)
+        required_reviewers = expected_required_reviewers(profile, mode, providers)
         missing_reviewers = sorted(required_reviewers - set(reviewer_ids))
         if missing_reviewers:
             errors.append(f"approval missing required reviewers {missing_reviewers}")
         if len(verifier_ids) < 3:
             errors.append("approval requires at least three fresh verifiers")
-        required_verifiers = expected_required_verifiers(mode)
+        required_verifiers = expected_required_verifiers(profile, mode)
         missing_verifiers = sorted(required_verifiers - set(verifier_ids))
         if missing_verifiers:
             errors.append(f"approval missing required verifiers {missing_verifiers}")
@@ -929,6 +1105,52 @@ def validate_report(report: Any) -> list[str]:
         open_blockers or open_highs or unresolved_assumptions or material_new_risks
     ):
         errors.append("REVISE requires a material open issue")
+
+    conditional_escalations = [
+        seat_id
+        for seat_id, reason in seat_selection.items()
+        if isinstance(reason, str) and reason.startswith("ESCALATE: ")
+    ]
+    supported_material = [
+        objection_id
+        for objection_id, (severity, objection_status) in objection_records.items()
+        if severity in {"BLOCKER", "HIGH"} and objection_status != "UNSUPPORTED"
+    ]
+
+    if profile == "fast" and status != "BLOCKED":
+        expected_reviewers = expected_required_reviewers(profile, mode, providers)
+        if set(reviewer_ids) != expected_reviewers:
+            errors.append(
+                f"fast profile requires exactly reviewers {sorted(expected_reviewers)}"
+            )
+        if set(verifier_ids) != FAST_VERIFIERS:
+            errors.append("fast profile requires exactly fresh triage-arbiter")
+        if final_panel_ids != FAST_VERIFIERS:
+            errors.append("fast final panel requires triage-arbiter")
+        if set(reviewer_ids) & set(verifier_ids):
+            errors.append("fast profile requires a fresh triage-arbiter")
+        if blind is not True or peer_leak is not False:
+            errors.append("fast profile requires a blind first pass")
+        if "BLOCKED" in reviewer_verdicts:
+            errors.append("fast non-blocked result requires every reviewer unblocked")
+
+    if status == "TRIAGE_PASS":
+        if supported_material or unresolved_assumptions or conditional_escalations:
+            errors.append(
+                "TRIAGE_PASS forbids material risk, unknown, or specialist trigger"
+            )
+        if material_new_risks or "NEW_RISK" in final_verification_verdicts:
+            errors.append("TRIAGE_PASS forbids new material verification risk")
+        if "STILL_OPEN" in final_verification_verdicts:
+            errors.append("TRIAGE_PASS requires triage closure")
+
+    if status == "ESCALATE_TO_FULL" and not (
+        supported_material
+        or unresolved_assumptions
+        or material_new_risks
+        or conditional_escalations
+    ):
+        errors.append("ESCALATE_TO_FULL requires a material escalation reason")
 
     return errors
 

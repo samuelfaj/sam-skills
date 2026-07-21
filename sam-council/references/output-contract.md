@@ -2,21 +2,22 @@
 
 ## Contents
 
-1. Terminal states
+1. Profiles and states
 2. Report shape
-3. Thesis and evidence rules
-4. Round and objection rules
-5. Independence rules
-6. Multi-provider confrontation
-7. Decision invariants
-8. Validation
+3. Execution and runtime records
+4. Thesis, rounds, and objections
+5. Independence and confrontation
+6. Decision invariants
+7. Validation
 
-## Terminal states
+## Profiles and states
 
-- `APPROVED`: fully evidenced and no decision-owner condition remains.
-- `APPROVED_WITH_CONDITIONS`: no blocker remains; explicit gated conditions do.
-- `REVISE`: actionable material risk or uncertainty remains.
-- `BLOCKED`: required capability, evidence, authority, or decision is absent.
+- `fast`: `TRIAGE_PASS`, `ESCALATE_TO_FULL`, or `BLOCKED`.
+- `full`: `APPROVED`, `APPROVED_WITH_CONDITIONS`, `REVISE`, or `BLOCKED`.
+
+`TRIAGE_PASS` means the bounded triage found no reason to escalate. It is never
+approval. `ESCALATE_TO_FULL` means a material risk, critical unknown,
+specialist trigger, or multi-provider requirement needs the full profile.
 
 ## Report shape
 
@@ -24,8 +25,10 @@ Create one UTF-8 JSON object:
 
 ```json
 {
-  "schema_version": 1,
-  "status": "APPROVED",
+  "schema_version": 2,
+  "profile": "fast",
+  "status": "TRIAGE_PASS",
+  "execution_policy": {},
   "thesis": {},
   "evidence": [],
   "independence": {},
@@ -37,210 +40,120 @@ Create one UTF-8 JSON object:
 }
 ```
 
-`historical_record_limitations` lists missing raw responses, incomplete
-provenance, or reconstructed history. Keep it empty only when the raw scratch
-record proves completeness. `APPROVED` requires an empty list; conditional,
-revise, and blocked reports must disclose any limitation.
+## Execution and runtime records
 
-`thesis` must contain:
-
-- `id`, `objective`, and `problem_frame`;
-- non-empty `scope`, `constraints`, `assumptions`, `alternatives`, and `steps`;
-- non-empty `success_criteria`, `test_strategy`, `rollout`, `rollback`,
-  `observability`, `residual_risks`, and `recheck_triggers`.
-
-Each assumption contains `id`, `claim`, `state`, and `evidence_ids`. State is
-`VERIFIED`, `EXPERIMENT_PLANNED`, or `UNRESOLVED`. A verified assumption cites
-evidence. A planned experiment also contains `experiment`, `owner`, and
-`pass_threshold`.
-
-Each evidence item contains unique `id`, `kind`, `claim`, and `locator`. Use
-real locators; never write a fabricated source.
-
-## Round shape
-
-Each round contains:
+`execution_policy` contains:
 
 ```json
 {
-  "number": 1,
-  "input_thesis_id": "T-001",
-  "reviewer_ids": [],
-  "reviewer_results": [],
-  "objections": [],
-  "output_thesis_id": "T-002",
-  "verification": [],
-  "new_material_objections": 0
+  "default_round_limit": 1,
+  "hard_round_limit": 1,
+  "continuation_authorized": false,
+  "max_objections_per_reviewer": 3,
+  "max_response_words": 1000,
+  "packet_strategy": "RELEVANT_ONLY",
+  "parallelism": "MAX_AVAILABLE",
+  "initial_effort": "medium",
+  "arbiter_effort": "high"
 }
 ```
 
-Round numbers must be sequential and cannot exceed three. Round one includes
-all six required reviewer IDs. Later rounds may target open or new mechanisms.
+For `full`, `hard_round_limit` is 3. More than one round requires
+`continuation_authorized: true`; the first run never continues automatically.
 
-Each `reviewer_results` item contains `reviewer_id`, `verdict`,
-`search_summary`, `disconfirming_evidence`, and `residual_uncertainty`. In
-multi-provider mode also include `provider` matching the namespaced reviewer
-ID prefix. Verdict is `OBJECTIONS`, `NO_MATERIAL_OBJECTION`, or `BLOCKED`.
-Record exactly one terminal result for every dispatched seat. An `OBJECTIONS`
-result must own at least one objection in that round.
+Each `provider_runtimes` entry contains non-empty `adapter` and `model`,
+normalized `reviewer_effort` (`medium` or `host-default`), normalized
+`arbiter_effort` (`high` or `host-default`), and positive
+`max_parallel_workers`. Model/provider names are unrestricted.
 
-Each objection contains:
+`independence.batch_plan` records ordered waves with `round`, `phase`,
+`provider`, and `seat_ids`. Every reviewer and verifier invocation appears
+exactly once for its round. Independent seats share a wave up to runtime
+capacity; blind reviewers precede verifiers within each round.
 
-```json
-{
-  "id": "O-R1-001",
-  "reviewer_id": "logic",
-  "supporting_reviewer_ids": ["logic", "assumptions"],
-  "claim": "A falsifiable claim",
-  "failure_mode": "Observable consequence",
-  "severity": "HIGH",
-  "confidence": 85,
-  "premise_ids": ["A-001"],
-  "evidence_ids": ["E-001"],
-  "required_proof": "Proof that would settle the claim",
-  "smallest_correction": "Minimum sufficient response",
-  "status": "RESOLVED",
-  "author_response": {
-    "disposition": "ACCEPT",
-    "rationale": "Why this treatment is justified",
-    "evidence_ids": ["E-001"],
-    "change": "Exact thesis change",
-    "validation": "How closure was checked",
-    "residual_risk": "Declared residual risk or none"
-  }
-}
-```
+## Thesis, rounds, and objections
 
-Allowed objection status: `OPEN`, `RESOLVED`, `MITIGATED`, `ACCEPTED_RISK`, or
-`UNSUPPORTED`. Allowed author disposition: `ACCEPT`, `PARTIAL`, `REJECT`,
-`INVESTIGATE`, or `ACCEPT_RISK`.
+The thesis retains `id`, `objective`, `problem_frame`, and non-empty `scope`,
+`constraints`, `assumptions`, `alternatives`, `steps`, `success_criteria`,
+`test_strategy`, `rollout`, `rollback`, `observability`, `residual_risks`, and
+`recheck_triggers`. Keep entries concise.
 
-Use `supporting_reviewer_ids` to retain every blind reviewer that independently
-found the same failure mechanism. Include the primary `reviewer_id`. A reviewer
-with verdict `OBJECTIONS` may support a merged objection instead of owning a
-duplicate objection.
+Evidence items contain unique `id`, `kind`, `claim`, and real `locator`.
+Assumptions contain `id`, `claim`, `state`, and `evidence_ids`; planned
+experiments also name method, owner, and pass threshold.
 
-Every verification item contains `verifier_id`, `verdict`, `objection_ids`, and
-`rationale`. Verdict is `CLOSED`, `STILL_OPEN`, `NEW_RISK`,
-`CONDITION_VALIDATED`, or `NO_MATERIAL_OBJECTION`.
+Each round contains sequential thesis IDs, reviewer IDs/results, objections,
+the revised thesis ID, verification results, and the count of new material
+objections. Fast has exactly one round. Full has one round by default and at
+most three with explicit continuation.
 
-Preserve verifier truth at the time of each round. A positive
-`new_material_objections` count requires at least one `NEW_RISK` verifier
-verdict, and `NEW_RISK` requires a positive count. Earlier open/new verdicts may
-be closed by later rounds; never rewrite the earlier record.
+Round one contains every required seat for its profile. Later full rounds may
+target open/new mechanisms. Every dispatched seat has exactly one terminal
+result.
 
-## Independence shape
+Each objection contains stable ID, primary and supporting reviewer IDs, claim,
+failure mode, severity, confidence, premise/evidence IDs, required proof,
+smallest correction, status, and author response. A reviewer owns/supports at
+most 3 objections per round. Preserve earlier verdicts unchanged.
+
+## Independence and confrontation
 
 Record:
 
 ```json
 {
   "mode": "single-host",
-  "providers": ["grok"],
+  "providers": ["active-host"],
   "provider_runtimes": {
-    "grok": {"model": "grok-4.5", "effort": "high"}
+    "active-host": {
+      "adapter": "host-native-workers",
+      "model": "host-default",
+      "reviewer_effort": "medium",
+      "arbiter_effort": "high",
+      "max_parallel_workers": 4
+    }
   },
   "blind_first_pass": true,
   "reviewers_saw_peer_reviews_before_submission": false,
   "reviewer_ids": [],
   "verifier_ids": [],
   "conditional_seat_selection": {},
+  "batch_plan": [
+    {"round": 1, "phase": "blind", "provider": "active-host", "seat_ids": []},
+    {"round": 1, "phase": "verification", "provider": "active-host", "seat_ids": []}
+  ],
   "conflicts": []
 }
 ```
 
-`mode` is `single-host` or `multi-provider`. `providers` lists the selected
-provider keys (`codex`, `claude-code`, `grok`). Multi-provider requires two or
-more. `provider_runtimes` binds each selected provider to a non-empty model and
-effort.
+Provider keys must be lowercase slugs, but are otherwise open. Multi-provider
+requires at least two, profile `full`, namespaced reviewer IDs, confrontation,
+and `meta-arbiter`.
 
-**Single-host approval:** all six required reviewer IDs, and fresh verifiers
-`closure-verifier`, `system-verifier`, and `arbiter`.
-
-**Multi-provider approval:** all six required seats for every selected provider
-as `{provider}/{seat}`, plus fresh `closure-verifier`, `system-verifier`, and
-`meta-arbiter` (arbiter may appear as an extra but cannot replace meta-arbiter).
-No overlap between reviewer and verifier groups. No undeclared conflict.
-
-`conditional_seat_selection` contains all conditional seat IDs from
-`reviewer-lenses.md`. Each value starts with `SELECTED:` or `NOT_APPLICABLE:`
-and gives a system-specific reason. Every selected seat must appear in the
-reviewer and round ledgers (namespaced per provider in multi-provider mode).
-
-## Multi-provider confrontation
-
-`confrontation` is `null` in single-host mode. In multi-provider mode it is
-required for non-blocked reports:
-
-```json
-{
-  "provider_positions": [
-    {
-      "provider": "codex",
-      "stance": "REVISE",
-      "material_objection_ids": ["O-R1-001"],
-      "preferred_correction": "Bound the capacity claim to measured load"
-    }
-  ],
-  "disagreements": [
-    {
-      "topic": "capacity bound",
-      "provider_ids": ["codex", "grok"],
-      "summary": "Providers disagree whether the measured range is sufficient"
-    }
-  ],
-  "resolution": "EVIDENCE_WEIGHTED",
-  "surviving_claim_ids": ["O-R1-001"],
-  "rejected_claim_summaries": [],
-  "rationale": "Measured load evidence supports the capacity bound claim"
-}
-```
-
-`resolution` must be `EVIDENCE_WEIGHTED`. Never encode majority vote as the
-resolution basis.
-
-## Decision shape
-
-Record:
-
-```json
-{
-  "final_thesis_id": "T-002",
-  "confidence": 78,
-  "basis": "EVIDENCE_AND_RISK",
-  "rationale": "Why this status follows from evidence",
-  "open_blocker_ids": [],
-  "open_high_ids": [],
-  "conditions": [],
-  "accepted_risk_ids": [],
-  "required_experiment_ids": [],
-  "change_summary": [],
-  "decision_owner_actions": []
-}
-```
-
-Confidence is an integer from 0 through 100. It communicates calibration; it
-does not override a severity gate.
+Conditional selection lists every conditional seat. In full, use `SELECTED:`
+or `NOT_APPLICABLE:` and dispatch selected seats. In fast, use `ESCALATE:` or
+`NOT_APPLICABLE:`; any escalation requires `ESCALATE_TO_FULL`.
 
 ## Decision invariants
 
-- Never approve with an open or accepted blocker.
-- Never return `APPROVED` with an open or accepted high risk.
-- Permit an accepted high risk only in `APPROVED_WITH_CONDITIONS`, with an
-  explicit condition and decision-owner action.
-- Require every open blocker/high ID in the decision ledger.
-- Treat decision ledgers as unordered sets; ordering has no decision meaning.
-- Require `APPROVED` to have only verified assumptions.
-- Permit planned experiments only in `APPROVED_WITH_CONDITIONS`, with matching
-  required experiment IDs and execution conditions.
-- Require the final verification panel to contain no `STILL_OPEN`, `NEW_RISK`,
-  or positive `new_material_objections` for approval.
-- Require conditional approval to name at least one condition, accepted risk,
-  or planned experiment.
-- Require `REVISE` to expose at least one open blocker/high, unresolved
-  assumption, or material new risk.
-- Require `BLOCKED` to contain a non-empty `blockers` list.
-- Never infer a decision from reviewer counts.
+- Fast never returns an approval status; full never returns a triage status.
+- `TRIAGE_PASS` requires all fast reviewers, fresh `triage-arbiter`, no open
+  blocker/high, no unresolved critical assumption, no new material risk, and no
+  conditional escalation.
+- `ESCALATE_TO_FULL` requires a material open issue, unresolved assumption,
+  new risk, conditional escalation, or multi-provider need.
+- Approval requires all full reviewers, applicable specialists, three fresh
+  verifiers, complete final closure, no independence conflict, and no open
+  blocker/high.
+- Never accept a blocker. Accept a high only in
+  `APPROVED_WITH_CONDITIONS`, with explicit owner action.
+- `APPROVED` requires verified assumptions and complete raw history.
+- `REVISE` exposes an actionable material issue after the authorized round.
+- `BLOCKED` contains a non-empty blocker list.
+- Decision ledgers are exact unordered sets. Never infer a result from counts.
+
+`historical_record_limitations` lists missing raw responses or reconstructed
+history. Keep it empty only when scratch evidence proves completeness.
 
 ## Validation
 
@@ -250,6 +163,4 @@ Run:
 python3 -B scripts/validate_council_report.py council-report.json
 ```
 
-Only cite `VALID` as machine proof. Preserve validator errors in blocked or
-in-progress reporting. Do not change the report after validation without
-rerunning the command.
+Only cite `VALID` as machine proof. Re-run after every report change.

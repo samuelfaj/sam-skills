@@ -2,37 +2,40 @@
 
 ## Contents
 
-1. Blind packet
+1. Packet budget
 2. Blind reviewer mission
 3. Author cross-examination
-4. Multi-provider confrontation
-5. Verification packet
-6. Arbiter / meta-arbiter mission
+4. Verification
+5. Multi-provider confrontation
 
-## Blind packet
+## Packet budget
 
-Send each reviewer only:
+Send one frozen relevant-only core containing:
 
-1. frozen charter and thesis ID;
-2. exact thesis text;
-3. evidence index and raw task-local artifacts;
+1. charter, profile, topology, and thesis ID;
+2. exact concise thesis;
+3. indexed evidence with precise locators;
 4. assumption ledger;
-5. one assigned reviewer lens;
-6. the response contract below.
+5. exact task-local excerpts, diffs, or receipts needed for the lens;
+6. response contract and reviewer-specific mission.
 
-Do not send peer reviews, desired verdict, likely defect, planned correction,
-private author reasoning, or a prior answer from the same context.
+Exclude unrelated files, full repository dumps, peer reviews, desired verdict,
+expected defects, private reasoning, and duplicated narrative. Link to local
+artifacts when the worker can read them instead of copying their full contents.
+
+Each reviewer may return at most 3 material objections and 1,000 words. Put the
+most severe, best-supported mechanisms first. Stop after the cap; do not pad.
 
 ## Blind reviewer mission
 
-Use this mission with role-specific questions appended:
+Use this mission with the assigned lens:
 
 > Try to falsify this system-development thesis within your assigned lens.
-> Search for a concrete failure mechanism and the evidence that supports or
-> would disprove it. Do not invent a criticism quota. Do not infer peer views.
-> Return `NO_MATERIAL_OBJECTION` if the search finds none.
+> Find at most three concrete, load-bearing failure mechanisms. Use the supplied
+> evidence and name the proof that would settle uncertainty. Return
+> `NO_MATERIAL_OBJECTION` when none exists. Stay under 1,000 words.
 
-Require this response shape:
+Require:
 
 ```text
 Reviewer ID:
@@ -40,7 +43,7 @@ Provider:
 Thesis ID:
 Search performed:
 Verdict: OBJECTIONS | NO_MATERIAL_OBJECTION | BLOCKED
-Objections:
+Objections: (0-3)
 - Claim:
   Failure mode:
   Severity: BLOCKER | HIGH | MEDIUM | LOW | UNSUPPORTED
@@ -53,14 +56,14 @@ Disconfirming evidence considered:
 Residual uncertainty:
 ```
 
-In multi-provider mode, `Reviewer ID` is namespaced as `{provider}/{seat}` and
-`Provider` must match. Reject a response that omits the search performed,
-failure mechanism, or disconfirming evidence.
+Provider is the runtime-supplied slug. In multi-provider mode, namespace the
+reviewer as `{provider}/{seat}`. Reject responses that exceed 3 objections,
+omit the search/failure mechanism/disconfirming evidence, or violate blindness.
 
 ## Author cross-examination
 
-Give the author normalized objections without vote counts. Require one response
-per objection:
+Give the author normalized objections without vote counts. Require exactly one
+response per objection:
 
 ```text
 Objection ID:
@@ -73,48 +76,16 @@ Residual risk:
 Decision-owner action:
 ```
 
-A rejection without stronger evidence remains open. An investigation must name
-method, owner, pass threshold, and execution gate. An accepted risk is not a
-resolved risk.
+A rejection without stronger evidence stays open. An investigation names a
+method, owner, threshold, and gate. Never accept a blocker. Never accept a high
+on the user's behalf.
 
-## Multi-provider confrontation
+## Verification
 
-Use only in `multi-provider` mode after blind panels return. Send each provider
-panel:
+Give fresh verifiers only the prior/revised thesis, material objections, author
+responses, evidence, and traceability map. Do not send the desired status.
 
-1. its own prior material claims;
-2. other providers’ material claims only (claim, failure mode, severity,
-   evidence IDs, required proof);
-3. the frozen thesis ID;
-4. the response contract below.
-
-Do not send the desired terminal status, author private diagnosis, or a vote
-tally.
-
-```text
-Provider:
-Thesis ID:
-Peer claims reviewed:
-For each peer claim:
-- Claim ID or summary:
-  Stance: ACCEPT | REBUT | CONCEDE
-  Evidence IDs:
-  Rationale:
-Own claim withdrawals:
-Provisional stance: APPROVE | APPROVE_WITH_CONDITIONS | REVISE | BLOCK
-Strongest remaining disagreement:
-```
-
-A `REBUT` without stronger evidence leaves the peer claim open. A `CONCEDE`
-requires an exact residual risk or correction recommendation.
-
-## Verification packet
-
-Send fresh verifiers the prior and revised thesis IDs, every material objection,
-author responses, evidence, and traceability map. Do not send the desired final
-status or blind reviewers' vote-like summaries.
-
-Require this response shape:
+Require:
 
 ```text
 Verifier ID:
@@ -124,7 +95,7 @@ Objection checks:
   Verdict: CLOSED | STILL_OPEN | CONDITION_VALIDATED
   Evidence IDs:
   Rationale:
-New risks:
+New risks: (0-3)
 - Claim:
   Failure mode:
   Suggested severity:
@@ -134,19 +105,16 @@ Problem displacement check:
 Final verdict: PASS | REVISE | BLOCKED
 ```
 
-Convert every material new risk into a new objection before another round.
+The `triage-arbiter` combines closure, displacement, and escalation checks but
+cannot approve. Full closure/system verifiers use medium effort; the arbiter or
+meta-arbiter alone uses high effort. Convert each material new risk into an
+objection before any explicitly authorized later round.
 
-## Arbiter / meta-arbiter mission
+## Multi-provider confrontation
 
-Require the arbiter to weigh evidence quality, failure severity, reversibility,
-and proof of closure. Forbid majority counting. Require an explanation for any
-severity downgrade or unsupported classification. Preserve a supported
-minority objection until evidence closes it.
-
-In multi-provider mode, the `meta-arbiter` must additionally:
-
-- compare provider positions claim-by-claim;
-- state which provider claims survived confrontation and why;
-- forbid “two of three providers agreed” as a decision basis;
-- prefer safer residual risk when evidence quality is equal;
-- name any unresolved cross-provider disagreement that blocks approval.
+Use only for explicit multi-provider `full` runs. Send each provider its prior
+material claims plus peers' material claims, never a vote tally or desired
+result. Require `ACCEPT`, `REBUT`, or `CONCEDE` with evidence IDs. A rebuttal
+without stronger evidence leaves the claim open. The meta-arbiter compares
+evidence quality, severity, reversibility, and proof of closure; provider count
+has no decision weight.

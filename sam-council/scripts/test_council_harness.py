@@ -23,6 +23,8 @@ REVIEWERS = [
     "problem-frame",
 ]
 VERIFIERS = ["closure-verifier", "system-verifier", "arbiter"]
+FAST_REVIEWERS = ["frame-evidence", "delivery-failure", "simplification"]
+FAST_VERIFIERS = ["triage-arbiter"]
 CONDITIONAL_SELECTION = {
     "security-privacy": "NOT_APPLICABLE: fixture has no identity boundary.",
     "data-migration": "NOT_APPLICABLE: fixture has no migration.",
@@ -50,8 +52,20 @@ def base_report() -> dict[str, Any]:
         for reviewer_id in REVIEWERS
     ]
     return {
-        "schema_version": 1,
+        "schema_version": 2,
+        "profile": "full",
         "status": "APPROVED",
+        "execution_policy": {
+            "default_round_limit": 1,
+            "hard_round_limit": 3,
+            "continuation_authorized": False,
+            "max_objections_per_reviewer": 3,
+            "max_response_words": 1000,
+            "packet_strategy": "RELEVANT_ONLY",
+            "parallelism": "MAX_AVAILABLE",
+            "initial_effort": "medium",
+            "arbiter_effort": "high",
+        },
         "thesis": {
             "id": "T-002",
             "objective": "Deliver the capability without losing accepted operations.",
@@ -86,15 +100,35 @@ def base_report() -> dict[str, Any]:
         ],
         "independence": {
             "mode": "single-host",
-            "providers": ["grok"],
+            "providers": ["portable-host"],
             "provider_runtimes": {
-                "grok": {"model": "grok-4.5", "effort": "high"}
+                "portable-host": {
+                    "adapter": "host-native-workers",
+                    "model": "host-default",
+                    "reviewer_effort": "medium",
+                    "arbiter_effort": "high",
+                    "max_parallel_workers": 6,
+                }
             },
             "blind_first_pass": True,
             "reviewers_saw_peer_reviews_before_submission": False,
             "reviewer_ids": REVIEWERS.copy(),
             "verifier_ids": VERIFIERS.copy(),
             "conditional_seat_selection": CONDITIONAL_SELECTION.copy(),
+            "batch_plan": [
+                {
+                    "round": 1,
+                    "phase": "blind",
+                    "provider": "portable-host",
+                    "seat_ids": REVIEWERS.copy(),
+                },
+                {
+                    "round": 1,
+                    "phase": "verification",
+                    "provider": "portable-host",
+                    "seat_ids": VERIFIERS.copy(),
+                },
+            ],
             "conflicts": [],
         },
         "confrontation": None,
@@ -224,6 +258,7 @@ def blocked_report() -> dict[str, Any]:
     report["independence"]["verifier_ids"] = []
     report["independence"]["providers"] = []
     report["independence"]["provider_runtimes"] = {}
+    report["independence"]["batch_plan"] = []
     report["rounds"] = []
     report["blockers"] = ["The runtime cannot create distinct subagents"]
     return report
@@ -251,16 +286,30 @@ def multi_provider_report() -> dict[str, Any]:
             }
         )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
+        "profile": "full",
         "status": "APPROVED",
+        "execution_policy": copy.deepcopy(base_report()["execution_policy"]),
         "thesis": base_report()["thesis"],
         "evidence": base_report()["evidence"],
         "independence": {
             "mode": "multi-provider",
             "providers": providers,
             "provider_runtimes": {
-                "codex": {"model": "gpt-5.6-sol", "effort": "high"},
-                "grok": {"model": "grok-4.5", "effort": "high"},
+                "codex": {
+                    "adapter": "native-workers",
+                    "model": "host-default",
+                    "reviewer_effort": "medium",
+                    "arbiter_effort": "high",
+                    "max_parallel_workers": 6,
+                },
+                "grok": {
+                    "adapter": "native-workers",
+                    "model": "host-default",
+                    "reviewer_effort": "medium",
+                    "arbiter_effort": "high",
+                    "max_parallel_workers": 6,
+                },
             },
             "blind_first_pass": True,
             "reviewers_saw_peer_reviews_before_submission": False,
@@ -271,6 +320,26 @@ def multi_provider_report() -> dict[str, Any]:
                 "meta-arbiter",
             ],
             "conditional_seat_selection": CONDITIONAL_SELECTION.copy(),
+            "batch_plan": [
+                {
+                    "round": 1,
+                    "phase": "blind",
+                    "provider": "codex",
+                    "seat_ids": [seat for seat in namespaced if seat.startswith("codex/")],
+                },
+                {
+                    "round": 1,
+                    "phase": "blind",
+                    "provider": "grok",
+                    "seat_ids": [seat for seat in namespaced if seat.startswith("grok/")],
+                },
+                {
+                    "round": 1,
+                    "phase": "verification",
+                    "provider": "codex",
+                    "seat_ids": ["closure-verifier", "system-verifier", "meta-arbiter"],
+                },
+            ],
             "conflicts": [],
         },
         "confrontation": {
@@ -376,6 +445,7 @@ def multi_provider_report() -> dict[str, Any]:
 
 def multi_round_report() -> dict[str, Any]:
     report = base_report()
+    report["execution_policy"]["continuation_authorized"] = True
     first_round = report["rounds"][0]
     first_round["verification"][1]["verdict"] = "NEW_RISK"
     first_round["new_material_objections"] = 1
@@ -436,6 +506,22 @@ def multi_round_report() -> dict[str, Any]:
             "new_material_objections": 0,
         }
     )
+    report["independence"]["batch_plan"].extend(
+        [
+            {
+                "round": 2,
+                "phase": "blind",
+                "provider": "portable-host",
+                "seat_ids": ["logic"],
+            },
+            {
+                "round": 2,
+                "phase": "verification",
+                "provider": "portable-host",
+                "seat_ids": VERIFIERS.copy(),
+            },
+        ]
+    )
     report["thesis"]["id"] = "T-003"
     report["decision"]["final_thesis_id"] = "T-003"
     report["decision"]["change_summary"].append(
@@ -479,6 +565,94 @@ def conditional_with_history_limit() -> dict[str, Any]:
     return report
 
 
+def fast_report() -> dict[str, Any]:
+    report = base_report()
+    report["profile"] = "fast"
+    report["status"] = "TRIAGE_PASS"
+    report["execution_policy"]["hard_round_limit"] = 1
+    report["independence"]["reviewer_ids"] = FAST_REVIEWERS.copy()
+    report["independence"]["verifier_ids"] = FAST_VERIFIERS.copy()
+    report["independence"]["batch_plan"] = [
+        {
+            "round": 1,
+            "phase": "blind",
+            "provider": "portable-host",
+            "seat_ids": FAST_REVIEWERS.copy(),
+        },
+        {
+            "round": 1,
+            "phase": "verification",
+            "provider": "portable-host",
+            "seat_ids": FAST_VERIFIERS.copy(),
+        },
+    ]
+    round_item = report["rounds"][0]
+    round_item["reviewer_ids"] = FAST_REVIEWERS.copy()
+    round_item["reviewer_results"] = [
+        {
+            "reviewer_id": reviewer_id,
+            "verdict": "NO_MATERIAL_OBJECTION",
+            "search_summary": f"Completed bounded {reviewer_id} triage.",
+            "disconfirming_evidence": "Checked evidence that could trigger full review.",
+            "residual_uncertainty": "No material triage uncertainty remains.",
+        }
+        for reviewer_id in FAST_REVIEWERS
+    ]
+    round_item["objections"] = []
+    round_item["verification"] = [
+        {
+            "verifier_id": "triage-arbiter",
+            "verdict": "NO_MATERIAL_OBJECTION",
+            "objection_ids": [],
+            "rationale": "No material risk, specialist trigger, or displaced problem found.",
+        }
+    ]
+    report["decision"]["rationale"] = "Bounded triage found no escalation trigger."
+    report["decision"]["change_summary"] = []
+    return report
+
+
+def fast_escalation_report() -> dict[str, Any]:
+    report = fast_report()
+    report["status"] = "ESCALATE_TO_FULL"
+    report["thesis"]["assumptions"][0]["state"] = "UNRESOLVED"
+    report["thesis"]["assumptions"][0]["evidence_ids"] = []
+    report["decision"]["rationale"] = "A critical capacity assumption requires full review."
+    return report
+
+
+def fast_specialist_escalation_report() -> dict[str, Any]:
+    report = fast_report()
+    report["status"] = "ESCALATE_TO_FULL"
+    report["independence"]["conditional_seat_selection"]["security-privacy"] = (
+        "ESCALATE: the plan changes an authorization boundary."
+    )
+    report["decision"]["rationale"] = "A security specialist is required."
+    return report
+
+
+def provider_report(provider: str) -> dict[str, Any]:
+    report = base_report()
+    runtime = report["independence"]["provider_runtimes"].pop("portable-host")
+    runtime["model"] = f"{provider}-reported-model"
+    report["independence"]["providers"] = [provider]
+    report["independence"]["provider_runtimes"] = {provider: runtime}
+    for batch in report["independence"]["batch_plan"]:
+        batch["provider"] = provider
+    return report
+
+
+def over_objection_cap_report() -> dict[str, Any]:
+    report = base_report()
+    original = report["rounds"][0]["objections"][0]
+    for number in range(2, 5):
+        objection = copy.deepcopy(original)
+        objection["id"] = f"O-R1-{number:03d}"
+        objection["claim"] = f"Distinct material mechanism {number}."
+        report["rounds"][0]["objections"].append(objection)
+    return report
+
+
 def run_validator(report: dict[str, Any]) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory(prefix="sam-council-") as temporary:
         path = Path(temporary) / "report.json"
@@ -505,6 +679,23 @@ def mutate(
 def main() -> int:
     cases: list[tuple[str, dict[str, Any], bool]] = [
         ("approved", base_report(), True),
+        ("fast triage pass", fast_report(), True),
+        ("fast material escalation", fast_escalation_report(), True),
+        ("fast specialist escalation", fast_specialist_escalation_report(), True),
+        ("codex portable runtime", provider_report("codex"), True),
+        ("claude-code portable runtime", provider_report("claude-code"), True),
+        ("grok portable runtime", provider_report("grok"), True),
+        ("unlisted portable runtime", provider_report("future-agent"), True),
+        (
+            "host default effort fallback",
+            mutate(
+                base_report,
+                lambda r: r["independence"]["provider_runtimes"]["portable-host"].update(
+                    reviewer_effort="host-default", arbiter_effort="host-default"
+                ),
+            ),
+            True,
+        ),
         ("conditional experiment", conditional_experiment(), True),
         ("conditional accepted high", conditional_accepted_high(), True),
         ("multi-round historical new risk", multi_round_report(), True),
@@ -514,6 +705,146 @@ def main() -> int:
         ("conditional history limitation", conditional_with_history_limit(), True),
         ("revise", revise_report(), True),
         ("blocked", blocked_report(), True),
+        (
+            "schema v1 rejected",
+            mutate(base_report, lambda r: r.update(schema_version=1)),
+            False,
+        ),
+        (
+            "fast cannot approve",
+            mutate(fast_report, lambda r: r.update(status="APPROVED")),
+            False,
+        ),
+        (
+            "full cannot triage pass",
+            mutate(base_report, lambda r: r.update(status="TRIAGE_PASS")),
+            False,
+        ),
+        (
+            "fast missing reviewer",
+            mutate(
+                fast_report,
+                lambda r: (
+                    r["rounds"][0]["reviewer_ids"].pop(),
+                    r["rounds"][0]["reviewer_results"].pop(),
+                    r["independence"]["reviewer_ids"].pop(),
+                    r["independence"]["batch_plan"][0]["seat_ids"].pop(),
+                ),
+            ),
+            False,
+        ),
+        (
+            "fast pass with unresolved assumption",
+            mutate(
+                fast_report,
+                lambda r: r["thesis"]["assumptions"][0].update(
+                    state="UNRESOLVED", evidence_ids=[]
+                ),
+            ),
+            False,
+        ),
+        (
+            "fast escalation without reason",
+            mutate(fast_report, lambda r: r.update(status="ESCALATE_TO_FULL")),
+            False,
+        ),
+        (
+            "fast reviewer blocked under nonblocked status",
+            mutate(
+                fast_report,
+                lambda r: r["rounds"][0]["reviewer_results"][0].update(
+                    verdict="BLOCKED"
+                ),
+            ),
+            False,
+        ),
+        (
+            "fast multi-provider",
+            mutate(
+                fast_report,
+                lambda r: r["independence"].update(mode="multi-provider"),
+            ),
+            False,
+        ),
+        (
+            "invalid provider slug",
+            provider_report("Invalid Provider"),
+            False,
+        ),
+        (
+            "invalid runtime effort",
+            mutate(
+                base_report,
+                lambda r: r["independence"]["provider_runtimes"]["portable-host"].update(
+                    reviewer_effort="turbo"
+                ),
+            ),
+            False,
+        ),
+        (
+            "batch exceeds capacity",
+            mutate(
+                base_report,
+                lambda r: r["independence"]["provider_runtimes"]["portable-host"].update(
+                    max_parallel_workers=2
+                ),
+            ),
+            False,
+        ),
+        (
+            "missing batch seat",
+            mutate(
+                base_report,
+                lambda r: r["independence"]["batch_plan"][0]["seat_ids"].pop(),
+            ),
+            False,
+        ),
+        (
+            "nonminimal batch plan",
+            mutate(
+                base_report,
+                lambda r: r["independence"].update(
+                    batch_plan=[
+                        {
+                            "round": 1,
+                            "phase": "blind",
+                            "provider": "portable-host",
+                            "seat_ids": REVIEWERS[:3],
+                        },
+                        {
+                            "round": 1,
+                            "phase": "blind",
+                            "provider": "portable-host",
+                            "seat_ids": REVIEWERS[3:],
+                        },
+                        {
+                            "round": 1,
+                            "phase": "verification",
+                            "provider": "portable-host",
+                            "seat_ids": VERIFIERS.copy(),
+                        },
+                    ]
+                ),
+            ),
+            False,
+        ),
+        ("reviewer objection cap", over_objection_cap_report(), False),
+        (
+            "wrong effort policy",
+            mutate(
+                base_report,
+                lambda r: r["execution_policy"].update(initial_effort="high"),
+            ),
+            False,
+        ),
+        (
+            "continuation not authorized",
+            mutate(
+                multi_round_report,
+                lambda r: r["execution_policy"].update(continuation_authorized=False),
+            ),
+            False,
+        ),
         (
             "approved history limitation",
             mutate(

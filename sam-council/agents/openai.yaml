@@ -1,4 +1,4 @@
 interface:
   display_name: "Sam Council"
-  short_description: "Multi-provider adversarial plan council"
-  default_prompt: "Use $sam-council to falsify, revise, and judge this system-development plan with an independent reviewer council. Stay single-host unless the user clearly and explicitly requests multi-provider (e.g. grok + claude + codex)."
+  short_description: "Fast or full adversarial plan council"
+  default_prompt: "Use $sam-council to select fast triage or full review, falsify this system-development plan with independent workers, and return a validated evidence-weighted result. Stay single-host unless I explicitly request multi-provider."

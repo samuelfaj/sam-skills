@@ -1,119 +1,105 @@
-# Council Provider Matrix
+# Portable Runtime and Provider Matrix
 
 ## Contents
 
-- [Modes](#modes)
-- [Activation](#activation)
-- [Runtime bindings](#runtime-bindings)
-- [Independence](#independence)
-- [Confrontation](#confrontation)
+- [Principle](#principle)
+- [Topology](#topology)
+- [Runtime discovery](#runtime-discovery)
+- [Effort policy](#effort-policy)
+- [Scheduling](#scheduling)
+- [Multi-provider confrontation](#multi-provider-confrontation)
 - [Fallbacks](#fallbacks)
 
-## Modes
+## Principle
 
-- `single-host` (default): one active controller host runs all seats and
-  verifiers as distinct subagents or host-native workers.
-- `multi-provider`: **explicit opt-in only.** Two or more of `codex`,
-  `claude-code`, and `grok` each run a full blind specialist panel on the same
-  frozen thesis. Results are confronted until an evidence-weighted decision
-  remains.
+The council targets capabilities, not brands. A provider is any independent
+agent runtime that can receive a frozen packet, remain read-only, and return the
+response contract. Provider keys are runtime-supplied lowercase slugs such as
+`codex`, `claude-code`, `grok`, `local-agent`, or `vendor-x`.
 
-## Activation
+Never require a particular model name, CLI, API, tool schema, or reasoning-tier
+vocabulary. Host examples document compatibility; they do not form an
+allowlist.
 
-**Default every run to `single-host`.** Enter `multi-provider` only when the
-user clearly and explicitly requests a multi-host or multi-model council.
+## Topology
 
-Clear requests (activate multi-provider):
+- `single-host`: one controller uses distinct workers offered by the active
+  runtime. This is always the default.
+- `multi-provider`: two or more explicitly requested providers each run the
+  full blind panel against the same packet. It always uses profile `full`.
 
-- “use sam-council with grok, claude and codex”
-- “council across codex + claude-code”
-- “multi-provider council: grok and opus/claude”
-- “run independent panels on grok and codex and confront them”
+Do not activate multi-provider from “be thorough,” “get another opinion,” an
+incidental model name, or the controller's host. Clear examples include “run
+the council on Codex and Grok” or “use Claude Code, Grok, and Codex panels.”
 
-Not enough (stay single-host):
+## Runtime discovery
 
-- running under Claude/Grok/Codex with no multi-host ask;
-- naming one provider only;
-- vague “second opinion”, “be thorough”, or “use the best models”;
-- incidental product/model names inside the problem statement;
-- ambiguous wording — do not upsell or switch modes to multi-provider.
+Before dispatch, record for every provider:
 
-Aliases when multi-provider is clearly requested:
+```json
+{
+  "adapter": "host-native-workers",
+  "model": "host-reported-model-or-host-default",
+  "reviewer_effort": "medium",
+  "arbiter_effort": "high",
+  "max_parallel_workers": 6
+}
+```
 
-| User phrase | Provider key |
-| --- | --- |
-| codex, openai codex | `codex` |
-| claude, claude code, fable host | `claude-code` |
-| grok, grok build, xai | `grok` |
+Use the provider's reported model label. Normalize the selected effort to
+`medium` for reviewers and `high` for arbiters. If the host does not expose an
+effort control, record `host-default`. `max_parallel_workers` is the safe number
+of independent worker calls that may run concurrently, excluding the
+controller when the host makes that distinction.
 
-If only one provider is named, stay in `single-host` on that provider. If none
-are named, use the active controller host as `single-host`.
+## Effort policy
 
-## Runtime bindings
+- Blind and conditional reviewers: closest supported equivalent of `medium`.
+- Closure and system verifiers: closest supported equivalent of `medium`.
+- Triage arbiter, arbiter, or meta-arbiter: closest supported equivalent of
+  `high`.
+- Do not escalate other seats merely to appear thorough. If a host cannot map
+  these tiers, use its default and record the actual value.
 
-Blind seats and verifiers use the host’s strongest practical reasoning tier
-(read-only). Do not ask the user which model to pick.
+The report records the portable normalized tier. A runtime may call these
+controls “reasoning,” “thinking,” “effort,” or expose none; map its closest
+setting to the normalized tier without exposing a vendor-specific requirement.
 
-| Provider | Model | Effort | Notes |
-| --- | --- | --- | --- |
-| `codex` | `gpt-5.6-sol` | `high` | read-only / sandbox; escalate rare cases to `xhigh` |
-| `claude-code` | `opus` | `high` | plan / read-only tools; rare escalate `xhigh` |
-| `grok` | `grok-4.5` | `high` | read-only contract in prompt; no write tools |
+## Scheduling
 
-Optional pure-advisor second opinion (not a seat substitute):
+Build all independent seat calls before dispatch. Set batch size to the largest
+safe capacity reported by the host. Dispatch each batch concurrently and wait
+only at blindness barriers:
 
-| Provider | Advisor model | Effort |
-| --- | --- | --- |
-| `codex` | `gpt-5.6-sol` | `xhigh` or `max` |
-| `claude-code` | `fable` if available, else `opus` | `high` |
-| `grok` | `grok-4.5` | `high` |
+1. all blind reviewers terminal;
+2. author synthesis/revision complete;
+3. all fresh verifiers terminal.
 
-## Independence
+With enough capacity, a single-host full round has two worker waves: one blind
+wave and one verifier wave. With lower capacity, use the mathematical minimum
+number of batches. Never merge seats to fit capacity and never serialize calls
+that the host can safely run concurrently.
 
-In multi-provider mode:
+## Multi-provider confrontation
 
-1. Freeze one charter and thesis packet for every provider.
-2. Run all six required seats **per provider** under namespaced IDs:
-   `{provider}/{seat}` (example: `codex/logic`, `grok/adversarial`).
-3. Keep first-pass reviews blind across seats **and** providers. No provider may
-   see another provider’s blind responses before its own terminal results.
-4. Preserve raw terminal responses per provider in scratch space.
-5. Conditional seats, when selected, run on every selected provider or record a
-   provider-specific `NOT_APPLICABLE` with reason.
+Run every provider's full required panel with `{provider}/{seat}` IDs. Keep
+blindness across seats and providers. Conditional seats run per provider.
 
-Fresh verification after revision:
+After blind synthesis:
 
-- shared `closure-verifier` and `system-verifier` that inspect the combined
-  ledger;
-- `meta-arbiter` that must explicitly compare provider claims and may not use
-  majority vote.
-
-Per-provider verifier IDs (`codex/closure-verifier`, …) are allowed as extras
-but never replace `meta-arbiter`.
-
-## Confrontation
-
-After blind panels and author synthesis:
-
-1. Build one `provider_position` per provider: material objections owned or
-   supported by that provider, preferred correction, and provisional stance
-   (`APPROVE`, `APPROVE_WITH_CONDITIONS`, `REVISE`, `BLOCK`).
-2. Run a confrontation pass: each provider panel receives only the other
-   providers’ material claims (not desired verdict) and must
-   `ACCEPT`, `REBUT`, or `CONCEDE` with evidence IDs.
-3. Merge surviving claims by failure mechanism. Keep minority blockers when
-   evidence supports them.
-4. Revise the thesis toward the **strongest evidence**, not the most providers.
-5. Stop when the meta-arbiter finds no supported provider disagreement on
-   blockers/highs, or after the normal three-round council bound.
-
-Never declare a winner because two of three providers agreed. Prefer the claim
-with better evidence, clearer failure mode, and safer residual risk.
+1. Build one evidence-backed position per provider.
+2. Give each provider only peers' material claims.
+3. Require `ACCEPT`, `REBUT`, or `CONCEDE` with evidence IDs.
+4. Preserve supported minority blockers.
+5. Use a fresh `meta-arbiter`; never decide by provider majority.
 
 ## Fallbacks
 
-- If a named provider CLI/auth/model is unavailable, record the exact blocker
-  for that provider. Continue other providers when ≥2 remain runnable.
-- If fewer than two providers can run, downgrade to `single-host` on the
-  surviving provider **or** return `BLOCKED` when multi-provider was mandatory.
-- Never invent a provider’s review from the controller context.
+- If a named provider is unavailable, report the exact failure. Continue only
+  when the user's requested minimum provider count remains available.
+- If fewer than two providers remain and multi-provider was optional, downgrade
+  to `single-host`; if it was mandatory, return `BLOCKED`.
+- If distinct workers are unavailable, return `BLOCKED`.
+- If effort controls or model labels are unavailable, use `host-default`; this
+  alone does not block execution.
+- Never simulate an unavailable provider inside the controller context.
