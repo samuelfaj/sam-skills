@@ -5,8 +5,9 @@
 1. Blind packet
 2. Blind reviewer mission
 3. Author cross-examination
-4. Verification packet
-5. Arbiter mission
+4. Multi-provider confrontation
+5. Verification packet
+6. Arbiter / meta-arbiter mission
 
 ## Blind packet
 
@@ -35,6 +36,7 @@ Require this response shape:
 
 ```text
 Reviewer ID:
+Provider:
 Thesis ID:
 Search performed:
 Verdict: OBJECTIONS | NO_MATERIAL_OBJECTION | BLOCKED
@@ -51,8 +53,9 @@ Disconfirming evidence considered:
 Residual uncertainty:
 ```
 
-Reject a response that omits the search performed, failure mechanism, or
-disconfirming evidence.
+In multi-provider mode, `Reviewer ID` is namespaced as `{provider}/{seat}` and
+`Provider` must match. Reject a response that omits the search performed,
+failure mechanism, or disconfirming evidence.
 
 ## Author cross-examination
 
@@ -73,6 +76,37 @@ Decision-owner action:
 A rejection without stronger evidence remains open. An investigation must name
 method, owner, pass threshold, and execution gate. An accepted risk is not a
 resolved risk.
+
+## Multi-provider confrontation
+
+Use only in `multi-provider` mode after blind panels return. Send each provider
+panel:
+
+1. its own prior material claims;
+2. other providers’ material claims only (claim, failure mode, severity,
+   evidence IDs, required proof);
+3. the frozen thesis ID;
+4. the response contract below.
+
+Do not send the desired terminal status, author private diagnosis, or a vote
+tally.
+
+```text
+Provider:
+Thesis ID:
+Peer claims reviewed:
+For each peer claim:
+- Claim ID or summary:
+  Stance: ACCEPT | REBUT | CONCEDE
+  Evidence IDs:
+  Rationale:
+Own claim withdrawals:
+Provisional stance: APPROVE | APPROVE_WITH_CONDITIONS | REVISE | BLOCK
+Strongest remaining disagreement:
+```
+
+A `REBUT` without stronger evidence leaves the peer claim open. A `CONCEDE`
+requires an exact residual risk or correction recommendation.
 
 ## Verification packet
 
@@ -102,9 +136,17 @@ Final verdict: PASS | REVISE | BLOCKED
 
 Convert every material new risk into a new objection before another round.
 
-## Arbiter mission
+## Arbiter / meta-arbiter mission
 
 Require the arbiter to weigh evidence quality, failure severity, reversibility,
 and proof of closure. Forbid majority counting. Require an explanation for any
 severity downgrade or unsupported classification. Preserve a supported
 minority objection until evidence closes it.
+
+In multi-provider mode, the `meta-arbiter` must additionally:
+
+- compare provider positions claim-by-claim;
+- state which provider claims survived confrontation and why;
+- forbid “two of three providers agreed” as a decision basis;
+- prefer safer residual risk when evidence quality is equal;
+- name any unresolved cross-provider disagreement that blocks approval.

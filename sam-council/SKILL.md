@@ -1,6 +1,6 @@
 ---
 name: sam-council
-description: "Falsify, revise, and judge system-development plans through blind specialist subagent reviews, explicit rebuttals, bounded revision rounds, and an evidence-weighted decision record. Use when planning architecture, features, migrations, incidents, releases, security-sensitive work, expensive changes, or other uncertain and hard-to-reverse technical decisions."
+description: "Falsify, revise, and judge system-development plans through blind specialist reviews, explicit rebuttals, bounded revision rounds, and an evidence-weighted decision record; multi-provider Grok/Claude/Codex confrontation only when the user clearly requests it. Use when planning architecture, features, migrations, incidents, releases, security-sensitive work, expensive changes, or other uncertain and hard-to-reverse technical decisions."
 ---
 
 # Sam Council
@@ -10,16 +10,22 @@ description: "Falsify, revise, and judge system-development plans through blind 
 Turn a consequential software plan into a falsifiable thesis, expose its weakest
 assumptions through independent adversarial review, revise it, and issue a
 traceable decision. Optimize for finding the conditions under which the plan
-fails, not for performative criticism or consensus.
+fails, not for performative criticism or consensus. When the user names multiple
+providers, run independent panels on each and confront their claims until the
+strongest evidence-backed plan remains. Multi-provider runs only when the user
+clearly asks for them.
 
 ## Non-Negotiable Contract
 
-Remain read-only in the target system. Use distinct subagents for every council
-seat. Keep the first-pass reviews blind. Answer every objection explicitly.
-Decide by evidence and risk, never by vote count. Never report approval while a
-supported blocker, untreated high risk, unverified critical assumption, or
-unvalidated correction remains. Retain raw blind and verifier responses in
-scratch space until the final machine report validates.
+Remain read-only in the target system. Use distinct subagents or host workers
+for every council seat. Keep the first-pass reviews blind. Answer every
+objection explicitly. Decide by evidence and risk, never by vote count or
+provider majority. Never report approval while a supported blocker, untreated
+high risk, unverified critical assumption, or unvalidated correction remains.
+Retain raw blind and verifier responses in scratch space until the final
+machine report validates. Never invent a missing provider’s review.
+**Default is always `single-host`.** Do not enter multi-provider unless the
+user clearly and explicitly requests it.
 
 ## Activation and boundaries
 
@@ -34,8 +40,8 @@ scratch space until the final machine report validates.
 - Preserve the user's scope, constraints, no-go surfaces, and decision rights.
 - Ask only for missing information that would materially change the thesis.
   Otherwise record the gap as an assumption or planned experiment.
-- If the runtime cannot create distinct subagents, return `BLOCKED`. Do not
-  simulate multiple reviewers in one context.
+- If the runtime cannot create distinct seats for the selected mode, return
+  `BLOCKED`. Do not simulate multiple reviewers or providers in one context.
 
 ## Required resources
 
@@ -43,15 +49,52 @@ Read these files completely before forming the thesis:
 
 1. [references/reviewer-lenses.md](references/reviewer-lenses.md) for required
    and conditional seats.
-2. [references/prompt-contract.md](references/prompt-contract.md) for blind
-   packets, reviewer replies, rebuttals, and verification prompts.
-3. [references/output-contract.md](references/output-contract.md) before
+2. [references/provider-matrix.md](references/provider-matrix.md) for
+   single-host vs multi-provider activation and runtime bindings.
+3. [references/prompt-contract.md](references/prompt-contract.md) for blind
+   packets, reviewer replies, rebuttals, confrontation, and verification
+   prompts.
+4. [references/output-contract.md](references/output-contract.md) before
    creating the final report.
+
+## Mode selection
+
+Detect mode before building the seat plan. Prefer the narrower mode.
+
+| Mode | When |
+| --- | --- |
+| `single-host` | **Default.** Any run that is not a clear multi-provider request |
+| `multi-provider` | Only when the user **clearly and explicitly** asks for a multi-host / multi-model council |
+
+**Multi-provider is opt-in only.** Activate it solely when the user intent is
+unambiguous, for example:
+
+- “use sam-council with grok, claude and codex”
+- “multi-provider council across codex + claude”
+- “run the council on all three: grok, claude-code, and codex”
+- “confront this plan with grok and codex panels”
+
+**Do not** activate multi-provider from weak or incidental signals, including:
+
+- the controller host merely being Claude, Grok, or Codex;
+- casual mention of another model without asking for a multi-host council;
+- “get a second opinion” without naming multiple providers as council hosts;
+- comparing tools/products in the thesis domain (not council hosts);
+- cost, quality, or “be thorough” alone.
+
+If the user names exactly one provider, stay `single-host` on that provider. If
+multi-provider intent is ambiguous, stay `single-host` (do not ask to upsell
+multi-provider). Provider keys: `grok`, `claude-code`, `codex`. Resolve aliases
+via `references/provider-matrix.md`. Bind each selected provider to its fixed
+model/effort row. Do not ask which model to use.
 
 ## Council topology
 
-Use one main agent as the thesis author and controller. Create one distinct
-subagent for each required blind reviewer:
+Use one main agent as the thesis author and controller.
+
+### Single-host seats
+
+Create one distinct seat for each required blind reviewer:
 
 1. `logic`: attack contradictions and invalid inference.
 2. `assumptions`: attack load-bearing premises and missing evidence.
@@ -62,20 +105,34 @@ subagent for each required blind reviewer:
 5. `alternatives`: find a simpler, cheaper, reversible, or existing solution.
 6. `problem-frame`: challenge whether the plan solves the right problem.
 
-Add conditional specialist seats from `references/reviewer-lenses.md` when the
-thesis touches their risk. Conditional seats supplement; they never replace a
-required seat.
-
-After revision, use three fresh subagents that did not author a blind review:
+After revision, use three fresh seats that did not author a blind review:
 
 - `closure-verifier`: test whether each material objection was actually closed.
 - `system-verifier`: find displaced problems, regressions, and new complexity.
 - `arbiter`: determine which claims have the strongest evidence and issue the
   round verdict.
 
+### Multi-provider seats
+
+For every selected provider, run the full required blind panel under namespaced
+IDs `{provider}/{seat}` (example: `codex/logic`, `claude-code/adversarial`,
+`grok/alternatives`). First-pass reviews stay blind across seats **and**
+providers.
+
+After revision and cross-provider confrontation, require fresh:
+
+- `closure-verifier` and `system-verifier` over the combined ledger;
+- `meta-arbiter` that explicitly compares provider claims and forbids majority
+  counting.
+
+Conditional specialist seats from `references/reviewer-lenses.md` supplement
+required seats; they never replace them. In multi-provider mode, selected
+conditional seats run on each selected provider or record provider-specific
+`NOT_APPLICABLE`.
+
 Run seats in sequential batches when concurrency is limited. Never merge seats
-to save capacity. Record conflicts of interest, shared context, missing seats,
-or runtime substitutions in the independence ledger.
+or providers to save capacity. Record conflicts, shared context, missing seats,
+provider outages, or runtime substitutions in the independence ledger.
 
 ## Evidence and objection rules
 
@@ -113,9 +170,10 @@ available evidence. Separate facts from assumptions. Name the decision owner
 when known.
 
 Define pass criteria for the council itself. State the maximum of three rounds
-and the no-progress rule before review begins. Publish the required and
-conditional seat count, expected minimum subagent invocations, and batching
-plan. Never hide the time or compute cost of a full council.
+and the no-progress rule before review begins. Publish mode (`single-host` or
+`multi-provider`), selected providers, runtime bindings, required and
+conditional seat count, expected minimum seat invocations, and batching plan.
+Never hide the time or compute cost of a full or multi-provider council.
 
 ### 2. Write thesis `T-001`
 
@@ -149,9 +207,13 @@ later narrative summary as the only historical record.
 
 ### 4. Run blind specialist reviews
 
-Dispatch every seat independently. Require each response to follow
-`references/prompt-contract.md`. Do not show any peer response until all blind
-responses are terminal.
+Dispatch every seat independently on its bound host runtime. Require each
+response to follow `references/prompt-contract.md`. Do not show any peer or
+cross-provider response until all blind responses for the pass are terminal.
+
+In multi-provider mode, dispatch each provider’s full required panel against the
+same frozen packet. Preserve provider identity on every result
+(`provider` field and/or namespaced `reviewer_id`).
 
 Reject vague criticism, style preferences, duplicate mechanisms, and claims
 without either evidence or a concrete proof request. Mark them `UNSUPPORTED`;
@@ -164,11 +226,29 @@ rank by supported severity. Identify the minimum load-bearing set: the smallest
 group of objections that can invalidate the thesis.
 
 For every merged mechanism, preserve one primary `reviewer_id` plus every
-independent source in `supporting_reviewer_ids`. Never keep duplicate objections
-only to make each reviewer appear productive.
+independent source in `supporting_reviewer_ids` (including other providers).
+Never keep duplicate objections only to make each reviewer or provider appear
+productive.
 
-Do not count approvals. One demonstrated blocker controls the round regardless
-of how many reviewers found no issue.
+Do not count approvals or provider majorities. One demonstrated blocker
+controls the round regardless of how many seats or hosts found no issue.
+
+### 5b. Multi-provider confrontation (multi-provider mode only)
+
+After blind synthesis and before or with author cross-examination:
+
+1. Build one position per provider: material objection IDs, preferred
+   correction, and provisional stance.
+2. Give each provider only the other providers’ material claims. Require
+   `ACCEPT`, `REBUT`, or `CONCEDE` with evidence IDs
+   (`references/prompt-contract.md`).
+3. Drop unsupported claims; keep supported minority blockers.
+4. Record the confrontation ledger: positions, disagreements, accepted and
+   rejected claims, and evidence-weighted resolution note.
+5. Feed the surviving claim set into author cross-examination.
+
+If providers disagree after confrontation, prefer stronger evidence and safer
+residual risk. Never declare a winner by 2-of-3 agreement alone.
 
 ### 6. Cross-examine the author
 
@@ -198,7 +278,8 @@ failure modes, tests, observability, rollout, and rollback treatment.
 ### 8. Run the fresh verification panel
 
 Give the panel the frozen prior thesis, objections, author responses, revised
-thesis, evidence, and traceability map. Do not provide the desired verdict.
+thesis, evidence, confrontation ledger when present, and traceability map. Do
+not provide the desired verdict.
 
 Require the panel to determine:
 
@@ -207,11 +288,13 @@ Require the panel to determine:
 - whether complexity or operational burden grew disproportionately;
 - whether evidence supports the author's rebuttal;
 - whether new risks require new objection IDs;
-- whether the problem framing still matches the user's objective.
+- whether the problem framing still matches the user's objective;
+- in multi-provider mode, whether any provider disagreement on blockers/highs
+  remains unresolved by evidence.
 
-Require the arbiter to explain the evidence basis. The arbiter cannot erase a
-supported objection; it may only confirm closure, keep it open, downgrade it
-with evidence, or classify it unsupported.
+Require the arbiter (or `meta-arbiter` in multi-provider mode) to explain the
+evidence basis. It cannot erase a supported objection; it may only confirm
+closure, keep it open, downgrade it with evidence, or classify it unsupported.
 
 ### 9. Iterate with bounded convergence
 
@@ -284,13 +367,15 @@ in `historical_record_limitations`. Never infer unpreserved reviewer support.
 Report:
 
 1. terminal status and calibrated confidence;
-2. final thesis and decision rationale;
-3. round, reviewer, and independence ledger;
-4. material objections with responses and closure proof;
-5. changes made to the thesis after review;
-6. conditions, experiments, accepted risks, and decision-owner actions;
-7. rollout, rollback, observability, tests, and re-evaluation triggers;
-8. exact blockers or residual uncertainty;
-9. validator result.
+2. mode, providers, and runtime bindings used;
+3. final thesis and decision rationale;
+4. round, reviewer, independence, and confrontation ledgers;
+5. material objections with responses and closure proof;
+6. how cross-provider disagreements were resolved (if multi-provider);
+7. changes made to the thesis after review;
+8. conditions, experiments, accepted risks, and decision-owner actions;
+9. rollout, rollback, observability, tests, and re-evaluation triggers;
+10. exact blockers or residual uncertainty;
+11. validator result.
 
 Never summarize a blocked or unvalidated council as “plan approved.”

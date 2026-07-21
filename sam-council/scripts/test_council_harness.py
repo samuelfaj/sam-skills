@@ -85,6 +85,11 @@ def base_report() -> dict[str, Any]:
             }
         ],
         "independence": {
+            "mode": "single-host",
+            "providers": ["grok"],
+            "provider_runtimes": {
+                "grok": {"model": "grok-4.5", "effort": "high"}
+            },
             "blind_first_pass": True,
             "reviewers_saw_peer_reviews_before_submission": False,
             "reviewer_ids": REVIEWERS.copy(),
@@ -92,6 +97,7 @@ def base_report() -> dict[str, Any]:
             "conditional_seat_selection": CONDITIONAL_SELECTION.copy(),
             "conflicts": [],
         },
+        "confrontation": None,
         "rounds": [
             {
                 "number": 1,
@@ -216,9 +222,156 @@ def blocked_report() -> dict[str, Any]:
     report["status"] = "BLOCKED"
     report["independence"]["reviewer_ids"] = []
     report["independence"]["verifier_ids"] = []
+    report["independence"]["providers"] = []
+    report["independence"]["provider_runtimes"] = {}
     report["rounds"] = []
     report["blockers"] = ["The runtime cannot create distinct subagents"]
     return report
+
+
+def multi_provider_report() -> dict[str, Any]:
+    """Two-provider council with namespaced seats and confrontation ledger."""
+    providers = ["codex", "grok"]
+    namespaced = [
+        f"{provider}/{seat}" for provider in providers for seat in REVIEWERS
+    ]
+    results = []
+    for reviewer_id in namespaced:
+        provider, seat = reviewer_id.split("/", 1)
+        results.append(
+            {
+                "reviewer_id": reviewer_id,
+                "provider": provider,
+                "verdict": "OBJECTIONS"
+                if reviewer_id == "codex/logic"
+                else "NO_MATERIAL_OBJECTION",
+                "search_summary": f"Completed the {seat} falsification lens on {provider}.",
+                "disconfirming_evidence": "Checked evidence that could reverse the verdict.",
+                "residual_uncertainty": "No unreported material uncertainty.",
+            }
+        )
+    return {
+        "schema_version": 1,
+        "status": "APPROVED",
+        "thesis": base_report()["thesis"],
+        "evidence": base_report()["evidence"],
+        "independence": {
+            "mode": "multi-provider",
+            "providers": providers,
+            "provider_runtimes": {
+                "codex": {"model": "gpt-5.6-sol", "effort": "high"},
+                "grok": {"model": "grok-4.5", "effort": "high"},
+            },
+            "blind_first_pass": True,
+            "reviewers_saw_peer_reviews_before_submission": False,
+            "reviewer_ids": namespaced,
+            "verifier_ids": [
+                "closure-verifier",
+                "system-verifier",
+                "meta-arbiter",
+            ],
+            "conditional_seat_selection": CONDITIONAL_SELECTION.copy(),
+            "conflicts": [],
+        },
+        "confrontation": {
+            "provider_positions": [
+                {
+                    "provider": "codex",
+                    "stance": "REVISE",
+                    "material_objection_ids": ["O-R1-001"],
+                    "preferred_correction": "Bound capacity to measured load.",
+                },
+                {
+                    "provider": "grok",
+                    "stance": "APPROVE_WITH_CONDITIONS",
+                    "material_objection_ids": [],
+                    "preferred_correction": "Keep measured load gate as a condition.",
+                },
+            ],
+            "disagreements": [
+                {
+                    "topic": "capacity bound necessity",
+                    "provider_ids": ["codex", "grok"],
+                    "summary": "Codex required a bound; Grok preferred a gated condition.",
+                }
+            ],
+            "resolution": "EVIDENCE_WEIGHTED",
+            "surviving_claim_ids": ["O-R1-001"],
+            "rejected_claim_summaries": [],
+            "rationale": "Measured load evidence makes the capacity bound the safer claim.",
+        },
+        "rounds": [
+            {
+                "number": 1,
+                "input_thesis_id": "T-001",
+                "reviewer_ids": namespaced,
+                "reviewer_results": results,
+                "objections": [
+                    {
+                        "id": "O-R1-001",
+                        "reviewer_id": "codex/logic",
+                        "supporting_reviewer_ids": ["codex/logic"],
+                        "claim": "The initial capacity claim did not follow from measured data.",
+                        "failure_mode": "The plan could overload during the peak interval.",
+                        "severity": "HIGH",
+                        "confidence": 90,
+                        "premise_ids": ["A-001"],
+                        "evidence_ids": ["E-001"],
+                        "required_proof": "A controlled peak-load result with thresholds.",
+                        "smallest_correction": "Bound the plan to the measured operating range.",
+                        "status": "RESOLVED",
+                        "author_response": {
+                            "disposition": "ACCEPT",
+                            "rationale": "The original range was unsupported and is now bounded.",
+                            "evidence_ids": ["E-001"],
+                            "change": "Added the measured capacity bound and expansion trigger.",
+                            "validation": "Compared the bound with the load-test receipt.",
+                            "residual_risk": "Volume growth remains a re-evaluation trigger.",
+                        },
+                    }
+                ],
+                "output_thesis_id": "T-002",
+                "verification": [
+                    {
+                        "verifier_id": "closure-verifier",
+                        "verdict": "CLOSED",
+                        "objection_ids": ["O-R1-001"],
+                        "rationale": "The revised thesis uses the measured range and a gate.",
+                    },
+                    {
+                        "verifier_id": "system-verifier",
+                        "verdict": "NO_MATERIAL_OBJECTION",
+                        "objection_ids": [],
+                        "rationale": "No displaced failure or disproportionate complexity remains.",
+                    },
+                    {
+                        "verifier_id": "meta-arbiter",
+                        "verdict": "CLOSED",
+                        "objection_ids": ["O-R1-001"],
+                        "rationale": "Evidence favors the capacity bound over provider majority.",
+                    },
+                ],
+                "new_material_objections": 0,
+            }
+        ],
+        "decision": {
+            "final_thesis_id": "T-002",
+            "confidence": 88,
+            "basis": "EVIDENCE_AND_RISK",
+            "rationale": "Cross-provider confrontation kept the measured-bound claim.",
+            "open_blocker_ids": [],
+            "open_high_ids": [],
+            "conditions": [],
+            "accepted_risk_ids": [],
+            "required_experiment_ids": [],
+            "change_summary": [
+                "Replaced an unbounded capacity claim with a measured gate after multi-provider confrontation"
+            ],
+            "decision_owner_actions": [],
+        },
+        "historical_record_limitations": [],
+        "blockers": [],
+    }
 
 
 def multi_round_report() -> dict[str, Any]:
@@ -355,6 +508,7 @@ def main() -> int:
         ("conditional experiment", conditional_experiment(), True),
         ("conditional accepted high", conditional_accepted_high(), True),
         ("multi-round historical new risk", multi_round_report(), True),
+        ("multi-provider confrontation", multi_provider_report(), True),
         ("unordered experiment ledger", shuffled_experiment_ledger(), True),
         ("merged reviewer provenance", merged_reviewer_provenance(), True),
         ("conditional history limitation", conditional_with_history_limit(), True),
@@ -392,6 +546,22 @@ def main() -> int:
             "missing core reviewer",
             mutate(
                 base_report, lambda r: r["rounds"][0]["reviewer_ids"].remove("logic")
+            ),
+            False,
+        ),
+        (
+            "multi-provider without confrontation",
+            mutate(
+                multi_provider_report,
+                lambda r: r.update(confrontation=None),
+            ),
+            False,
+        ),
+        (
+            "multi-provider majority-style resolution",
+            mutate(
+                multi_provider_report,
+                lambda r: r["confrontation"].update(resolution="MAJORITY"),
             ),
             False,
         ),

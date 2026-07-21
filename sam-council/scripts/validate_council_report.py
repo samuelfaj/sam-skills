@@ -12,6 +12,8 @@ from typing import Any
 
 
 STATUSES = {"APPROVED", "APPROVED_WITH_CONDITIONS", "REVISE", "BLOCKED"}
+MODES = {"single-host", "multi-provider"}
+PROVIDERS = {"codex", "claude-code", "grok"}
 REQUIRED_REVIEWERS = {
     "logic",
     "assumptions",
@@ -20,7 +22,12 @@ REQUIRED_REVIEWERS = {
     "alternatives",
     "problem-frame",
 }
-REQUIRED_VERIFIERS = {"closure-verifier", "system-verifier", "arbiter"}
+REQUIRED_VERIFIERS_SINGLE = {"closure-verifier", "system-verifier", "arbiter"}
+REQUIRED_VERIFIERS_MULTI = {
+    "closure-verifier",
+    "system-verifier",
+    "meta-arbiter",
+}
 CONDITIONAL_REVIEWERS = {
     "security-privacy",
     "data-migration",
@@ -32,6 +39,19 @@ CONDITIONAL_REVIEWERS = {
     "product-ux",
     "compliance-governance",
 }
+PROVIDER_RUNTIME_MODELS = {
+    "codex": {"gpt-5.6-sol"},
+    "claude-code": {"opus", "fable"},
+    "grok": {"grok-4.5"},
+}
+PROVIDER_RUNTIME_EFFORTS = {
+    "codex": {"high", "xhigh", "max"},
+    "claude-code": {"high", "xhigh"},
+    "grok": {"high"},
+}
+NAMESPACED_SEAT = re.compile(
+    r"^(?P<provider>codex|claude-code|grok)/(?P<seat>[a-z0-9-]+)$"
+)
 ASSUMPTION_STATES = {"VERIFIED", "EXPERIMENT_PLANNED", "UNRESOLVED"}
 SEVERITIES = {"BLOCKER", "HIGH", "MEDIUM", "LOW", "UNSUPPORTED"}
 OBJECTION_STATUSES = {
@@ -116,6 +136,36 @@ def check_references(
     return references
 
 
+def seat_name(reviewer_id: str) -> str:
+    match = NAMESPACED_SEAT.fullmatch(reviewer_id)
+    if match:
+        return match.group("seat")
+    return reviewer_id
+
+
+def provider_of(reviewer_id: str) -> str | None:
+    match = NAMESPACED_SEAT.fullmatch(reviewer_id)
+    if match:
+        return match.group("provider")
+    return None
+
+
+def expected_required_reviewers(mode: str, providers: list[str]) -> set[str]:
+    if mode == "multi-provider":
+        return {
+            f"{provider}/{seat}"
+            for provider in providers
+            for seat in REQUIRED_REVIEWERS
+        }
+    return set(REQUIRED_REVIEWERS)
+
+
+def expected_required_verifiers(mode: str) -> set[str]:
+    if mode == "multi-provider":
+        return set(REQUIRED_VERIFIERS_MULTI)
+    return set(REQUIRED_VERIFIERS_SINGLE)
+
+
 def validate_report(report: Any) -> list[str]:
     errors: list[str] = []
     root = mapping(report, "report", errors)
@@ -194,6 +244,61 @@ def validate_report(report: Any) -> list[str]:
     assumption_ids.discard("")
 
     independence = mapping(root.get("independence"), "independence", errors)
+    mode = independence.get("mode", "single-host")
+    if mode not in MODES:
+        errors.append(f"independence.mode: expected one of {sorted(MODES)}")
+        mode = "single-host"
+    raw_providers = independence.get("providers")
+    if raw_providers is None and status == "BLOCKED":
+        providers = []
+    else:
+        providers = text_list(
+            raw_providers if raw_providers is not None else [],
+            "independence.providers",
+            errors,
+            required=status != "BLOCKED",
+        )
+    invalid_providers = sorted(set(providers) - PROVIDERS)
+    if invalid_providers:
+        errors.append(f"independence.providers: invalid values {invalid_providers}")
+    if mode == "multi-provider" and status != "BLOCKED" and len(providers) < 2:
+        errors.append(
+            "independence.providers: multi-provider requires at least two providers"
+        )
+    if mode == "single-host" and len(providers) > 1:
+        errors.append(
+            "independence.providers: single-host allows at most one provider"
+        )
+    provider_runtimes = independence.get("provider_runtimes")
+    if provider_runtimes is None and status == "BLOCKED":
+        runtime_map: dict[str, Any] = {}
+    else:
+        runtime_map = mapping(
+            provider_runtimes if provider_runtimes is not None else {},
+            "independence.provider_runtimes",
+            errors,
+        )
+        if status != "BLOCKED" and providers and set(runtime_map) != set(providers):
+            errors.append(
+                "independence.provider_runtimes: keys must equal independence.providers"
+            )
+        for provider, raw_runtime in runtime_map.items():
+            runtime_path = f"independence.provider_runtimes.{provider}"
+            runtime = mapping(raw_runtime, runtime_path, errors)
+            model = text(runtime.get("model"), f"{runtime_path}.model", errors)
+            effort = text(runtime.get("effort"), f"{runtime_path}.effort", errors)
+            if provider in PROVIDER_RUNTIME_MODELS and model:
+                if model not in PROVIDER_RUNTIME_MODELS[provider]:
+                    errors.append(
+                        f"{runtime_path}.model: expected one of "
+                        f"{sorted(PROVIDER_RUNTIME_MODELS[provider])}"
+                    )
+            if provider in PROVIDER_RUNTIME_EFFORTS and effort:
+                if effort not in PROVIDER_RUNTIME_EFFORTS[provider]:
+                    errors.append(
+                        f"{runtime_path}.effort: expected one of "
+                        f"{sorted(PROVIDER_RUNTIME_EFFORTS[provider])}"
+                    )
     blind = independence.get("blind_first_pass")
     peer_leak = independence.get("reviewers_saw_peer_reviews_before_submission")
     if not isinstance(blind, bool):
@@ -211,6 +316,17 @@ def validate_report(report: Any) -> list[str]:
     conflicts = text_list(
         independence.get("conflicts"), "independence.conflicts", errors
     )
+    if mode == "multi-provider":
+        for reviewer_id in reviewer_ids:
+            if provider_of(reviewer_id) is None:
+                errors.append(
+                    f"independence.reviewer_ids: multi-provider requires "
+                    f"namespaced id, got {reviewer_id}"
+                )
+            elif provider_of(reviewer_id) not in providers:
+                errors.append(
+                    f"independence.reviewer_ids: {reviewer_id} uses unknown provider"
+                )
     raw_seat_selection = independence.get("conditional_seat_selection")
     seat_selection: dict[str, Any] = {}
     if status != "BLOCKED" or raw_seat_selection is not None:
@@ -237,11 +353,98 @@ def validate_report(report: Any) -> list[str]:
                     f"independence.conditional_seat_selection.{seat_id}: "
                     "expected SELECTED: or NOT_APPLICABLE: reason"
                 )
-            if reason.startswith("SELECTED: ") and seat_id not in reviewer_ids:
-                errors.append(
-                    f"independence.conditional_seat_selection.{seat_id}: "
-                    "selected seat absent from reviewer_ids"
+            if reason.startswith("SELECTED: "):
+                if mode == "multi-provider":
+                    missing_provider_seats = [
+                        f"{provider}/{seat_id}"
+                        for provider in providers
+                        if f"{provider}/{seat_id}" not in reviewer_ids
+                    ]
+                    if missing_provider_seats:
+                        errors.append(
+                            f"independence.conditional_seat_selection.{seat_id}: "
+                            f"selected seat absent from reviewer_ids "
+                            f"{missing_provider_seats}"
+                        )
+                elif seat_id not in reviewer_ids:
+                    errors.append(
+                        f"independence.conditional_seat_selection.{seat_id}: "
+                        "selected seat absent from reviewer_ids"
+                    )
+
+    confrontation = root.get("confrontation")
+    if mode == "single-host":
+        if confrontation is not None:
+            errors.append("confrontation: must be null in single-host mode")
+    elif status != "BLOCKED":
+        confrontation_obj = mapping(confrontation, "confrontation", errors)
+        if confrontation_obj:
+            positions = sequence(
+                confrontation_obj.get("provider_positions"),
+                "confrontation.provider_positions",
+                errors,
+            )
+            position_providers: list[str] = []
+            for index, raw_position in enumerate(positions):
+                path = f"confrontation.provider_positions[{index}]"
+                position = mapping(raw_position, path, errors)
+                provider = text(position.get("provider"), f"{path}.provider", errors)
+                if provider:
+                    position_providers.append(provider)
+                    if provider not in providers:
+                        errors.append(f"{path}.provider: not in independence.providers")
+                stance = position.get("stance")
+                if stance not in {
+                    "APPROVE",
+                    "APPROVE_WITH_CONDITIONS",
+                    "REVISE",
+                    "BLOCK",
+                }:
+                    errors.append(
+                        f"{path}.stance: expected APPROVE | APPROVE_WITH_CONDITIONS "
+                        "| REVISE | BLOCK"
+                    )
+                text_list(
+                    position.get("material_objection_ids"),
+                    f"{path}.material_objection_ids",
+                    errors,
                 )
+                text(
+                    position.get("preferred_correction"),
+                    f"{path}.preferred_correction",
+                    errors,
+                )
+            if providers and sorted(position_providers) != sorted(providers):
+                errors.append(
+                    "confrontation.provider_positions: require exactly one "
+                    "position per selected provider"
+                )
+            disagreements = sequence(
+                confrontation_obj.get("disagreements"),
+                "confrontation.disagreements",
+                errors,
+            )
+            for index, raw_item in enumerate(disagreements):
+                path = f"confrontation.disagreements[{index}]"
+                item = mapping(raw_item, path, errors)
+                text(item.get("topic"), f"{path}.topic", errors)
+                text_list(item.get("provider_ids"), f"{path}.provider_ids", errors)
+                text(item.get("summary"), f"{path}.summary", errors)
+            if confrontation_obj.get("resolution") != "EVIDENCE_WEIGHTED":
+                errors.append(
+                    "confrontation.resolution: expected EVIDENCE_WEIGHTED"
+                )
+            text_list(
+                confrontation_obj.get("surviving_claim_ids"),
+                "confrontation.surviving_claim_ids",
+                errors,
+            )
+            text_list(
+                confrontation_obj.get("rejected_claim_summaries"),
+                "confrontation.rejected_claim_summaries",
+                errors,
+            )
+            text(confrontation_obj.get("rationale"), "confrontation.rationale", errors)
 
     rounds = sequence(root.get("rounds"), "rounds", errors)
     if len(rounds) > 3:
@@ -286,8 +489,9 @@ def validate_report(report: Any) -> list[str]:
             required=True,
         )
         dispatched_reviewers.update(round_reviewers)
-        if index == 0 and not REQUIRED_REVIEWERS.issubset(set(round_reviewers)):
-            missing = sorted(REQUIRED_REVIEWERS - set(round_reviewers))
+        expected_round_one = expected_required_reviewers(mode, providers)
+        if index == 0 and not expected_round_one.issubset(set(round_reviewers)):
+            missing = sorted(expected_round_one - set(round_reviewers))
             errors.append(f"{path}.reviewer_ids: missing required reviewers {missing}")
         for reviewer_id in round_reviewers:
             if reviewer_id not in reviewer_ids:
@@ -315,6 +519,12 @@ def validate_report(report: Any) -> list[str]:
             else:
                 reviewer_verdicts.append(verdict)
                 result_verdict_by_id[result_id] = verdict
+            if mode == "multi-provider":
+                provider = text(result.get("provider"), f"{result_path}.provider", errors)
+                if provider and provider_of(result_id) not in {None, provider}:
+                    errors.append(
+                        f"{result_path}.provider: must match reviewer_id prefix"
+                    )
             text(result.get("search_summary"), f"{result_path}.search_summary", errors)
             text(
                 result.get("disconfirming_evidence"),
@@ -533,7 +743,15 @@ def validate_report(report: Any) -> list[str]:
             for seat_id, reason in seat_selection.items()
             if isinstance(reason, str) and reason.startswith("SELECTED: ")
         }
-        missing_selected = sorted(selected_seats - dispatched_reviewers)
+        if mode == "multi-provider":
+            expected_selected = {
+                f"{provider}/{seat_id}"
+                for provider in providers
+                for seat_id in selected_seats
+            }
+            missing_selected = sorted(expected_selected - dispatched_reviewers)
+        else:
+            missing_selected = sorted(selected_seats - dispatched_reviewers)
         if missing_selected:
             errors.append(
                 f"selected conditional seats not dispatched {missing_selected}"
@@ -644,15 +862,17 @@ def validate_report(report: Any) -> list[str]:
             errors.append("approval requires blind_first_pass=true")
         if peer_leak is not False:
             errors.append("approval forbids peer reviews before blind submission")
-        missing_reviewers = sorted(REQUIRED_REVIEWERS - set(reviewer_ids))
+        required_reviewers = expected_required_reviewers(mode, providers)
+        missing_reviewers = sorted(required_reviewers - set(reviewer_ids))
         if missing_reviewers:
             errors.append(f"approval missing required reviewers {missing_reviewers}")
         if len(verifier_ids) < 3:
             errors.append("approval requires at least three fresh verifiers")
-        missing_verifiers = sorted(REQUIRED_VERIFIERS - set(verifier_ids))
+        required_verifiers = expected_required_verifiers(mode)
+        missing_verifiers = sorted(required_verifiers - set(verifier_ids))
         if missing_verifiers:
             errors.append(f"approval missing required verifiers {missing_verifiers}")
-        missing_final_panel = sorted(REQUIRED_VERIFIERS - final_panel_ids)
+        missing_final_panel = sorted(required_verifiers - final_panel_ids)
         if missing_final_panel:
             errors.append(
                 f"approval final panel missing required verifiers {missing_final_panel}"

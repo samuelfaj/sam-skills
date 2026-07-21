@@ -44,7 +44,8 @@ and orchestration.
   delegation, skeptical verification, and an independent review gate.
 - `sam-council`: falsify and revise consequential system-development plans
   through blind specialist reviews, cross-examination, and evidence-weighted
-  decision gates.
+  decision gates; multi-provider confrontation (Grok / Claude / Codex) only
+  when explicitly requested.
 - `sam-codex-advisor`: obtain a bounded read-only second opinion through a
   fixed-model advisor with explicit effort routing.
 - `sam-fable-advisor`: obtain a bounded read-only second opinion through a

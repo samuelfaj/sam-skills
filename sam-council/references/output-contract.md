@@ -7,8 +7,9 @@
 3. Thesis and evidence rules
 4. Round and objection rules
 5. Independence rules
-6. Decision invariants
-7. Validation
+6. Multi-provider confrontation
+7. Decision invariants
+8. Validation
 
 ## Terminal states
 
@@ -28,6 +29,7 @@ Create one UTF-8 JSON object:
   "thesis": {},
   "evidence": [],
   "independence": {},
+  "confrontation": null,
   "rounds": [],
   "decision": {},
   "historical_record_limitations": [],
@@ -76,10 +78,11 @@ Round numbers must be sequential and cannot exceed three. Round one includes
 all six required reviewer IDs. Later rounds may target open or new mechanisms.
 
 Each `reviewer_results` item contains `reviewer_id`, `verdict`,
-`search_summary`, `disconfirming_evidence`, and `residual_uncertainty`. Verdict
-is `OBJECTIONS`, `NO_MATERIAL_OBJECTION`, or `BLOCKED`. Record exactly one
-terminal result for every dispatched seat. An `OBJECTIONS` result must own at
-least one objection in that round.
+`search_summary`, `disconfirming_evidence`, and `residual_uncertainty`. In
+multi-provider mode also include `provider` matching the namespaced reviewer
+ID prefix. Verdict is `OBJECTIONS`, `NO_MATERIAL_OBJECTION`, or `BLOCKED`.
+Record exactly one terminal result for every dispatched seat. An `OBJECTIONS`
+result must own at least one objection in that round.
 
 Each objection contains:
 
@@ -132,6 +135,11 @@ Record:
 
 ```json
 {
+  "mode": "single-host",
+  "providers": ["grok"],
+  "provider_runtimes": {
+    "grok": {"model": "grok-4.5", "effort": "high"}
+  },
   "blind_first_pass": true,
   "reviewers_saw_peer_reviews_before_submission": false,
   "reviewer_ids": [],
@@ -141,15 +149,55 @@ Record:
 }
 ```
 
-For approval, include all six distinct required reviewers, at least three fresh
-verifiers named `closure-verifier`, `system-verifier`, and `arbiter`, no overlap
-between those groups, and no undeclared conflict. The final panel must contain a
-terminal result from all three verifiers.
+`mode` is `single-host` or `multi-provider`. `providers` lists the selected
+provider keys (`codex`, `claude-code`, `grok`). Multi-provider requires two or
+more. `provider_runtimes` binds each selected provider to a non-empty model and
+effort.
+
+**Single-host approval:** all six required reviewer IDs, and fresh verifiers
+`closure-verifier`, `system-verifier`, and `arbiter`.
+
+**Multi-provider approval:** all six required seats for every selected provider
+as `{provider}/{seat}`, plus fresh `closure-verifier`, `system-verifier`, and
+`meta-arbiter` (arbiter may appear as an extra but cannot replace meta-arbiter).
+No overlap between reviewer and verifier groups. No undeclared conflict.
 
 `conditional_seat_selection` contains all conditional seat IDs from
 `reviewer-lenses.md`. Each value starts with `SELECTED:` or `NOT_APPLICABLE:`
 and gives a system-specific reason. Every selected seat must appear in the
-reviewer and round ledgers.
+reviewer and round ledgers (namespaced per provider in multi-provider mode).
+
+## Multi-provider confrontation
+
+`confrontation` is `null` in single-host mode. In multi-provider mode it is
+required for non-blocked reports:
+
+```json
+{
+  "provider_positions": [
+    {
+      "provider": "codex",
+      "stance": "REVISE",
+      "material_objection_ids": ["O-R1-001"],
+      "preferred_correction": "Bound the capacity claim to measured load"
+    }
+  ],
+  "disagreements": [
+    {
+      "topic": "capacity bound",
+      "provider_ids": ["codex", "grok"],
+      "summary": "Providers disagree whether the measured range is sufficient"
+    }
+  ],
+  "resolution": "EVIDENCE_WEIGHTED",
+  "surviving_claim_ids": ["O-R1-001"],
+  "rejected_claim_summaries": [],
+  "rationale": "Measured load evidence supports the capacity bound claim"
+}
+```
+
+`resolution` must be `EVIDENCE_WEIGHTED`. Never encode majority vote as the
+resolution basis.
 
 ## Decision shape
 
