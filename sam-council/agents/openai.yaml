@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Council"
+  short_description: "Adversarial council for system plans"
+  default_prompt: "Use $sam-council to falsify, revise, and judge this system-development plan with an independent reviewer council."

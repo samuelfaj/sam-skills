@@ -41,6 +41,40 @@ def evidence(
     }
 
 
+DEFAULT_HOST = "grok"
+
+RUNTIME_BY_CAPABILITY = {
+    "LIGHT": {
+        "host": DEFAULT_HOST,
+        "role": "fast_scan",
+        "model": "grok-4.5",
+        "effort": "medium",
+        "fallback_reason": None,
+    },
+    "STANDARD": {
+        "host": DEFAULT_HOST,
+        "role": "routine_worker",
+        "model": "grok-4.5",
+        "effort": "medium",
+        "fallback_reason": None,
+    },
+    "DEEP": {
+        "host": DEFAULT_HOST,
+        "role": "deep_worker",
+        "model": "grok-4.5",
+        "effort": "high",
+        "fallback_reason": None,
+    },
+    "REVIEWER": {
+        "host": DEFAULT_HOST,
+        "role": "reviewer",
+        "model": "grok-4.5",
+        "effort": "high",
+        "fallback_reason": None,
+    },
+}
+
+
 def node(
     node_id: str,
     *,
@@ -56,12 +90,21 @@ def node(
     evidence_ids: list[str] | None = None,
     direct_action_reason: str | None = None,
     blocker: dict[str, Any] | None = None,
+    runtime: dict[str, Any] | None = ...,  # type: ignore[assignment]
 ) -> dict[str, Any]:
+    if runtime is ...:
+        if kind in {"EXECUTION", "REVIEW"}:
+            bound = copy.deepcopy(RUNTIME_BY_CAPABILITY[capability])
+        else:
+            bound = None
+    else:
+        bound = runtime
     return {
         "id": node_id,
         "kind": kind,
         "owner": owner,
         "capability": capability,
+        "runtime": bound,
         "depends_on": [] if depends_on is None else depends_on,
         "objective": objective,
         "no_go": ["Do not change unrelated surfaces"],
@@ -86,6 +129,7 @@ def valid_t0() -> dict[str, Any]:
             "constraints": ["Preserve unrelated content"],
             "no_go": ["Do not edit other files"],
             "risk_flags": [],
+            "active_host": DEFAULT_HOST,
             "changed_artifacts": ["DOCS"],
             "changed_files": [
                 {
@@ -133,6 +177,7 @@ def valid_t2() -> dict[str, Any]:
             "constraints": [],
             "no_go": ["Do not change unrelated files"],
             "risk_flags": [],
+            "active_host": DEFAULT_HOST,
             "changed_artifacts": ["CODE", "TEST"],
             "changed_files": [
                 {
@@ -343,10 +388,16 @@ def validate_neutrality_adversaries() -> None:
         violations = neutrality_violations({label: "model: named-route"})
         if not violations:
             raise AssertionError(f"semantic neutrality scan missed {label}")
+    # Matrix and output contract may document approved host runtimes.
+    if neutrality_violations(
+        {"canonical/references/host-runtime-matrix.md": "model = gpt-5.6-luna"}
+    ):
+        raise AssertionError("host matrix document must be excluded from free-form scan")
 
     if not SUITE_VALIDATOR.is_file():
         raise AssertionError("repository portability validator is missing")
-    forbidden_identity = "Cl" + "aude"
+    # Use a provider name still forbidden after sam-orchestrate replacements.
+    forbidden_identity = "Gem" + "ini"
     relative_targets = (
         Path("sam-orchestrate/SKILL.md"),
         Path("sam-orchestrate/references/routing-policy.md"),
@@ -577,6 +628,18 @@ def main() -> int:
     expect_failure(
         lambda report: report["dag"][0].update({"owner": "model-x-worker"}),
         "owner must use the neutral",
+        valid_t0,
+    )
+    expect_failure(
+        lambda report: report["dag"][0]["runtime"].update(
+            {"model": "not-a-matrix-model", "fallback_reason": None}
+        ),
+        "runtime must match host-runtime-matrix",
+        valid_t0,
+    )
+    expect_failure(
+        lambda report: report["task"].update({"active_host": "unknown-host"}),
+        "task.active_host must be codex, claude-code, or grok",
         valid_t0,
     )
 

@@ -41,6 +41,14 @@ PROVIDER_SPECIFIC_REPLACEMENTS = {
         (re.compile(r"\bclaude\b", re.IGNORECASE), "advisor-runtime"),
         (re.compile(r"\bfable\b", re.IGNORECASE), "approved-model"),
     ),
+    "sam-orchestrate": (
+        (re.compile(r"\bcodex\b", re.IGNORECASE), "host-runtime"),
+        (re.compile(r"\bclaude(?:-code)?\b", re.IGNORECASE), "host-runtime"),
+        (re.compile(r"\bgrok\b", re.IGNORECASE), "host-runtime"),
+        (re.compile(r"\bgpt-5\.6-(?:luna|sol)\b", re.IGNORECASE), "approved-model"),
+        (re.compile(r"\bgrok-4\.5\b", re.IGNORECASE), "approved-model"),
+        (re.compile(r"\b(?:haiku|sonnet|opus|fable)\b", re.IGNORECASE), "approved-model"),
+    ),
 }
 
 

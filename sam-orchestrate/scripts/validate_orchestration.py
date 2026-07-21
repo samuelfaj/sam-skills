@@ -13,6 +13,15 @@ TASK_CLASSES = {"T0", "T1", "T2", "T3"}
 ARTIFACTS = {"CODE", "TEST", "DOCS", "CONFIG", "DATA", "RELEASE", "OTHER"}
 KINDS = {"EXECUTION", "ORCHESTRATION", "REVIEW"}
 CAPABILITIES = {"LIGHT", "STANDARD", "DEEP", "REVIEWER"}
+HOSTS = {"codex", "claude-code", "grok"}
+RUNTIME_ROLES = {
+    "fast_scan",
+    "routine_worker",
+    "deep_worker",
+    "genius_worker",
+    "ultra_worker",
+    "reviewer",
+}
 NODE_STATUSES = {"PENDING", "RUNNING", "COMPLETE", "BLOCKED"}
 BLOCKER_KINDS = {"EXTERNAL", "AUTHORITY", "USER_DECISION", "DEPENDENCY"}
 EVIDENCE_TYPES = {"COMMAND", "DIFF", "FILE", "REMOTE", "USER", "OBSERVATION"}
@@ -25,18 +34,44 @@ OWNER_PATTERNS = {
     "ORCHESTRATION": re.compile(r"controller-[1-9][0-9]*\Z"),
     "REVIEW": re.compile(r"reviewer-[1-9][0-9]*\Z"),
 }
-ROUTING_ASSIGNMENT = re.compile(
-    r"\b(?:model|provider|vendor|host)(?:[_ -](?:name|id|route|routing))?"
-    r"\s*(?::|=|->)\s*[^\s#]+",
-    re.IGNORECASE,
-)
-ROUTING_SELECTION = re.compile(
-    r"\b(?:use|prefer|select|assign|delegate|route)\b[^.\n]{0,48}"
-    r"\b(?:model|provider|vendor|host)\s+"
-    r"(?!(?:or|and|is|must|without)\b)[a-z0-9_.-]+",
+# Free-form owner/identity routing remains forbidden. Structured runtime fields
+# and the host matrix document are validated separately.
+OWNER_ROUTING = re.compile(
+    r"\b(?:model|provider|vendor)[_ -]?(?:name|id)?\s*(?::|=|->)\s*[^\s#]+",
     re.IGNORECASE,
 )
 PACKAGE_DIR = Path(__file__).resolve().parent.parent
+RUNTIME_MATRIX: dict[str, dict[str, tuple[str, str, str]]] = {
+    "codex": {
+        "LIGHT": ("fast_scan", "gpt-5.6-luna", "medium"),
+        "STANDARD": ("routine_worker", "gpt-5.6-luna", "xhigh"),
+        "DEEP": ("deep_worker", "gpt-5.6-sol", "high"),
+        "REVIEWER": ("reviewer", "gpt-5.6-sol", "high"),
+        "GENIUS": ("genius_worker", "gpt-5.6-sol", "xhigh"),
+    },
+    "claude-code": {
+        "LIGHT": ("fast_scan", "haiku", "medium"),
+        "STANDARD": ("routine_worker", "sonnet", "high"),
+        "DEEP": ("deep_worker", "opus", "high"),
+        "REVIEWER": ("reviewer", "opus", "high"),
+        "GENIUS": ("genius_worker", "opus", "xhigh"),
+    },
+    "grok": {
+        "LIGHT": ("fast_scan", "grok-4.5", "medium"),
+        "STANDARD": ("routine_worker", "grok-4.5", "medium"),
+        "DEEP": ("deep_worker", "grok-4.5", "high"),
+        "REVIEWER": ("reviewer", "grok-4.5", "high"),
+        "GENIUS": ("genius_worker", "grok-4.5", "high"),
+    },
+}
+MATRIX_MODELS = {
+    model for host_rows in RUNTIME_MATRIX.values() for _, model, _ in host_rows.values()
+}
+MATRIX_EFFORTS = {
+    effort
+    for host_rows in RUNTIME_MATRIX.values()
+    for _, _, effort in host_rows.values()
+}
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -112,11 +147,15 @@ def path_within(path: tuple[str, ...], scope: tuple[str, ...]) -> bool:
 
 
 def neutrality_violations(texts: dict[str, str]) -> list[str]:
-    """Return active named-routing assignments in operational text."""
+    """Return free-form model/provider identity routing outside structured runtime."""
     errors: list[str] = []
     for label, text in texts.items():
+        if label.endswith("host-runtime-matrix.md") or label.endswith(
+            "output-contract.md"
+        ):
+            continue
         for line_number, line in enumerate(text.splitlines(), start=1):
-            if ROUTING_ASSIGNMENT.search(line) or ROUTING_SELECTION.search(line):
+            if OWNER_ROUTING.search(line):
                 errors.append(f"named routing in {label}:{line_number}")
     return errors
 
@@ -132,15 +171,99 @@ def package_neutrality_texts() -> dict[str, str]:
         for path in sorted(set(candidates)):
             if not path.is_file():
                 continue
+            relative = path.relative_to(root).as_posix()
+            if relative in {
+                "references/host-runtime-matrix.md",
+                "references/output-contract.md",
+            }:
+                continue
             try:
-                texts[f"{root_name}/{path.relative_to(root).as_posix()}"] = (
-                    path.read_text(encoding="utf-8")
-                )
+                texts[f"{root_name}/{relative}"] = path.read_text(encoding="utf-8")
             except (OSError, UnicodeError):
-                texts[f"{root_name}/{path.relative_to(root).as_posix()}"] = (
-                    "model: unreadable-package-resource"
-                )
+                texts[f"{root_name}/{relative}"] = "model: unreadable-package-resource"
     return texts
+
+
+def normalize_role(role: str) -> str:
+    if role == "ultra_worker":
+        return "genius_worker"
+    return role
+
+
+def validate_runtime_binding(
+    runtime: Any,
+    *,
+    label: str,
+    capability: Any,
+    active_host: Any,
+    errors: list[str],
+) -> None:
+    if not isinstance(runtime, dict):
+        errors.append(f"{label}.runtime must be an object")
+        return
+    required = {"host", "role", "model", "effort", "fallback_reason"}
+    require_keys(runtime, required, required, f"{label}.runtime", errors)
+    host = runtime.get("host")
+    role = runtime.get("role")
+    model = runtime.get("model")
+    effort = runtime.get("effort")
+    fallback = runtime.get("fallback_reason")
+    if host not in HOSTS:
+        errors.append(f"{label}.runtime.host is invalid")
+    if active_host in HOSTS and host in HOSTS and host != active_host:
+        errors.append(f"{label}.runtime.host must match task.active_host")
+    if role not in RUNTIME_ROLES:
+        errors.append(f"{label}.runtime.role is invalid")
+    if not isinstance(model, str) or not model.strip():
+        errors.append(f"{label}.runtime.model must be a non-empty string")
+    if not isinstance(effort, str) or not effort.strip():
+        errors.append(f"{label}.runtime.effort must be a non-empty string")
+    if fallback is not None and (
+        not isinstance(fallback, str) or not fallback.strip()
+    ):
+        errors.append(
+            f"{label}.runtime.fallback_reason must be null or a non-empty string"
+        )
+    if host not in RUNTIME_MATRIX or capability not in CAPABILITIES:
+        return
+    expected_role, expected_model, expected_effort = RUNTIME_MATRIX[host][capability]
+    normalized_role = normalize_role(role) if isinstance(role, str) else role
+    genius_role, genius_model, genius_effort = RUNTIME_MATRIX[host]["GENIUS"]
+    matches_capability = (
+        normalized_role == expected_role
+        and model == expected_model
+        and effort == expected_effort
+    )
+    matches_genius = (
+        capability in {"STANDARD", "DEEP"}
+        and normalized_role == genius_role
+        and model == genius_model
+        and effort == genius_effort
+    )
+    if matches_capability or matches_genius:
+        return
+    if isinstance(fallback, str) and fallback.strip():
+        host_models = {row[1] for row in RUNTIME_MATRIX[host].values()}
+        host_efforts = {row[2] for row in RUNTIME_MATRIX[host].values()}
+        host_roles = {row[0] for row in RUNTIME_MATRIX[host].values()} | {
+            "ultra_worker"
+        }
+        if model not in host_models:
+            errors.append(
+                f"{label}.runtime.model is outside the approved matrix for host {host}"
+            )
+        if effort not in host_efforts:
+            errors.append(
+                f"{label}.runtime.effort is outside the approved matrix for host {host}"
+            )
+        if normalized_role not in host_roles and role not in host_roles:
+            errors.append(
+                f"{label}.runtime.role is outside the approved matrix for host {host}"
+            )
+        return
+    errors.append(
+        f"{label}.runtime must match host-runtime-matrix for capability {capability}"
+    )
 
 
 def validate(report: dict[str, Any]) -> list[str]:
@@ -166,6 +289,7 @@ def validate(report: dict[str, Any]) -> list[str]:
         "constraints",
         "no_go",
         "risk_flags",
+        "active_host",
         "changed_artifacts",
         "changed_files",
         "review_requested",
@@ -174,6 +298,9 @@ def validate(report: dict[str, Any]) -> list[str]:
     classification = task.get("classification")
     if classification not in TASK_CLASSES:
         errors.append("task.classification must be T0, T1, T2, or T3")
+    active_host = task.get("active_host")
+    if active_host not in HOSTS:
+        errors.append("task.active_host must be codex, claude-code, or grok")
     if not isinstance(task.get("goal"), str) or not task.get("goal", "").strip():
         errors.append("task.goal must be a non-empty string")
     string_list(
@@ -207,6 +334,7 @@ def validate(report: dict[str, Any]) -> list[str]:
         "kind",
         "owner",
         "capability",
+        "runtime",
         "depends_on",
         "objective",
         "no_go",
@@ -246,6 +374,17 @@ def validate(report: dict[str, Any]) -> list[str]:
             errors.append(f"{label} review nodes must use REVIEWER capability")
         if kind != "REVIEW" and capability == "REVIEWER":
             errors.append(f"{label} REVIEWER capability is reserved for review nodes")
+        runtime = node.get("runtime")
+        if kind in {"EXECUTION", "REVIEW"}:
+            validate_runtime_binding(
+                runtime,
+                label=label,
+                capability=capability,
+                active_host=active_host,
+                errors=errors,
+            )
+        elif runtime is not None:
+            errors.append(f"{label}.runtime must be null for controller orchestration")
         if node.get("status") not in NODE_STATUSES:
             errors.append(f"{label}.status is invalid")
         if (

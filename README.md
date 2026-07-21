@@ -42,6 +42,9 @@ and orchestration.
   the real base, commits, diff, and validation evidence.
 - `sam-orchestrate`: coordinate complex work through capability- and risk-based
   delegation, skeptical verification, and an independent review gate.
+- `sam-council`: falsify and revise consequential system-development plans
+  through blind specialist reviews, cross-examination, and evidence-weighted
+  decision gates.
 - `sam-codex-advisor`: obtain a bounded read-only second opinion through a
   fixed-model advisor with explicit effort routing.
 - `sam-fable-advisor`: obtain a bounded read-only second opinion through a

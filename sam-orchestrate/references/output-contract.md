@@ -4,6 +4,7 @@
 
 - Report shape
 - Allowed values
+- Runtime binding
 - Invariants
 
 ## Report Shape
@@ -20,6 +21,7 @@ Create a temporary JSON report with this shape:
     "constraints": [],
     "no_go": ["Do not change unrelated files"],
     "risk_flags": [],
+    "active_host": "grok",
     "changed_artifacts": ["CODE", "TEST"],
     "changed_files": [
       {"path": "src/service.py", "artifact_class": "CODE", "producer_task_id": "E1"},
@@ -33,6 +35,13 @@ Create a temporary JSON report with this shape:
       "kind": "EXECUTION",
       "owner": "worker-1",
       "capability": "STANDARD",
+      "runtime": {
+        "host": "grok",
+        "role": "routine_worker",
+        "model": "grok-4.5",
+        "effort": "medium",
+        "fallback_reason": null
+      },
       "depends_on": [],
       "objective": "Implement the bounded service change",
       "no_go": ["Do not edit tests"],
@@ -49,6 +58,13 @@ Create a temporary JSON report with this shape:
       "kind": "EXECUTION",
       "owner": "worker-2",
       "capability": "STANDARD",
+      "runtime": {
+        "host": "grok",
+        "role": "routine_worker",
+        "model": "grok-4.5",
+        "effort": "medium",
+        "fallback_reason": null
+      },
       "depends_on": [],
       "objective": "Add focused regression coverage",
       "no_go": ["Do not edit runtime code"],
@@ -65,6 +81,13 @@ Create a temporary JSON report with this shape:
       "kind": "REVIEW",
       "owner": "reviewer-1",
       "capability": "REVIEWER",
+      "runtime": {
+        "host": "grok",
+        "role": "reviewer",
+        "model": "grok-4.5",
+        "effort": "high",
+        "fallback_reason": null
+      },
       "depends_on": ["E1", "E2"],
       "objective": "Review the combined result independently",
       "no_go": ["Do not modify artifacts"],
@@ -122,9 +145,12 @@ Create a temporary JSON report with this shape:
 Allowed values:
 
 - Task: `T0`, `T1`, `T2`, `T3`.
+- Active host: `codex`, `claude-code`, `grok`.
 - Artifact: `CODE`, `TEST`, `DOCS`, `CONFIG`, `DATA`, `RELEASE`, `OTHER`.
 - Kind: `EXECUTION`, `ORCHESTRATION`, `REVIEW`.
 - Capability: `LIGHT`, `STANDARD`, `DEEP`, `REVIEWER`.
+- Runtime role: `fast_scan`, `routine_worker`, `deep_worker`, `genius_worker`,
+  `reviewer`.
 - Node status: `PENDING`, `RUNNING`, `COMPLETE`, `BLOCKED`.
 - Blocker kind: `EXTERNAL`, `AUTHORITY`, `USER_DECISION`, `DEPENDENCY`.
 - Evidence type: `COMMAND`, `DIFF`, `FILE`, `REMOTE`, `USER`, `OBSERVATION`.
@@ -133,10 +159,32 @@ Allowed values:
 - Gate status: `PASS`, `FAIL`, `NOT_RUN`, `NOT_REQUIRED`.
 - Decision: `COMPLETE`, `BLOCKED`, `IN_PROGRESS`.
 
+## Runtime binding
+
+`task.active_host` is required. Every delegated `EXECUTION` and `REVIEW` node
+requires a `runtime` object:
+
+```json
+{
+  "host": "codex",
+  "role": "routine_worker",
+  "model": "gpt-5.6-luna",
+  "effort": "xhigh",
+  "fallback_reason": null
+}
+```
+
+`runtime` must match [host-runtime-matrix.md](host-runtime-matrix.md) for the
+node capability (or the rare `genius_worker` escalation row). `fallback_reason`
+is a non-empty string when the preferred row was unavailable; otherwise null.
+Controller-only `ORCHESTRATION` nodes may set `runtime` to null.
+
 ## Invariants
 
 - Owner IDs are role-only: `worker-N`, `controller-N`, or `reviewer-N` according
-  to node kind. Named routing identities are invalid.
+  to node kind. Model or host names in owner IDs are invalid.
+- Runtime bindings live only in structured `runtime` fields, not in free-form
+  owner strings.
 - Every writable non-review node is a producer. A completed producer owns at
   least one changed-file entry, and its manifest classes exactly match its
   `artifact_classes`.
@@ -156,6 +204,6 @@ Allowed values:
 
 The validator checks the full schema, producer derivation, changed-file
 reconciliation, state transitions, blocker provenance, dependency acyclicity,
-overlapping writes, proof ownership, review triggers, package neutrality, and
-decision consistency. Report validator `PASS` or its exact errors in the final
-response.
+overlapping writes, proof ownership, review triggers, runtime matrix binding,
+owner-identity hygiene, and decision consistency. Report validator `PASS` or
+its exact errors in the final response.

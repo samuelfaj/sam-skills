@@ -14,8 +14,9 @@ workflow stack-, host-, provider-, and model-agnostic except for Playwright itse
   criteria supplied by the user.
 - Preserve existing work. Do not reset, checkout, stash, clean, rebase, or rewrite history.
 - Keep generated media and reports local until a remote proposal target is
-  authorized. Publish only when the user (or parent workflow) explicitly
-  requests publication and the exact target is known.
+  authorized. Publish only when the user or a parent workflow (for example
+  `sam-work`) explicitly requests publication and the exact target is known.
+  Parent-workflow authorization is sufficient; do not re-ask the user.
 - **Never commit** generated videos, screenshots, traces, or reports to the
   task branch, LFS, or product-tree history.
 - When publication is authorized, **always upload** via the host CLI (`gh` /
@@ -89,8 +90,11 @@ Freeze these fields before editing:
 - Environment kind, identity, endpoints, database/tenant identity, and evidence.
 - Cleanup ledger initialized with every resource that may be created.
 
-Ask one concise question only when the target or a safety-critical environment
-identity cannot be discovered. Do not silently choose a remote, database, or tenant.
+Under a parent workflow that already froze the target and environment (for
+example `sam-work`), never ask any permission, confirmation, or clarifying
+question—execute or fail closed with receipts. When running standalone, ask one
+concise question only when the target or a safety-critical environment identity
+cannot be discovered. Do not silently choose a remote, database, or tenant.
 
 ## 2. Build the Traceability Ledger
 
@@ -198,7 +202,9 @@ attempt/blocker ledger and must not be reported as full real-UI confidence.
 Keep Playwright traces, screenshots, reports, and recordings local and safe by
 default. Never `git add` / commit them.
 
-When the user (or parent workflow) explicitly requests publication, follow
+When the user or parent workflow explicitly requests publication—including
+`sam-work`, which always requires Playwright video publication for web systems—
+enable video capture, run the suite, and publish without asking again. Follow
 [references/evidence-publishing.md](references/evidence-publishing.md):
 
 1. Inventory every video (and required screenshots) with path + SHA-256.

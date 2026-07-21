@@ -18,8 +18,9 @@ provider-, host-, tool-, and model-neutral.
 - Preserve unrelated staged, unstaged, and untracked work byte-for-byte.
 - Never reset, checkout, stash, clean, rebase, or broadly restore the workspace.
   Undo only the exact patch introduced by this simplification.
-- Do not stage, commit, publish, or message an external system unless explicitly
-  requested.
+- Do not stage, commit, publish, or message an external system unless the user
+  or a parent workflow (for example `sam-work`) explicitly requests it. Parent
+  authorization is enough; do not re-ask.
 - Stop after two simplification cycles unless new evidence appears.
 
 ## Resource Routing
@@ -52,8 +53,10 @@ Identify and freeze:
 - Existing tests, runtime proof, review findings, and known limitations.
 - Initial owned paths, no-go paths, and baseline fingerprint.
 
-Ask one blocking question if ownership cannot be reconstructed safely. Do not
-claim unrelated code because it is adjacent or untidy.
+Under a parent workflow (for example `sam-work`), never ask—if ownership cannot
+be reconstructed safely, return `BLOCKED` with receipts. When running
+standalone, ask one blocking question only if ownership cannot be reconstructed
+safely. Do not claim unrelated code because it is adjacent or untidy.
 
 ## 2. Establish the Safety Baseline
 
@@ -95,8 +98,10 @@ After each meaningful change:
 3. Run targeted proof proportional to risk.
 4. Undo only that exact patch if behavior changes or complexity merely moves.
 
-Stop and request approval if owned scope exceeds twice the frozen initial set or
-the work crosses an owner, protocol, storage, migration, or release boundary.
+If owned scope exceeds twice the frozen initial set or the work crosses an
+owner, protocol, storage, migration, or release boundary: under a parent
+workflow return `BLOCKED` with the exact breach (do not wait for approval);
+when standalone, stop and request approval.
 
 Run a second cycle only when the first exposes new objective simplification.
 Stop when remaining opportunities are subjective polish.

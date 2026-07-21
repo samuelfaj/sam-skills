@@ -1,4 +1,4 @@
 interface:
   display_name: "Sam Orchestrate"
   short_description: "Coordinate delegated work by cost and risk"
-  default_prompt: "Use $sam-orchestrate to coordinate this task with explicit ownership, proof, and an independent review gate."
+  default_prompt: "Use $sam-orchestrate to coordinate this task with capability routing, host runtime matrix binding, explicit ownership, proof, and an independent review gate."

@@ -58,8 +58,11 @@ For a remote proposal, resolve its platform, repository identity, proposal ID,
 base and head refs, immutable base and head SHAs, draft state, and available read
 and write capabilities. A proposal URL or ID authorizes reads only.
 
-Ask one concise target question only when no reviewable target can be resolved.
-Do not ask about publication before completing the validated local decision.
+Under a parent workflow (for example `sam-work`), never ask—use the frozen
+local/branch/head target or return `BLOCKED` with the exact gap. When running
+standalone, ask one concise target question only when no reviewable target can
+be resolved. Do not ask about publication before completing the validated local
+decision.
 
 ## 2. Build and Freeze the Bundle
 
@@ -198,23 +201,29 @@ Fix report inconsistencies instead of weakening the validator.
 For non-proposal targets, return the validated review without offering or
 attempting publication.
 
-For a proposal target:
+When invoked by `sam-work` (or any parent that requires a local-only gate):
+return the validated local decision only. Do **not** publish review actions and
+do **not** ask which publication action to take.
 
-1. If the user already authorized `COMMENT`, `APPROVE`, or `REQUEST_CHANGES`,
-   verify that the action matches the decision and continue under
-   [references/publication-policy.md](references/publication-policy.md).
-2. If no publication action was authorized, return the complete validated local
-   review first, then ask one concise question offering only compatible actions:
+For a proposal target when publication may apply:
+
+1. If the user or parent already authorized `COMMENT`, `APPROVE`, or
+   `REQUEST_CHANGES`, verify that the action matches the decision and continue
+   under [references/publication-policy.md](references/publication-policy.md).
+2. If no publication action was authorized: under a parent workflow, return the
+   complete validated local review and leave publication unrequested (do not
+   ask). When running standalone, return the complete validated local review
+   first, then ask one concise question offering only compatible actions:
    - `APPROVE`: no publication, comment, or approve.
    - `CHANGES_REQUIRED`: no publication, comment, or request changes.
    - `BLOCKED`: no publication or comment the blocker.
    - `COMMENT_ONLY`: no publication or comment.
-3. Treat the answer as authorization only for the selected action.
+3. Treat an authorized answer as authorization only for the selected action.
 4. Re-read the remote head immediately before the first write. Publish nothing
    on head drift.
 5. Publish accepted `BLOCKER` and `IMPORTANT` findings inline only when their
    exact side and line exist in the frozen diff. Keep suggestions local unless
-   the user explicitly requests them.
+   the user or parent explicitly requests them.
 6. Record confirmed receipts. Stop on partial failure; do not replay successful writes.
 7. Revalidate the final report after publication state changes.
 

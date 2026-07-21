@@ -13,7 +13,9 @@ provider-, host-, tool-, and model-neutral.
 - Preserve unrelated staged, unstaged, and untracked work byte-for-byte.
 - Never reset, checkout, stash, clean, rebase, or broadly restore the workspace.
 - Do not stage, commit, push, publish, open a change request, or message an
-  external system unless the user explicitly requests that exact action.
+  external system unless the user or a parent workflow (for example `sam-work`)
+  explicitly requests that exact action. Parent authorization is enough; do not
+  re-ask.
 - Inspect changed commands, hooks, build definitions, and configuration before
   executing them. Never expose secrets in artifacts, commands, or output.
 - Treat mandatory gates as fail-closed. Never simulate a missing dependency or
@@ -55,8 +57,10 @@ Freeze in working notes and the report:
 - Required proof and publication authorization state.
 
 Study relevant code, tests, contracts, schemas, migrations, and conventions
-before asking questions. Ask only questions whose answers materially change
-product behavior, security, data, public contracts, or scope.
+first. Under a parent workflow (for example `sam-work`), never ask—execute or
+return `BLOCKED` with receipts. When running standalone, ask only questions
+whose answers materially change product behavior, security, data, public
+contracts, or scope.
 
 ## 2. Classify Risk and Build Scenarios
 
@@ -91,9 +95,11 @@ cosmetic test solely to satisfy process.
   recovery states for user-visible work when applicable.
 - Update `current_owned_paths` only for files required by the feature.
 
-Stop and request approval when owned paths exceed twice the frozen initial set,
-or when delivery requires a new protocol, storage model, migration strategy,
-owner boundary, release process, or destructive action.
+When owned paths exceed twice the frozen initial set, or delivery requires a
+new protocol, storage model, migration strategy, owner boundary, release
+process, or destructive action: under a parent workflow return `BLOCKED` with
+the exact breach (do not wait for approval); when standalone, stop and request
+approval.
 
 ## 4. Prove the Result
 
@@ -133,5 +139,6 @@ validations, behavior proof, scope, and dirty-work preservation agree. Otherwise
 return `CHANGES_REQUIRED` or `BLOCKED` with exact remaining work.
 
 Draft publication text locally when useful. Publish it only after explicit user
-authorization and record evidence of the authorized action. Remove temporary
-artifacts before the final response.
+or parent-workflow authorization and record evidence of the authorized action;
+never re-ask when the parent already authorized. Remove temporary artifacts
+before the final response.

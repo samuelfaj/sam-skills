@@ -13,7 +13,9 @@ stack-, provider-, host-, tool-, and model-neutral.
 - Preserve unrelated staged, unstaged, and untracked work byte-for-byte.
 - Never reset, checkout, stash, clean, rebase, or broadly restore the workspace.
 - Do not stage, commit, push, publish, open a change request, or message an
-  external system unless the user explicitly requests that exact action.
+  external system unless the user or a parent workflow (for example `sam-work`)
+  explicitly requests that exact action. Parent authorization is enough; do not
+  re-ask.
 - Do not patch from the reported symptom alone. Prove the reachable failure and
   root cause, or return `BLOCKED`.
 - Treat mandatory gates as fail-closed. Never simulate a missing dependency or
@@ -55,8 +57,9 @@ Freeze:
 - Required reproduction, regression, behavior, and publication proof.
 
 Inspect relevant callers, routes, handlers, state, persistence, tests, logs,
-schemas, and configuration. Ask only blocking questions after available
-evidence is exhausted.
+schemas, and configuration. Under a parent workflow (for example `sam-work`),
+never ask—execute or return `BLOCKED` with receipts. When running standalone,
+ask only blocking questions after available evidence is exhausted.
 
 ## 2. Reproduce and Prove Root Cause
 
@@ -93,9 +96,11 @@ compatibility, and adjacent regression scenarios when applicable. Verify
 user-visible loading, empty, error, disabled, accessibility, and recovery states
 only when the affected flow reaches them.
 
-Stop and request approval if the correction needs more than twice the frozen
-owned scope or changes a protocol, storage model, migration strategy, owner
-boundary, release process, or destructive behavior.
+If the correction needs more than twice the frozen owned scope or changes a
+protocol, storage model, migration strategy, owner boundary, release process, or
+destructive behavior: under a parent workflow return `BLOCKED` with the exact
+scope breach (do not wait for approval); when standalone, stop and request
+approval.
 
 ## 4. Validate and Run Gates
 
@@ -130,6 +135,7 @@ required scenarios, validations, mandatory gates, behavior proof, scope, and
 dirty-work preservation agree. Otherwise return `CHANGES_REQUIRED` or
 `BLOCKED` with exact remaining work.
 
-Draft publication text locally when useful. Publish only after explicit user
-authorization and record the action evidence. Remove temporary artifacts before
-the final response.
+Draft publication text locally when useful. Publish only after explicit user or
+parent-workflow authorization and record the action evidence; never re-ask when
+the parent already authorized. Remove temporary artifacts before the final
+response.

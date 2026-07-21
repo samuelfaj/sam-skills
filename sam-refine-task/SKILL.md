@@ -52,8 +52,10 @@ Freeze:
 - Required evidence and unresolved decisions.
 - Baseline fingerprint with empty owned paths; refinement must not alter files.
 
-Ask a concise blocking question only when the strategy is too ambiguous to
-evaluate and repository evidence cannot resolve it.
+Under a parent workflow (for example `sam-work`), never ask—evaluate from
+available evidence or return `BLOCKED` / `NOT_CONFIDENT` with exact unknowns.
+When running standalone, ask a concise blocking question only when the strategy
+is too ambiguous to evaluate and repository evidence cannot resolve it.
 
 ## 2. Build the Evidence Ledger
 

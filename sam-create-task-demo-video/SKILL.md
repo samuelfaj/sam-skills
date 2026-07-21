@@ -31,8 +31,9 @@ coverage. Remain host-, provider-, tool-, and model-agnostic.
 - Fail closed when real data is requested and the environment is unknown or is
   not a verified local, test, or development target.
 - Keep final and intermediate media local until a remote proposal target is
-  authorized. Publish only when the user (or parent workflow) explicitly
-  requests it and the exact remote target is known.
+  authorized. Publish only when the user or a parent workflow (for example
+  `sam-work`) explicitly requests it and the exact remote target is known.
+  Parent-workflow authorization is sufficient; do not re-ask the user.
 - **Never commit** generated videos, screenshots, contact sheets, or recordings
   to the task branch, LFS, or product-tree history.
 - When publication is authorized, **always upload** via the host CLI (`gh` /
@@ -81,8 +82,12 @@ Freeze:
 - Exact local output path and whether publication was explicitly requested.
 - Cleanup ledger initialized for every resource the run may create.
 
-Ask one concise question only when a safety-critical target cannot be discovered.
-Do not infer authorization from the presence of a PR, MR, branch, or CLI login.
+Under a parent workflow that already froze the target, environment, and
+publication flag (for example `sam-work`), never ask any permission,
+confirmation, or clarifying question—record, convert, and publish (when
+authorized) or fail closed with receipts. When running standalone, ask one
+concise question only when a safety-critical target cannot be discovered. Do not
+infer authorization from the presence of a PR, MR, branch, or CLI login alone.
 
 ## 2. Build the Proof Storyboard
 
@@ -158,7 +163,8 @@ pretend raw WebM is the requested MP4.
 Without explicit authorization, retain only the safe local MP4 requested by the
 user. Do not upload or comment. Never `git add` / commit the MP4.
 
-When publication is explicit, follow
+When publication is explicit—including when `sam-work` requires `PUBLISHED` on
+the frozen proposal—upload and embed without asking for permission again. Follow
 [references/evidence-publishing.md](references/evidence-publishing.md):
 
 1. Reconfirm host, repository, proposal ID, and head SHA.

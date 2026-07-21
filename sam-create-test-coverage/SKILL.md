@@ -18,8 +18,9 @@ Remain stack-, host-, provider-, tool-, and model-agnostic.
   CI definitions before executing them.
 - Fail closed when a real-data E2E target is unknown or is not a verified local,
   test, or development environment.
-- Keep artifacts local by default. Publish only when explicitly requested and the
-  exact remote target is resolved.
+- Keep artifacts local by default. Publish only when the user or a parent
+  workflow (for example `sam-work`) explicitly requests it and the exact remote
+  target is resolved. Parent authorization is enough; do not re-ask.
 - Never expose secrets, credentials, private data, or sensitive paths in bundles,
   commands, artifacts, reports, or returned evidence.
 - Reject `.only`, `.skip`, retries, broad timeouts, snapshot refreshes, assertion
@@ -65,7 +66,9 @@ Freeze:
 - Environment kind, identity, endpoints, database/tenant, and proof.
 - Cleanup ledger initialized for all resources the run may create.
 
-Ask one concise question only when the target or safety-critical environment
+Under a parent workflow (for example `sam-work`), never ask—use the frozen
+target/environment or return `BLOCKED` with receipts. When running standalone,
+ask one concise question only when the target or safety-critical environment
 cannot be discovered. Never infer a safe database or tenant from a name alone.
 
 ## 2. Build the Behavior and Risk Ledger

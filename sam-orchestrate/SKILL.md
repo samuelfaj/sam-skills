@@ -5,8 +5,10 @@ description: "Coordinate complex work as a controller-only orchestrator using co
 
 # Sam Orchestrate
 
-Coordinate execution without implementing task artifacts directly. Remain
-provider-, model-, host-, and stack-neutral.
+Coordinate execution without implementing task artifacts directly. Route work by
+capability and risk, then bind each delegated node to the active host’s fixed
+runtime matrix (Codex, Claude Code, or Grok). Remain stack-neutral outside that
+matrix.
 
 ## Non-Negotiable Contract
 
@@ -15,12 +17,15 @@ provider-, model-, host-, and stack-neutral.
 - Permit direct main-agent work only for task decomposition, agent coordination,
   result inspection, proof reruns, conflict integration, and final reporting.
 - Give every worker one explicit owner boundary, writable scope, no-go scope,
-  dependencies, pass criteria, and required proof.
+  dependencies, pass criteria, required proof, and a bound runtime receipt.
 - Tell every worker that other agents may share the workspace and that it must
   not revert or overwrite unrelated work.
 - Treat every returned claim as unverified until the controller checks its
   artifact, scope, and proof.
-- Never route by a named provider or model. Route by capability and task risk.
+- Select capability by task risk first. Bind model/effort only from
+  [references/host-runtime-matrix.md](references/host-runtime-matrix.md) for the
+  active host. Never invent models, never ask the user which model to pick, and
+  never put model or host names into owner IDs.
 - If delegation is unavailable, stop before execution and report the exact
   blocker. Do not silently abandon controller-only mode.
 - Never expose secrets in prompts, reports, commands, or evidence.
@@ -29,6 +34,8 @@ provider-, model-, host-, and stack-neutral.
 
 - Read [references/routing-policy.md](references/routing-policy.md) before
   classifying work or selecting a capability class.
+- Read [references/host-runtime-matrix.md](references/host-runtime-matrix.md)
+  before binding any worker runtime.
 - Read [references/prompt-contract.md](references/prompt-contract.md) before
   spawning the first worker.
 - Read [references/output-contract.md](references/output-contract.md) before
@@ -55,6 +62,8 @@ Create the smallest useful directed acyclic graph. Each node must contain:
 
 - Stable task ID and kind: `EXECUTION`, `ORCHESTRATION`, or `REVIEW`.
 - Neutral owner ID and capability: `LIGHT`, `STANDARD`, `DEEP`, or `REVIEWER`.
+- Runtime binding for every delegated `EXECUTION` and `REVIEW` node: host, role,
+  model, effort, and optional fallback reason (from the host matrix).
 - Dependencies.
 - One objective, explicit no-go items, and proof requirements.
 - Writable paths or an explicitly read-only scope.
@@ -64,7 +73,8 @@ Create the smallest useful directed acyclic graph. Each node must contain:
 
 Use neutral owner IDs: `worker-N` for execution, `controller-N` for
 orchestration, and `reviewer-N` for review. Never put a provider, model, host,
-vendor, or agent product name in an owner identity.
+vendor, or agent product name in an owner identity. Runtime details live only in
+the structured `runtime` object.
 
 Every writable non-review node is a producer, regardless of node kind. Record
 each changed file with exactly one producer ID and artifact class. Keep the
@@ -74,23 +84,40 @@ Use parallel workers only for independent scopes. Serialize overlapping writes
 with a dependency edge. Do not split a cohesive task merely to increase agent
 count. Keep one controller-owned integration point for cross-slice contracts.
 
-## 3. Delegate with Exact Contracts
+## 3. Bind Runtime and Delegate with Exact Contracts
+
+Detect the active host once (`codex`, `claude-code`, or `grok`). For each
+delegated node, map capability → matrix row and record:
+
+```text
+runtime.host / runtime.role / runtime.model / runtime.effort
+```
+
+Summary of the fixed matrix (authoritative detail is in
+`references/host-runtime-matrix.md`):
+
+| Capability | Codex | Claude Code | Grok |
+| --- | --- | --- | --- |
+| `LIGHT` | `gpt-5.6-luna` / `medium` / `fast_scan` | `haiku` / `medium` / `fast_scan` | `grok-4.5` / `medium` |
+| `STANDARD` | `gpt-5.6-luna` / `xhigh` / `routine_worker` | `sonnet` / `high` / `routine_worker` | `grok-4.5` / `medium` |
+| `DEEP` | `gpt-5.6-sol` / `high` / `deep_worker` | `opus` / `high` / `deep_worker` | `grok-4.5` / `high` |
+| rare escalate | `gpt-5.6-sol` / `xhigh` / `genius_worker` | `opus` / `xhigh` / `genius_worker` | `grok-4.5` / `high` |
+| `REVIEWER` | `gpt-5.6-sol` / `high` | `opus` / `high` | `grok-4.5` / `high` |
 
 Construct every worker prompt from
-[references/prompt-contract.md](references/prompt-contract.md). Pass only the
-context needed for that task. Do not leak expected findings or another worker's
-conclusion into an independent review.
+[references/prompt-contract.md](references/prompt-contract.md). Include the
+bound runtime. Pass only the context needed for that task. Do not leak expected
+findings or another worker's conclusion into an independent review.
 
-Use capability classes as requirements, not implementation names:
+Use capability classes as requirements:
 
 - `LIGHT`: narrow discovery, inventory, or mechanical low-risk work.
 - `STANDARD`: bounded implementation and ordinary validation.
 - `DEEP`: ambiguous, cross-boundary, or high-risk reasoning and execution.
 - `REVIEWER`: independent adversarial review.
 
-When the execution environment cannot select capability explicitly, keep the
-classification in the task contract and compensate with narrower scope,
-stronger proof, or an independent reviewer.
+If the host cannot honor a matrix row, apply the matrix fallback rules, record
+`runtime.fallback_reason`, and continue. Do not ask the user to pick a model.
 
 ## 4. Track and Reconcile
 
@@ -160,6 +187,7 @@ or blocked-dependency provenance. Otherwise keep the run `IN_PROGRESS`.
 Return:
 
 - Task classification and delegated slices by capability.
+- Active host and each node’s bound runtime (role, model, effort, fallback).
 - Changed-file manifest, artifact classes, and producer ownership.
 - Passed, failed, skipped, and blocked proof.
 - Exact blocker provenance for blocked nodes.

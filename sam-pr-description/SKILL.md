@@ -17,7 +17,9 @@ Remain provider-, host-, model-, tool-, and stack-neutral.
 - Account for every changed file exactly once.
 - Distinguish tests changed from commands actually run.
 - Use `Not applicable` or `Not verified` instead of filling evidence gaps.
-- Do not update a remote proposal unless the user explicitly requests it.
+- Do not update a remote proposal unless the user or a parent workflow (for
+  example `sam-work`) explicitly requests it. Parent authorization is enough;
+  do not re-ask.
 - Re-check the remote head immediately before an authorized update.
 - Never expose secrets in context, reports, descriptions, commands, or receipts.
 
@@ -33,10 +35,12 @@ Remain provider-, host-, model-, tool-, and stack-neutral.
 
 Resolve in this order:
 
-1. Explicit user-provided target.
+1. Explicit user- or parent-workflow-provided target.
 2. Target of the existing remote proposal.
 3. Repository or remote default branch proved by Git or platform metadata.
-4. One concise question when the base remains unknown.
+4. Under a parent workflow, if the base remains unknown after steps 1–3 return
+   `BLOCKED` with the exact gap (do not ask). When standalone, one concise
+   question when the base remains unknown.
 
 Do not fall back to a conventional branch name. Resolve base and head to
 immutable commits before inspecting the change.
@@ -114,7 +118,7 @@ validator, omit changed files, or relabel unverified claims to force success.
 
 ## 6. Update Remotely Only When Requested
 
-For an explicit update request:
+For an explicit update request (including `sam-work` proposal create/update):
 
 1. Set `remote_update.requested` to true.
 2. Re-read the current remote head before the first write.

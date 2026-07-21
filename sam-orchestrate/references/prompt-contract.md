@@ -7,17 +7,19 @@ style may change their formatting, but not their meaning.
 State: current task-local facts and dependency state
 Objective: one bounded outcome
 Ownership: exact writable paths or read-only surface
+Runtime: host, role, model, effort (from host-runtime-matrix; do not rechoose)
 No-go: forbidden paths, mutations, and unrelated cleanup
 Dependencies: task IDs that are already satisfied
 Actions: required work in execution order
 Proof: exact artifacts, tests, commands, or observations required
-Output: result, changed files, proof, skipped proof, and blockers
+Output: result, changed files, proof, skipped proof, blockers, runtime used
 Coordination: other agents may share the workspace; never revert their work
 ```
 
 Prompt rules:
 
 - Pass exact paths and immutable refs when available.
+- Pass the pre-bound runtime; the worker must not self-select another model.
 - State assumptions and unresolved ambiguity.
 - Require the worker to inspect before editing.
 - Require repository conventions and surgical changes.
