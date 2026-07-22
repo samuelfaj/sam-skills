@@ -27,7 +27,8 @@ Create a temporary JSON report with this shape:
       {"path": "src/service.py", "artifact_class": "CODE", "producer_task_id": "E1"},
       {"path": "tests/test_service.py", "artifact_class": "TEST", "producer_task_id": "E2"}
     ],
-    "review_requested": false
+    "review_requested": false,
+    "controller_certainty": "medium"
   },
   "dag": [
     {
@@ -145,6 +146,9 @@ Create a temporary JSON report with this shape:
 Allowed values:
 
 - Task: `T0`, `T1`, `T2`, `T3`.
+- `controller_certainty` (optional): `absolute`, `high`, `medium`, `low`.
+  Omitted/`null` is treated as `medium` for gate decisions. Use `absolute` or
+  `high` only when skip rules in the routing policy are truly met.
 - Active host: `codex`, `claude-code`, `grok`.
 - Artifact: `CODE`, `TEST`, `DOCS`, `CONFIG`, `DATA`, `RELEASE`, `OTHER`.
 - Kind: `EXECUTION`, `ORCHESTRATION`, `REVIEW`.
@@ -157,7 +161,17 @@ Allowed values:
 - Evidence status: `PASS`, `FAIL`, `NOT_RUN`, `INFO`.
 - Evidence classification: `TARGET`, `BASELINE`, `ENVIRONMENT`, `EXTERNAL`.
 - Gate status: `PASS`, `FAIL`, `NOT_RUN`, `NOT_REQUIRED`.
+- Gate skip reasons (when applicable): `micro_task_absolute_certainty`,
+  `micro_task_high_certainty`, or a short non-trigger explanation.
 - Decision: `COMPLETE`, `BLOCKED`, `IN_PROGRESS`.
+
+## Fan-out and DEEP invariants
+
+- Execution producers: max 1 for `T0`/`T1`; max 3 for `T2`/`T3`.
+- `DEEP` capability only when `classification` is `T3` or `risk_flags` is
+  non-empty.
+- Evidence `detail` should be a short summary (prefer under ~500 characters for
+  COMMAND logs); do not paste multi-KB raw logs into the report.
 
 ## Runtime binding
 
@@ -197,6 +211,9 @@ Controller-only `ORCHESTRATION` nodes may set `runtime` to null.
   dependency blocker names a directly blocked dependency; other blockers begin
   only after dependencies complete. Blocker evidence is classified
   `ENVIRONMENT` or `EXTERNAL`.
+- Review gate follows the routing-policy cost guard (certainty skips and
+  mandatory T3/risk/multi-producer rules).
+- Lean final user report: table of nodes/proof/review/decision — no essay.
 - `BLOCKED` is terminal only when no runnable node remains and all pending work
   descends from blocked work. Otherwise the decision is `IN_PROGRESS`.
 - A required reviewer is read-only, independent, depends on every producer, and

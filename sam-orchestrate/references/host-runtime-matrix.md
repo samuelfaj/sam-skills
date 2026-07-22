@@ -29,8 +29,10 @@ Escalate only after evidence of capability failure:
 5. `genius_worker` (rare single-agent escalation)
 6. Independent `REVIEWER` when the review gate triggers
 
-Default max parallel workers: 3. Hard cap: 6. Prefer serial writes; parallelize
-only independent read-only partitions.
+Default max parallel execution workers: **2**. Hard cap: **3**. Prefer serial
+writes; parallelize only independent scopes with a real ownership boundary.
+Never open a graph on `DEEP` — first bind `LIGHT` or `STANDARD` and escalate
+only after capability failure or new risk evidence.
 
 ## Active host selection
 
@@ -56,9 +58,9 @@ deep reasoning). Agent file names may use `ultra_worker` as an alias for
 | --- | --- | --- | --- |
 | `LIGHT` / `fast_scan` | `gpt-5.6-luna` | `medium` | read-only; narrow search and evidence only |
 | `STANDARD` / `routine_worker` | `gpt-5.6-luna` | `xhigh` | inherit parent permissions; bounded implementation |
-| `DEEP` / `deep_worker` | `gpt-5.6-sol` | `high` | inherit parent permissions; hard debug / architecture |
-| `genius_worker` (rare) | `gpt-5.6-sol` | `xhigh` | final escalation only; never default |
-| `REVIEWER` | `gpt-5.6-sol` | `high` | read-only independent review |
+| `DEEP` / `deep_worker` | `gpt-5.6-luna` | `max` | inherit parent permissions; hard debug / architecture |
+| `genius_worker` (rare) | `gpt-5.6-sol` | `high` | final escalation only; never default |
+| `REVIEWER` | `gpt-5.6-sol` | `medium` | read-only independent review |
 | advisor (optional) | `gpt-5.6-sol` | `max` or `xhigh` | read-only focused second opinion |
 
 Root agent settings when configuring Codex agents: `max_threads = 6`,
@@ -72,16 +74,16 @@ model; pin a full model ID only when the environment requires it.
 
 | Capability / role | Model alias | Effort | Sandbox / notes |
 | --- | --- | --- | --- |
-| `LIGHT` / `fast_scan` | `haiku` | `medium` | read-only tools; narrow search and inventory |
+| `LIGHT` / `fast_scan` | `haiku` | `high` | read-only tools; narrow search and inventory |
 | `STANDARD` / `routine_worker` | `sonnet` | `high` | default implementation and ordinary tests |
-| `DEEP` / `deep_worker` | `opus` | `high` | ambiguous, security, architecture, cross-cutting |
+| `DEEP` / `deep_worker` | `opus` | `medium` | ambiguous, security, architecture, cross-cutting |
 | `genius_worker` (rare) | `opus` | `xhigh` | only after `DEEP` is insufficient |
 | `REVIEWER` | `opus` | `high` | read-only / plan-mode independent review |
 | advisor (optional) | `fable` when available, else `opus` | `high` | focused advisory question only |
 
-Rationale: Haiku for low-context scans, Sonnet for daily coding quality/cost,
-Opus for hard reasoning and independent review, `xhigh` reserved for rare
-escalation. Do not default the whole graph to Opus.
+Rationale: Haiku (high effort) for controller / low-context scans, Sonnet for
+daily coding quality/cost, Opus medium for DEEP production slices, `xhigh`
+reserved for rare genius escalation. Do not default the whole graph to Opus.
 
 ## Grok
 
@@ -92,8 +94,8 @@ and `high` (no `low` / `xhigh` / `max` for orchestration workers).
 | --- | --- | --- | --- |
 | `LIGHT` / `fast_scan` | `grok-4.5` | `medium` | prefer read-only discovery |
 | `STANDARD` / `routine_worker` | `grok-4.5` | `medium` | bounded implementation and validation |
-| `DEEP` / `deep_worker` | `grok-4.5` | `high` | hard debug, architecture, high risk |
-| `genius_worker` (rare) | `grok-4.5` | `high` | same ceiling as DEEP; escalate scope/proof, not model family |
+| `DEEP` / `deep_worker` | `grok-4.5` | `medium` | hard debug, architecture, high risk |
+| `genius_worker` (rare) | `grok-4.5` | `high` | escalate scope/proof; high only for rare genius |
 | `REVIEWER` | `grok-4.5` | `high` | independent review; no subagent fan-out |
 | advisor (optional) | `grok-4.5` | `high` | focused advisory only |
 
@@ -103,6 +105,7 @@ the node is writable and the parent already authorized those writes.
 ## Escalation and advisors
 
 - Escalate capability before escalating model cost.
+- Prefer a tighter re-prompt at the same tier over jumping tiers.
 - Use `genius_worker` only when `DEEP` failed for reasoning/capability reasons
   or residual risk is exceptional.
 - Advisors never edit files and never own production nodes.
@@ -112,8 +115,10 @@ the node is writable and the parent already authorized those writes.
 
 ## Controller rules
 
-- Keep the main agent controller-only.
+- Keep the main agent controller-only and **thin**: classify, dispatch, check
+  proof — do not re-read the full skill pack into every worker prompt.
 - Do not put model or host names in owner IDs (`worker-N`, `controller-N`,
   `reviewer-N` only).
 - Record the bound runtime on every delegated node before spawn.
 - Never ask the user to choose among the matrix rows.
+- Reviewer intake is diff/checklist only — not the full matrix document.

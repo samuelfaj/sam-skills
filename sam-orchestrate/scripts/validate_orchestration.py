@@ -45,21 +45,21 @@ RUNTIME_MATRIX: dict[str, dict[str, tuple[str, str, str]]] = {
     "codex": {
         "LIGHT": ("fast_scan", "gpt-5.6-luna", "medium"),
         "STANDARD": ("routine_worker", "gpt-5.6-luna", "xhigh"),
-        "DEEP": ("deep_worker", "gpt-5.6-sol", "high"),
-        "REVIEWER": ("reviewer", "gpt-5.6-sol", "high"),
-        "GENIUS": ("genius_worker", "gpt-5.6-sol", "xhigh"),
+        "DEEP": ("deep_worker", "gpt-5.6-luna", "max"),
+        "REVIEWER": ("reviewer", "gpt-5.6-sol", "medium"),
+        "GENIUS": ("genius_worker", "gpt-5.6-sol", "high"),
     },
     "claude-code": {
-        "LIGHT": ("fast_scan", "haiku", "medium"),
+        "LIGHT": ("fast_scan", "haiku", "high"),
         "STANDARD": ("routine_worker", "sonnet", "high"),
-        "DEEP": ("deep_worker", "opus", "high"),
+        "DEEP": ("deep_worker", "opus", "medium"),
         "REVIEWER": ("reviewer", "opus", "high"),
         "GENIUS": ("genius_worker", "opus", "xhigh"),
     },
     "grok": {
         "LIGHT": ("fast_scan", "grok-4.5", "medium"),
         "STANDARD": ("routine_worker", "grok-4.5", "medium"),
-        "DEEP": ("deep_worker", "grok-4.5", "high"),
+        "DEEP": ("deep_worker", "grok-4.5", "medium"),
         "REVIEWER": ("reviewer", "grok-4.5", "high"),
         "GENIUS": ("genius_worker", "grok-4.5", "high"),
     },
@@ -282,7 +282,7 @@ def validate(report: dict[str, Any]) -> list[str]:
     if not isinstance(task, dict):
         errors.append("task must be an object")
         task = {}
-    task_keys = {
+    task_keys_required = {
         "classification",
         "goal",
         "success_criteria",
@@ -294,7 +294,9 @@ def validate(report: dict[str, Any]) -> list[str]:
         "changed_files",
         "review_requested",
     }
-    require_keys(task, task_keys, task_keys, "task", errors)
+    # Optional certainty budget: absolute|high|medium|low (null/omitted → medium).
+    task_keys_allowed = task_keys_required | {"controller_certainty"}
+    require_keys(task, task_keys_required, task_keys_allowed, "task", errors)
     classification = task.get("classification")
     if classification not in TASK_CLASSES:
         errors.append("task.classification must be T0, T1, T2, or T3")
@@ -313,6 +315,17 @@ def validate(report: dict[str, Any]) -> list[str]:
     if not isinstance(review_requested, bool):
         errors.append("task.review_requested must be boolean")
         review_requested = False
+    controller_certainty_raw = task.get("controller_certainty")
+    if controller_certainty_raw is None:
+        controller_certainty = "medium"
+    elif controller_certainty_raw in {"absolute", "high", "medium", "low"}:
+        controller_certainty = controller_certainty_raw
+    else:
+        errors.append(
+            'task.controller_certainty must be omitted, null, or one of '
+            '"absolute", "high", "medium", "low"'
+        )
+        controller_certainty = "medium"
     artifacts = string_list(
         task.get("changed_artifacts"), "task.changed_artifacts", errors
     )
@@ -506,6 +519,8 @@ def validate(report: dict[str, Any]) -> list[str]:
         errors.append(f"{classification} requires exactly one execution node")
     if classification in {"T2", "T3"} and not execution_nodes:
         errors.append(f"{classification} requires at least one execution node")
+    if classification in {"T2", "T3"} and len(execution_nodes) > 3:
+        errors.append(f"{classification} allows at most 3 execution nodes (fan-out hard cap)")
     if (
         classification == "T0"
         and execution_nodes
@@ -522,6 +537,18 @@ def validate(report: dict[str, Any]) -> list[str]:
         node.get("capability") == "DEEP" for node in execution_nodes
     ):
         errors.append("T3 requires a DEEP execution node for the risky slice")
+    deep_without_need = [
+        node.get("id")
+        for node in execution_nodes
+        if node.get("capability") == "DEEP"
+        and classification != "T3"
+        and not risk_flags
+    ]
+    if deep_without_need:
+        errors.append(
+            "DEEP capability requires T3 classification or non-empty risk_flags "
+            f"(nodes: {', '.join(str(i) for i in deep_without_need)})"
+        )
 
     writable_node_ids = [node_id for node_id, paths in node_paths.items() if paths]
     for left_index, left_id in enumerate(writable_node_ids):
@@ -759,14 +786,51 @@ def validate(report: dict[str, Any]) -> list[str]:
     trigger_artifacts = set(artifacts)
     for producer_id in producer_ids:
         trigger_artifacts.update(node_artifacts[producer_id])
-    review_required = bool(
-        {"CODE", "TEST", "DATA", "RELEASE"}.intersection(trigger_artifacts)
+    producer_caps = {node.get("capability") for node in producer_nodes}
+    # Certainty skips (token-efficient): absolute T0 micro, or high T0/T1 single slice.
+    certainty_skip_absolute = (
+        controller_certainty == "absolute"
+        and classification == "T0"
+        and not risk_flags
+        and len(producer_nodes) <= 1
+        and not target_unproven
+        and not review_requested
+    )
+    certainty_skip_high = (
+        controller_certainty == "high"
+        and classification in {"T0", "T1"}
+        and not risk_flags
+        and len(producer_nodes) <= 1
+        and not target_unproven
+        and not review_requested
+        and producer_caps <= {"LIGHT", "STANDARD"}
+    )
+    certainty_skip_eligible = certainty_skip_absolute or certainty_skip_high
+    if controller_certainty == "absolute" and not certainty_skip_absolute:
+        errors.append(
+            "controller_certainty=absolute only for T0 micro-tasks with one "
+            "producer, empty risk_flags, all TARGET proof PASS, and "
+            "review_requested=false"
+        )
+    if controller_certainty == "high" and not certainty_skip_high:
+        # high is allowed as a plain budget label even when skip is not used,
+        # except when CODE/TEST would be skipped incorrectly — only error if they
+        # claim skip via gate reason without eligibility (checked below).
+        pass
+    base_review_triggers = bool(
+        {"DATA", "RELEASE"}.intersection(trigger_artifacts)
         or risk_flags
         or len(producer_nodes) > 1
         or target_unproven
         or classification == "T3"
         or review_requested
-        or review_nodes
+        or (
+            bool({"CODE", "TEST"}.intersection(trigger_artifacts))
+            and not certainty_skip_eligible
+        )
+    )
+    review_required = bool(
+        review_nodes or base_review_triggers
     )
 
     gate = report.get("review_gate")
@@ -784,6 +848,33 @@ def validate(report: dict[str, Any]) -> list[str]:
     reasons = string_list(gate.get("reasons"), "review_gate.reasons", errors)
     if review_required and not reasons:
         errors.append("required review gate must record at least one reason")
+    if certainty_skip_eligible and not review_nodes:
+        if gate.get("status") != "NOT_REQUIRED":
+            errors.append(
+                "certainty micro-task skip requires review_gate.status NOT_REQUIRED"
+            )
+        if certainty_skip_absolute and "micro_task_absolute_certainty" not in reasons:
+            errors.append(
+                "absolute-certainty micro-task skip must record reason "
+                "micro_task_absolute_certainty"
+            )
+        if certainty_skip_high and not certainty_skip_absolute:
+            if "micro_task_high_certainty" not in reasons:
+                errors.append(
+                    "high-certainty micro-task skip must record reason "
+                    "micro_task_high_certainty"
+                )
+    if (
+        "micro_task_absolute_certainty" in reasons
+        and not certainty_skip_absolute
+    ):
+        errors.append(
+            "micro_task_absolute_certainty reason requires eligible absolute skip"
+        )
+    if "micro_task_high_certainty" in reasons and not certainty_skip_high:
+        errors.append(
+            "micro_task_high_certainty reason requires eligible high skip"
+        )
     if gate.get("status") not in GATE_STATUSES:
         errors.append("review_gate.status is invalid")
     review_task_id = gate.get("review_task_id")

@@ -62,7 +62,7 @@ RUNTIME_BY_CAPABILITY = {
         "host": DEFAULT_HOST,
         "role": "deep_worker",
         "model": "grok-4.5",
-        "effort": "high",
+        "effort": "medium",
         "fallback_reason": None,
     },
     "REVIEWER": {
@@ -157,6 +157,102 @@ def valid_t0() -> dict[str, Any]:
         "review_gate": {
             "required": False,
             "reasons": ["Documentation-only mechanical change"],
+            "status": "NOT_REQUIRED",
+            "review_task_id": None,
+        },
+        "decision": {"result": "COMPLETE", "remaining_task_ids": []},
+    }
+
+
+def valid_t0_code_absolute_certainty() -> dict[str, Any]:
+    """T0 micro CODE change with 100% controller certainty — no REVIEWER."""
+    requirement = "One-line fix stays in the assigned file"
+    return {
+        "schema_version": 2,
+        "task": {
+            "classification": "T0",
+            "goal": "Fix a typo in one constant",
+            "success_criteria": ["Constant spelling corrected"],
+            "constraints": ["Touch only the constant line"],
+            "no_go": ["Do not refactor"],
+            "risk_flags": [],
+            "active_host": DEFAULT_HOST,
+            "changed_artifacts": ["CODE"],
+            "changed_files": [
+                {
+                    "path": "src/labels.py",
+                    "artifact_class": "CODE",
+                    "producer_task_id": "E1",
+                }
+            ],
+            "review_requested": False,
+            "controller_certainty": "absolute",
+        },
+        "dag": [
+            node(
+                "E1",
+                kind="EXECUTION",
+                owner="worker-1",
+                capability="LIGHT",
+                objective="Correct the typo",
+                requirement=requirement,
+                writable_paths=["src/labels.py"],
+                artifact_classes=["CODE"],
+                evidence_ids=["V1"],
+            )
+        ],
+        "evidence": [evidence("V1", "E1", requirement, evidence_type="DIFF")],
+        "review_gate": {
+            "required": False,
+            "reasons": ["micro_task_absolute_certainty"],
+            "status": "NOT_REQUIRED",
+            "review_task_id": None,
+        },
+        "decision": {"result": "COMPLETE", "remaining_task_ids": []},
+    }
+
+
+def valid_t1_code_high_certainty() -> dict[str, Any]:
+    """T1 single STANDARD slice with high certainty — no REVIEWER."""
+    requirement = "Bounded service change stays in scope"
+    return {
+        "schema_version": 2,
+        "task": {
+            "classification": "T1",
+            "goal": "Adjust one service helper",
+            "success_criteria": ["Helper behavior updated"],
+            "constraints": ["Single file only"],
+            "no_go": ["Do not expand API surface"],
+            "risk_flags": [],
+            "active_host": DEFAULT_HOST,
+            "changed_artifacts": ["CODE"],
+            "changed_files": [
+                {
+                    "path": "src/helper.py",
+                    "artifact_class": "CODE",
+                    "producer_task_id": "E1",
+                }
+            ],
+            "review_requested": False,
+            "controller_certainty": "high",
+        },
+        "dag": [
+            node(
+                "E1",
+                kind="EXECUTION",
+                owner="worker-1",
+                capability="STANDARD",
+                objective="Update the helper",
+                requirement=requirement,
+                writable_paths=["src/helper.py"],
+                artifact_classes=["CODE"],
+                evidence_ids=["V1"],
+            )
+        ],
+        "evidence": [evidence("V1", "E1", requirement, evidence_type="DIFF")],
+        "review_gate": {
+            "required": False,
+            "reasons": ["micro_task_high_certainty"],
             "status": "NOT_REQUIRED",
             "review_task_id": None,
         },
@@ -455,6 +551,8 @@ def expect_failure(
 def main() -> int:
     for report in (
         valid_t0(),
+        valid_t0_code_absolute_certainty(),
+        valid_t1_code_high_certainty(),
         valid_t2(),
         valid_direct_integration(),
         valid_blocked(),
@@ -462,6 +560,29 @@ def main() -> int:
         valid_in_progress(),
     ):
         run_validator(report, True)
+
+    # Absolute certainty without the T0 micro-task prerequisites must fail closed.
+    expect_failure(
+        lambda report: report["task"].update({"controller_certainty": "absolute"}),
+        "controller_certainty=absolute only for T0",
+        valid_t2,
+    )
+    # DEEP without T3/risk is forbidden (cheap-first).
+    def force_deep_on_t1(report: dict[str, Any]) -> None:
+        report["dag"][0]["capability"] = "DEEP"
+        report["dag"][0]["runtime"] = {
+            "host": DEFAULT_HOST,
+            "role": "deep_worker",
+            "model": "grok-4.5",
+            "effort": "medium",
+            "fallback_reason": None,
+        }
+
+    expect_failure(
+        force_deep_on_t1,
+        "DEEP capability requires T3",
+        valid_t1_code_high_certainty,
+    )
 
     expect_failure(
         lambda report: report["dag"][0].pop("objective"),

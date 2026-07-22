@@ -10,6 +10,10 @@ capability and risk, then bind each delegated node to the active host’s fixed
 runtime matrix (Codex, Claude Code, or Grok). Remain stack-neutral outside that
 matrix.
 
+**Token posture:** thin controller, fat workers, progressive disclosure, cheap
+proof, selective review. Spend tokens on verification of artifacts — not on
+re-reading this skill or re-prompting full history into every worker.
+
 ## Non-Negotiable Contract
 
 - Keep the main agent controller-only. Delegate production code, tests,
@@ -21,26 +25,58 @@ matrix.
 - Tell every worker that other agents may share the workspace and that it must
   not revert or overwrite unrelated work.
 - Treat every returned claim as unverified until the controller checks its
-  artifact, scope, and proof.
+  artifact, scope, and proof (diff vs writable paths; one real TARGET proof).
 - Select capability by task risk first. Bind model/effort only from
   [references/host-runtime-matrix.md](references/host-runtime-matrix.md) for the
   active host. Never invent models, never ask the user which model to pick, and
   never put model or host names into owner IDs.
+- **Cheap-first:** never open on `DEEP` or `genius_worker`. Escalate only after
+  concrete capability failure or new risk evidence — never because a task is large.
 - If delegation is unavailable, stop before execution and report the exact
   blocker. Do not silently abandon controller-only mode.
 - Never expose secrets in prompts, reports, commands, or evidence.
 
-## Resource Routing
+## Progressive Disclosure (read only what you need)
 
-- Read [references/routing-policy.md](references/routing-policy.md) before
-  classifying work or selecting a capability class.
-- Read [references/host-runtime-matrix.md](references/host-runtime-matrix.md)
-  before binding any worker runtime.
-- Read [references/prompt-contract.md](references/prompt-contract.md) before
-  spawning the first worker.
-- Read [references/output-contract.md](references/output-contract.md) before
-  drafting the orchestration report.
-- Run `scripts/validate_orchestration.py` before declaring completion.
+Do **not** load every reference on every turn.
+
+| Path | Read now | Defer |
+| --- | --- | --- |
+| **Micro** (`T0` + certainty `absolute`/`high`) | This SKILL (this section + §1 micro) | matrix full tables, output-contract, validator until report |
+| **Single** (`T1`) | + [routing-policy.md](references/routing-policy.md) + [prompt-contract.md](references/prompt-contract.md) | full output-contract until drafting report |
+| **Multi** (`T2`) | + [host-runtime-matrix.md](references/host-runtime-matrix.md) | — |
+| **Critical** (`T3`) | + [output-contract.md](references/output-contract.md) + run validator | — |
+
+Always run `scripts/validate_orchestration.py` before declaring completion when
+you produced a report JSON (Single/Multi/Critical). Micro path may skip the
+formal report when no delegated workers ran and proof is a single local check —
+if you write a report, validate it.
+
+## Certainty Budget
+
+Record `task.controller_certainty` as one of: `absolute` | `high` | `medium` |
+`low`.
+
+| Certainty | Meaning | Orchestration shape |
+| --- | --- | --- |
+| `absolute` | Zero residual doubt on scope, risk, ownership, proof | Micro path only (`T0`) |
+| `high` | Clear single-slice work; ordinary residual risk only | Micro or Single |
+| `medium` | Normal ambiguity or multi-touch | Single or Multi |
+| `low` | Unclear ownership, risk, or proof path | Multi or Critical; do not skip review |
+
+Never invent `absolute`/`high` to save cost.
+
+## Orchestration Modes (T0–T3)
+
+| Mode | When | Shape |
+| --- | --- | --- |
+| **Micro** | `T0` and certainty `absolute` or `high` | No subagent required; optional one `LIGHT` worker; **no REVIEWER** if absolute-certainty (or high) skip rules hold; no formal DAG theater |
+| **Single** | `T1` | One `STANDARD` worker (or `LIGHT` if purely mechanical); review only if triggers fire and skip rules fail |
+| **Multi** | `T2` | Minimum independent workers (default parallel **2**, hard cap **3**); one integration owner; review when multi-producer or risk |
+| **Critical** | `T3` | `DEEP` only on the risky slice; serialize unsafe writes; **REVIEWER required** |
+
+Parallel fan-out: default max **2** concurrent execution workers; hard cap **3**.
+Split only on real ownership/dependency boundaries — never to increase agent count.
 
 ## 1. Freeze Goal and Constraints
 
@@ -48,123 +84,108 @@ Record before delegation:
 
 - Goal and observable success criteria.
 - Explicit constraints and no-go surfaces.
-- Repository or system boundaries.
-- Required evidence and unsafe operations.
+- Certainty budget (`absolute`/`high`/`medium`/`low`).
+- Risk flags, expected artifact classes, empty changed-file manifest.
 - User decisions that must not be inferred.
 
-Classify the task as `T0`, `T1`, `T2`, or `T3` using the routing policy. Record
-risk flags, expected artifact classes, and an initially empty changed-file
-manifest before building the task graph.
+Classify `T0`–`T3` per [routing-policy.md](references/routing-policy.md). Pick the
+**cheapest** mode that still preserves evidence quality.
 
-## 2. Build the Task DAG
+### Micro path (token-efficient)
 
-Create the smallest useful directed acyclic graph. Each node must contain:
+When mode is Micro:
+
+1. Do the work yourself only if it is pure controller integration; otherwise one
+   short `LIGHT` worker with a **slice-only** prompt (see prompt-contract).
+2. Proof: scope diff + at most one focused command. No full-suite runs. No raw
+   log dumps — summary + failing excerpt only.
+3. Skip REVIEWER when absolute/high certainty skip rules hold.
+4. Report: one table row (node / model / proof / status) or a minimal validated
+   JSON report. No narrative essay.
+
+## 2. Build the Task DAG (Single / Multi / Critical)
+
+Create the **smallest** useful DAG. Each node must contain:
 
 - Stable task ID and kind: `EXECUTION`, `ORCHESTRATION`, or `REVIEW`.
 - Neutral owner ID and capability: `LIGHT`, `STANDARD`, `DEEP`, or `REVIEWER`.
-- Runtime binding for every delegated `EXECUTION` and `REVIEW` node: host, role,
-  model, effort, and optional fallback reason (from the host matrix).
-- Dependencies.
-- One objective, explicit no-go items, and proof requirements.
-- Writable paths or an explicitly read-only scope.
-- Artifact classes for writable work.
-- A direct-action reason only for controller-owned writable integration work.
-- Status, blocker provenance, and evidence IDs.
+- Runtime binding for every delegated `EXECUTION` and `REVIEW` node.
+- Dependencies, one objective, no-go, proof requirements.
+- Writable paths or explicitly read-only scope; artifact classes.
+- Status, blocker provenance, evidence IDs.
 
-Use neutral owner IDs: `worker-N` for execution, `controller-N` for
-orchestration, and `reviewer-N` for review. Never put a provider, model, host,
-vendor, or agent product name in an owner identity. Runtime details live only in
-the structured `runtime` object.
+Owner IDs: `worker-N`, `controller-N`, `reviewer-N` only.
 
-Every writable non-review node is a producer, regardless of node kind. Record
-each changed file with exactly one producer ID and artifact class. Keep the
-task-level artifact list equal to the classes in that manifest.
+Caps by class: `T0`/`T1` → at most **1** execution producer; `T2`/`T3` → at most
+**3** execution producers.
 
-Use parallel workers only for independent scopes. Serialize overlapping writes
-with a dependency edge. Do not split a cohesive task merely to increase agent
-count. Keep one controller-owned integration point for cross-slice contracts.
+`DEEP` only when classification is `T3` or `risk_flags` is non-empty. Prefer a
+better `LIGHT`/`STANDARD` re-prompt over escalating model tier.
 
-## 3. Bind Runtime and Delegate with Exact Contracts
+## 3. Bind Runtime and Delegate
 
-Detect the active host once (`codex`, `claude-code`, or `grok`). For each
-delegated node, map capability → matrix row and record:
-
-```text
-runtime.host / runtime.role / runtime.model / runtime.effort
-```
-
-Summary of the fixed matrix (authoritative detail is in
-`references/host-runtime-matrix.md`):
+Detect host once (`codex`, `claude-code`, `grok`). Bind matrix rows from
+[host-runtime-matrix.md](references/host-runtime-matrix.md).
 
 | Capability | Codex | Claude Code | Grok |
 | --- | --- | --- | --- |
-| `LIGHT` | `gpt-5.6-luna` / `medium` / `fast_scan` | `haiku` / `medium` / `fast_scan` | `grok-4.5` / `medium` |
-| `STANDARD` | `gpt-5.6-luna` / `xhigh` / `routine_worker` | `sonnet` / `high` / `routine_worker` | `grok-4.5` / `medium` |
-| `DEEP` | `gpt-5.6-sol` / `high` / `deep_worker` | `opus` / `high` / `deep_worker` | `grok-4.5` / `high` |
-| rare escalate | `gpt-5.6-sol` / `xhigh` / `genius_worker` | `opus` / `xhigh` / `genius_worker` | `grok-4.5` / `high` |
-| `REVIEWER` | `gpt-5.6-sol` / `high` | `opus` / `high` | `grok-4.5` / `high` |
+| `LIGHT` | `gpt-5.6-luna` / `medium` | `haiku` / `high` | `grok-4.5` / `medium` |
+| `STANDARD` | `gpt-5.6-luna` / `xhigh` | `sonnet` / `high` | `grok-4.5` / `medium` |
+| `DEEP` | `gpt-5.6-luna` / `max` | `opus` / `medium` | `grok-4.5` / `medium` |
+| rare escalate | `gpt-5.6-sol` / `high` | `opus` / `xhigh` | `grok-4.5` / `high` |
+| `REVIEWER` | `gpt-5.6-sol` / `medium` | `opus` / `high` | `grok-4.5` / `high` |
 
-Construct every worker prompt from
-[references/prompt-contract.md](references/prompt-contract.md). Include the
-bound runtime. Pass only the context needed for that task. Do not leak expected
-findings or another worker's conclusion into an independent review.
+Worker prompts: [prompt-contract.md](references/prompt-contract.md) — **slice-only**,
+no full skill paste, no other workers’ conclusions into independent review.
 
-Use capability classes as requirements:
+## 4. Track and Reconcile (cheap skepticism)
 
-- `LIGHT`: narrow discovery, inventory, or mechanical low-risk work.
-- `STANDARD`: bounded implementation and ordinary validation.
-- `DEEP`: ambiguous, cross-boundary, or high-risk reasoning and execution.
-- `REVIEWER`: independent adversarial review.
+1. Track node state; prevent overlapping writes without a dependency edge.
+2. Reconcile every changed file to one producer + artifact class.
+3. **Before accepting claims:** check diff ⊆ writable_paths; require one real
+   TARGET proof per proof requirement.
+4. Prefer re-running the smallest proof over re-reading whole transcripts.
+5. Reject unrelated changes and unsupported completion claims.
+6. Escalate capability only after capability failure or new risk evidence.
+7. Stop for required user decisions that expand scope.
 
-If the host cannot honor a matrix row, apply the matrix fallback rules, record
-`runtime.fallback_reason`, and continue. Do not ask the user to pick a model.
+## 5. Review Gate
 
-## 4. Track and Reconcile
+### Require REVIEWER when
 
-While workers run:
+- Classification `T3`, or non-empty `risk_flags`, or `DATA`/`RELEASE` artifacts.
+- More than one execution producer.
+- TARGET proof missing or not `PASS`.
+- User set `review_requested: true`.
+- `CODE`/`TEST` changed **and** certainty skip does not apply.
 
-1. Track node state and newly discovered dependencies.
-2. Prevent overlapping edits without ordering.
-3. Reconcile every changed file to one producer scope and artifact class.
-4. Inspect returned files and diffs before accepting claims.
-5. Re-run the smallest reliable proof when safe and practical.
-6. Reject unrelated changes and unsupported completion claims.
-7. Escalate capability only after a concrete evidence or reasoning failure.
-8. Stop and request direction when a required user decision expands scope.
+### Certainty skip (no REVIEWER)
 
-Use direct action only for unavoidable integration glue. State why delegation
-cannot solve that step, the exact affected surface, and its proof before acting.
+| | Absolute | High |
+| --- | --- | --- |
+| Class | `T0` only | `T0` or `T1` |
+| Producers | 1 | 1 |
+| Capability | any allowed | `LIGHT` or `STANDARD` only |
+| risk_flags | empty | empty |
+| TARGET proof | all PASS | all PASS |
+| review_requested | false | false |
+| Record | `controller_certainty: "absolute"` | `controller_certainty: "high"` |
+| Gate reason | `micro_task_absolute_certainty` | `micro_task_high_certainty` |
 
-Advance a node to `RUNNING` or `COMPLETE` only after every dependency is
-`COMPLETE`. Mark a node `BLOCKED` only with evidence-backed external,
-authority, user-decision, or blocked-dependency provenance. Otherwise leave
-unfinished runnable work `PENDING` or `RUNNING` and report `IN_PROGRESS`.
+### Reviewer efficiency
 
-## 5. Apply the Review Gate
+- Read-only; distinct neutral owner; after all producers.
+- Feed **combined diff/artifact + checklist + frozen scope + proof IDs** — not
+  this entire SKILL and not expected findings.
+- Dedicated TARGET/`PASS` proof for the review node.
+- Corrections → re-gate until pass or concrete blocker.
 
-Require an independent `REVIEWER` node when any trigger applies:
-
-- Code or tests changed.
-- Security, authorization, privacy, data, migration, payment, secret, release,
-  deployment, or production risk exists.
-- More than one execution worker contributed.
-- Target validation failed or was not run.
-- Integration produced uncertainty.
-- The user requested review or high confidence.
-
-The reviewer must be read-only, have a distinct neutral owner, run after every
-producer, and inspect the actual combined diff or artifact, changed-file
-manifest, test coverage, scope, validation evidence, and unresolved risks. Its
-own proof must be dedicated `TARGET` evidence with `PASS` status. Do not pass
-prior conclusions as expected answers. Delegate corrections and repeat the gate
-until it passes or a concrete blocker remains.
-
-When no trigger applies, record `NOT_REQUIRED` and the reason.
+When skip applies or no trigger fires: `NOT_REQUIRED` + exact reason.
 
 ## 6. Validate Completion
 
-Write a temporary JSON report following
-[references/output-contract.md](references/output-contract.md), then run:
+For Single/Multi/Critical (and any Micro that wrote a report), write JSON per
+[output-contract.md](references/output-contract.md), then:
 
 ```bash
 SAM_ORCHESTRATE_DIR="<absolute directory containing this SKILL.md>"
@@ -172,26 +193,24 @@ python3 "$SAM_ORCHESTRATE_DIR/scripts/validate_orchestration.py" \
   "$ORCHESTRATION_TMP/report.json"
 ```
 
-Fix the report when validation fails. Do not weaken the validator or omit state
-to force completion. Remove temporary orchestration artifacts after validation.
+Do not weaken the validator. Remove temp artifacts after validation.
 
-Return `COMPLETE` only when required DAG nodes and the review gate are complete,
-every completed producer has dedicated passing target proof for every declared
-proof requirement, the changed-file manifest reconciles, and no required
-correction remains. Return `BLOCKED` only when no runnable work remains and the
-unfinished graph traces to evidence-backed external, authority, user-decision,
-or blocked-dependency provenance. Otherwise keep the run `IN_PROGRESS`.
+`COMPLETE` only when DAG + review gate satisfy the contract, every completed
+producer has dedicated TARGET/`PASS` proof, manifest reconciles, and no required
+correction remains. `BLOCKED` only with evidence-backed external/authority/
+user-decision/dependency provenance. Else `IN_PROGRESS`.
 
-## 7. Report
+## 7. Report (lean)
 
-Return:
+Return a **table**, not an essay:
 
-- Task classification and delegated slices by capability.
-- Active host and each node’s bound runtime (role, model, effort, fallback).
-- Changed-file manifest, artifact classes, and producer ownership.
-- Passed, failed, skipped, and blocked proof.
-- Exact blocker provenance for blocked nodes.
-- Review-gate result or exact reason it was not required.
-- Final result and remaining task IDs.
+| Field | Content |
+| --- | --- |
+| Class / certainty / mode | `T*`, certainty, micro/single/multi/critical |
+| Nodes | id · capability · model · effort · status |
+| Manifest | path · class · producer |
+| Proof | id · requirement · PASS/FAIL |
+| Review | required? reason / skip reason |
+| Decision | COMPLETE / BLOCKED / IN_PROGRESS + remaining IDs |
 
-Do not repeat agent claims that the controller did not verify.
+Do not repeat unverified agent claims. Do not dump raw logs.
