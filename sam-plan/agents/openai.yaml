@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Plan"
+  short_description: "Case-specific HTML plans with complexity scaling"
+  default_prompt: "Use $sam-plan to produce a millimetric HTML execution plan for this request, scaling depth to complexity and using council only when load-bearing."
