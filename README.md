@@ -55,6 +55,8 @@ and orchestration.
   multi-provider confrontation remains explicit opt-in.
 - `sam-codex-advisor`: obtain a bounded read-only second opinion through a
   fixed-model advisor with explicit effort routing.
+- `sam-claude-opus-advisor`: obtain a bounded read-only second opinion through a
+  fixed-model advisor with explicit effort routing.
 - `sam-fable-advisor`: obtain a bounded read-only second opinion through a
   fixed-model advisor with explicit effort routing.
 - `sam-grok-worker`: delegate a bounded implementation task to a fixed worker

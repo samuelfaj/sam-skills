@@ -37,10 +37,15 @@ PROVIDER_SPECIFIC_REPLACEMENTS = {
         (re.compile(r"\bcodex\b", re.IGNORECASE), "advisor-runtime"),
         (re.compile(r"\bgpt-5\.6-sol\b", re.IGNORECASE), "approved-model"),
     ),
+    "sam-claude-opus-advisor": (
+        (re.compile(r"\bclaude\b", re.IGNORECASE), "advisor-runtime"),
+        (re.compile(r"\bopus\b", re.IGNORECASE), "approved-model"),
+    ),
     "sam-fable-advisor": (
         (re.compile(r"\bclaude\b", re.IGNORECASE), "advisor-runtime"),
         (re.compile(r"\bfable\b", re.IGNORECASE), "approved-model"),
     ),
+
     "sam-orchestrate": (
         (re.compile(r"\bcodex\b", re.IGNORECASE), "host-runtime"),
         (re.compile(r"\bclaude(?:-code)?\b", re.IGNORECASE), "host-runtime"),
