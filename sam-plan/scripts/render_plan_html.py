@@ -266,6 +266,83 @@ def render_chapter_body(chapter: JsonObject) -> str:
     return "\n".join(parts)
 
 
+def synthesize_compact_chapter(report: JsonObject) -> JsonObject:
+    """Build a single pack page from freeze fields when chapters are omitted."""
+    frozen = report.get("frozen") if isinstance(report.get("frozen"), dict) else {}
+    thesis = report.get("thesis") if isinstance(report.get("thesis"), dict) else {}
+    steps = report.get("steps") if isinstance(report.get("steps"), list) else []
+    evidence = report.get("evidence") if isinstance(report.get("evidence"), list) else []
+    step_rows: list[list[str]] = []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        dod = step.get("dod") if isinstance(step.get("dod"), list) else []
+        step_rows.append(
+            [
+                str(step.get("id", "")),
+                str(step.get("title", "")),
+                "; ".join(str(item) for item in dod),
+            ]
+        )
+    evidence_items = []
+    for item in evidence:
+        if isinstance(item, dict):
+            evidence_items.append(
+                f"{item.get('id', '')}: {item.get('claim', '')} "
+                f"({item.get('locator', '')})"
+            )
+    rejected = thesis.get("rejected_alternatives") or []
+    if not isinstance(rejected, list):
+        rejected = []
+    sections: list[JsonObject] = [
+        {
+            "heading": "Goal",
+            "blocks": [
+                {"type": "paragraph", "text": str(frozen.get("goal", ""))},
+            ],
+        },
+        {
+            "heading": "Thesis",
+            "blocks": [
+                {
+                    "type": "paragraph",
+                    "text": str(thesis.get("approach") or thesis.get("summary") or ""),
+                },
+                {
+                    "type": "list",
+                    "items": [str(item) for item in rejected]
+                    or ["(no rejected alternatives recorded)"],
+                },
+            ],
+        },
+        {
+            "heading": "Steps",
+            "blocks": [
+                {
+                    "type": "table",
+                    "headers": ["ID", "Step", "DoD"],
+                    "rows": step_rows
+                    or [["", "No steps", ""]],
+                }
+            ],
+        },
+    ]
+    if evidence_items:
+        sections.append(
+            {
+                "heading": "Evidence",
+                "blocks": [{"type": "list", "items": evidence_items}],
+            }
+        )
+    return {
+        "id": "00",
+        "slug": "plano",
+        "title": "Plano",
+        "summary": str(frozen.get("prompt_summary") or frozen.get("goal") or "Plan"),
+        "sections": sections,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("report", type=Path, help="Path to plan-report.json")
@@ -283,9 +360,11 @@ def main() -> int:
         return 2
 
     chapters = report.get("chapters")
-    if not isinstance(chapters, list) or not chapters:
-        print("error: report.chapters must be a non-empty array", file=sys.stderr)
-        return 2
+    if not isinstance(chapters, list):
+        chapters = []
+    if not chapters:
+        chapters = [synthesize_compact_chapter(report)]
+        report["chapters"] = chapters
 
     out_dir = Path(args.out).expanduser()
     if not out_dir.is_absolute():

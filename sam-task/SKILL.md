@@ -63,13 +63,16 @@ blocking. On ambiguity: evidence first, else `BLOCKED`.
 ### 1. Plan — `sam-plan`
 
 Run against the frozen user prompt. Honor complexity routing (`simple` plans
-stay compact; do not force deep ceremony).
+stay compact; do not force deep ceremony). Prefer the child's compact freeze;
+do not require an HTML pack unless the user asked for one.
 
-- Require validated `READY_TO_EXECUTE` plus plan HTML + `plan-report.json`.
+- Require validated `READY_TO_EXECUTE` with `$PLAN_DIR/plan-report.json` and a
+  freeze validator receipt of `VALID` (hard core only). HTML pack is optional
+  and is **not** a plan-phase gate.
 - `NOT_CONFIDENT` or `BLOCKED` → workflow `BLOCKED` (record plan residuals).
-- Freeze plan dir, depth, thesis, acceptance criteria, and no-go into the task
-  ledger. Downstream phases consume this freeze; they do not renegotiate goal
-  silently.
+- Freeze plan dir, depth, thesis, acceptance criteria, no-go, steps/DoD, and
+  risk flags into the task ledger from the plan report. Downstream phases
+  consume this freeze; they do not renegotiate goal silently.
 
 ### 2. Refine — `sam-refine-task`
 

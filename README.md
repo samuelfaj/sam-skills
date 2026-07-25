@@ -42,10 +42,9 @@ and orchestration.
   the real base, commits, diff, and validation evidence.
 - `sam-orchestrate`: coordinate complex work through capability- and risk-based
   delegation, skeptical verification, and an independent review gate.
-- `sam-plan`: produce a case-specific millimetric HTML execution plan from a
-  prompt, auto-scaling from a compact simple pack to a deep multi-chapter plan,
-  with evidence ledgers, simplicity cuts, and council falsification when
-  load-bearing.
+- `sam-plan`: conduct task study and emit a machine freeze plan (goal, thesis,
+  steps, evidence, status) with optional HTML pack; assertive investigation
+  first, form flexible, council only on risk triggers.
 - `sam-task`: run plan → refine → `sam-work` delivery, then a closure loop of
   `sam-review` plus `sam-council` that fixes material findings until both gates
   are clean on one head.

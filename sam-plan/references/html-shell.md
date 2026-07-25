@@ -2,10 +2,17 @@
 
 ## Contents
 
-1. Visual contract
-2. Page structure
-3. Components
-4. Generation rule
+1. When to render
+2. Visual contract
+3. Page structure
+4. Components
+5. Generation rule
+
+## When to render
+
+HTML pack is **optional**. Emit only when the user asks for HTML/pack or handoff
+risk warrants a human-readable multi-page view. The freeze (`plan-report.json`)
+remains the machine source of truth.
 
 ## Visual contract
 
@@ -43,5 +50,6 @@ Wireframes stay textual unless the user provides or requests images.
 
 Never hand-author divergent CSS per chapter. Use
 `scripts/render_plan_html.py` from the structured `plan-report.json` so nav,
-IDs, and shell stay consistent. Body content may include safe HTML fragments
-already sanitized by the planner (no scripts, no inline event handlers).
+IDs, and shell stay consistent. If `chapters` is empty, the renderer synthesizes
+a single compact page from the freeze. Body content may include safe HTML
+fragments already sanitized by the planner (no scripts, no inline event handlers).

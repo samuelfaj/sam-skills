@@ -2,18 +2,20 @@
 
 ## Contents
 
-1. Depth levels
+1. Depth signals
 2. Classification signals
-3. Required effort by depth
+3. Effort guidance
 4. Escalation rules
 
-## Depth levels
+## Depth signals
 
-| Depth | Use when | Chapters | Council |
+Depth is a **routing signal**, not a chapter or council lock.
+
+| Depth | Use when | Plan shape | Council |
 | --- | --- | --- | --- |
-| `simple` | One clear change, low risk, reversible, few files | 1–3 core only | Optional; skip when no high-risk trigger |
-| `standard` | Multi-step feature/bug with real seams | Core pack | At least one `fast` pass on the executable thesis |
-| `deep` | Product-shaped, migration, security, multi-system | Core + every gated chapter that changes decisions | Skeleton `fast` + close pass; `full` when council triggers fire |
+| `simple` | One clear change, low risk, reversible, few files | Compact freeze + short projection | Skip unless a risk trigger fires |
+| `standard` | Multi-step feature/bug with real seams | Denser freeze; optional lenses | Only on risk triggers or user request |
+| `deep` | Product-shaped, migration, multi-system | Dense freeze; use lenses that change decisions | Risk triggers likely; escalate per council |
 
 Default when uncertain: `standard`. Prefer `simple` over ceremony.
 
@@ -34,32 +36,26 @@ If any high-risk signal appears, do not stay on `simple`.
 
 Security/privacy, payments, data migration, destructive ops, production-only paths,
 public API compatibility, compliance, multi-provider infrastructure, or hard-to-reverse
-schema/state changes.
+schema/state changes. Map these into `risk_flags` (see council-integration).
 
-## Required effort by depth
+## Effort guidance
 
 ### `simple`
 
-1. Freeze goal, non-goals, success, and no-go in one short block.
-2. Minimal evidence: enough facts to justify the chosen steps.
-3. One thesis, ordered steps with DoD, and a tiny verification list.
-4. Skip council when no high-risk trigger; record `council.skip_reason`.
-5. Render a compact HTML pack (overview + steps; risks only if any).
+1. Short freeze of goal, non-goals, success, no-go.
+2. Minimal evidence: enough FACT locators to justify the steps.
+3. One thesis, ordered steps with DoD, tiny verification list.
+4. Skip council when no risk trigger; record `council.skip_reason`.
 
-### `standard`
+### `standard` / `deep`
 
-Full core chapter set, evidence ledger, simplicity cuts, verification map, and at
-least one validated `sam-council` `fast` run on the executable thesis. Escalate to
-`full` when the council contract requires it.
-
-### `deep`
-
-Everything in `standard`, plus every gated chapter that changes an implementation
-decision, residual decision log, and a closing council pass on the final thesis.
+Same freeze shape, denser evidence and risks. Add optional chapter lenses only
+when they change an implementation decision. Run council when risk triggers fire
+or the user requests it—not because the depth label is `standard`.
 
 ## Escalation rules
 
-- Explicit user request for `deep` / full product plan → honor it.
+- Explicit user request for deep / full product plan → honor denser freeze and pack if asked.
 - Council `ESCALATE_TO_FULL` or open blocker/high → deepen the plan; do not report
   `READY_TO_EXECUTE` while those remain open.
 - Do not invent chapters to look thorough. Prefer fewer pages that change decisions.

@@ -29,10 +29,20 @@ def run(
     )
 
 
-def validate(path: Path, *, require_html: bool = False) -> subprocess.CompletedProcess[str]:
+def validate(
+    path: Path,
+    *,
+    require_html: bool = False,
+    repo_root: Path | None = None,
+    check_locators: bool = False,
+) -> subprocess.CompletedProcess[str]:
     command = [sys.executable, "-B", str(SCRIPTS / "validate_plan_report.py"), str(path)]
     if require_html:
         command.append("--require-html")
+    if repo_root is not None:
+        command.extend(["--repo-root", str(repo_root)])
+    if check_locators:
+        command.append("--check-locators")
     return run(command, check=False)
 
 
@@ -64,30 +74,38 @@ def scaffold(out: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def base_simple_report(plan_dir: str) -> JsonObject:
-    return {
+def base_simple_report(plan_dir: str, *, repo_root: str | None = None) -> JsonObject:
+    surface = "src/views/InvoiceDetail.tsx"
+    criterion = "Page renders with a safe empty total state"
+    report: JsonObject = {
         "schema_version": 1,
         "workflow": "plan",
         "status": "READY_TO_EXECUTE",
         "depth": "simple",
         "case_type": "BUG",
         "complexity_rationale": (
-            "Single clear bugfix on one module with no migration, auth, or "
+            "Single clear bug fix on one module with no migration, auth, or "
             "irreversible rollout risk."
         ),
+        "risk_flags": [],
+        "study": {
+            "tools_used": ["rg InvoiceDetail", "read InvoiceDetail.tsx"],
+            "surfaces_mapped": [surface],
+            "prompt_ambiguities": [],
+        },
         "frozen": {
             "prompt_hash": "abc123",
             "prompt_summary": "Fix null crash on invoice total",
             "goal": "Stop the invoice detail page from crashing when total is null.",
             "non_goals": ["Rewrite billing", "Change invoice schema"],
-            "success_criteria": ["Page renders with a safe empty total state"],
+            "success_criteria": [criterion],
             "invariants": ["Do not change payment capture"],
             "constraints": ["Minimal diff"],
             "no_go": ["Production data edits"],
         },
         "output": {
             "plan_dir": plan_dir,
-            "html_files": ["00-plano.html"],
+            "html_files": [],
         },
         "evidence": [
             {
@@ -95,7 +113,7 @@ def base_simple_report(plan_dir: str) -> JsonObject:
                 "kind": "CODE",
                 "classification": "FACT",
                 "claim": "Invoice view reads total without a null guard.",
-                "locator": "src/views/InvoiceDetail.tsx:42",
+                "locator": f"{surface}:1",
             }
         ],
         "assumptions": [
@@ -119,7 +137,7 @@ def base_simple_report(plan_dir: str) -> JsonObject:
                 "title": "Add null-safe total rendering",
                 "why": "Removes the crash without schema churn.",
                 "depends_on": [],
-                "surfaces": ["src/views/InvoiceDetail.tsx"],
+                "surfaces": [surface],
                 "dod": ["No throw on null total", "Draft invoices still open"],
                 "proof_ids": ["V-001"],
                 "simpler_rejected": None,
@@ -135,46 +153,17 @@ def base_simple_report(plan_dir: str) -> JsonObject:
                 "claim_ids": ["S-001"],
             }
         ],
-        "chapters": [
+        "acceptance_trace": [
             {
-                "id": "00",
-                "slug": "plano",
-                "title": "Plano simples",
-                "summary": "Compact plan for a single null-guard fix.",
-                "sections": [
-                    {
-                        "heading": "Objetivo",
-                        "blocks": [
-                            {
-                                "type": "paragraph",
-                                "text": "Corrigir o crash quando total e null.",
-                            }
-                        ],
-                    },
-                    {
-                        "heading": "Passos",
-                        "blocks": [
-                            {
-                                "type": "table",
-                                "headers": ["ID", "Passo", "DoD"],
-                                "rows": [
-                                    [
-                                        "S-001",
-                                        "Null-safe total rendering",
-                                        "Sem throw; draft abre",
-                                    ]
-                                ],
-                            }
-                        ],
-                    },
-                ],
+                "criterion": criterion,
+                "step_ids": ["S-001"],
+                "proof_ids": ["V-001"],
             }
         ],
+        "chapters": [],
         "council": {
             "required": False,
-            "skip_reason": (
-                "depth=simple with no high-risk trigger; local reversible UI guard only"
-            ),
+            "skip_reason": "no risk_flags; local reversible UI guard only",
             "runs": [],
         },
         "simplicity": {
@@ -184,9 +173,15 @@ def base_simple_report(plan_dir: str) -> JsonObject:
         "residuals": [],
         "blockers": [],
     }
+    if repo_root:
+        study = report["study"]
+        assert isinstance(study, dict)
+        study["repo_root"] = repo_root
+    return report
 
 
 def base_standard_report(plan_dir: str) -> JsonObject:
+    """Standard depth without forced council when risk_flags empty."""
     report = base_simple_report(plan_dir)
     report.update(
         {
@@ -196,18 +191,14 @@ def base_standard_report(plan_dir: str) -> JsonObject:
             "complexity_rationale": (
                 "Multi-step feature across API and UI with a clear but non-trivial seam."
             ),
+            "risk_flags": [],
             "council": {
-                "required": True,
-                "skip_reason": None,
-                "runs": [
-                    {
-                        "profile": "fast",
-                        "status": "TRIAGE_PASS",
-                        "thesis_id": "T-001",
-                        "report_path": "scratch/council-report.json",
-                        "material_objections_closed": True,
-                    }
-                ],
+                "required": False,
+                "skip_reason": (
+                    "no risk_flags; multi-step feature without security, migration, "
+                    "or public-contract trigger"
+                ),
+                "runs": [],
             },
             "chapters": [
                 {
@@ -244,49 +235,12 @@ def base_standard_report(plan_dir: str) -> JsonObject:
                         }
                     ],
                 },
-                {
-                    "id": "06",
-                    "slug": "verificacao",
-                    "title": "Verificacao",
-                    "summary": "Proof plan.",
-                    "sections": [
-                        {
-                            "heading": "Checks",
-                            "blocks": [
-                                {
-                                    "type": "callout",
-                                    "tone": "ok",
-                                    "text": "V-001 planned after implementation.",
-                                }
-                            ],
-                        }
-                    ],
-                },
-                {
-                    "id": "99",
-                    "slug": "execution-log",
-                    "title": "Execution log",
-                    "summary": "Planning receipts.",
-                    "sections": [
-                        {
-                            "heading": "Council",
-                            "blocks": [
-                                {
-                                    "type": "paragraph",
-                                    "text": "fast TRIAGE_PASS on T-001.",
-                                }
-                            ],
-                        }
-                    ],
-                },
             ],
             "output": {
                 "plan_dir": plan_dir,
                 "html_files": [
                     "00-visao-objetivo.html",
                     "04-passos.html",
-                    "06-verificacao.html",
-                    "99-execution-log.html",
                 ],
             },
         }
@@ -294,8 +248,50 @@ def base_standard_report(plan_dir: str) -> JsonObject:
     return report
 
 
-def assert_valid(path: Path, *, require_html: bool = False) -> None:
-    result = validate(path, require_html=require_html)
+def base_risk_council_report(plan_dir: str) -> JsonObject:
+    report = base_simple_report(plan_dir)
+    report.update(
+        {
+            "depth": "standard",
+            "case_type": "MIGRATION",
+            "complexity_rationale": "Schema migration with irreversible backfill risk.",
+            "risk_flags": ["data_migration", "irreversible"],
+            "frozen": {
+                **report["frozen"],  # type: ignore[misc]
+                "goal": "Run a one-way schema migration with backfill for order totals.",
+                "prompt_summary": "Irreversible data migration for order totals",
+            },
+            "council": {
+                "required": True,
+                "skip_reason": None,
+                "runs": [
+                    {
+                        "profile": "fast",
+                        "status": "TRIAGE_PASS",
+                        "thesis_id": "T-001",
+                        "report_path": "scratch/council-report.json",
+                        "material_objections_closed": True,
+                    }
+                ],
+            },
+        }
+    )
+    return report
+
+
+def assert_valid(
+    path: Path,
+    *,
+    require_html: bool = False,
+    repo_root: Path | None = None,
+    check_locators: bool = False,
+) -> None:
+    result = validate(
+        path,
+        require_html=require_html,
+        repo_root=repo_root,
+        check_locators=check_locators,
+    )
     if result.returncode != 0:
         raise AssertionError(
             f"expected VALID, got {result.returncode}: {result.stdout}{result.stderr}"
@@ -304,8 +300,14 @@ def assert_valid(path: Path, *, require_html: bool = False) -> None:
         raise AssertionError(f"missing VALID marker: {result.stdout}")
 
 
-def assert_invalid(path: Path, snippet: str) -> None:
-    result = validate(path)
+def assert_invalid(
+    path: Path,
+    snippet: str,
+    *,
+    repo_root: Path | None = None,
+    check_locators: bool = False,
+) -> None:
+    result = validate(path, repo_root=repo_root, check_locators=check_locators)
     if result.returncode == 0:
         raise AssertionError(f"expected INVALID for {snippet}")
     if snippet not in result.stdout:
@@ -329,11 +331,23 @@ def main() -> int:
         if not Path(payload["plan_dir"]).is_dir():
             raise AssertionError("scaffold did not create plan_dir")
 
+        # Real mini-repo for locator resolution
+        repo = root / "app"
+        target = repo / "src" / "views" / "InvoiceDetail.tsx"
+        target.parent.mkdir(parents=True)
+        target.write_text(
+            "export function InvoiceDetail() { return total; }\n",
+            encoding="utf-8",
+        )
+
+        # Compact freeze READY without chapters/HTML
         simple_path = root / "simple.json"
-        simple = base_simple_report(str(plan_dir))
+        simple = base_simple_report(str(plan_dir), repo_root=str(repo))
         write_report(simple_path, simple)
         assert_valid(simple_path)
+        assert_valid(simple_path, repo_root=repo, check_locators=True)
 
+        # Optional pack: render synthesizes or uses chapters
         render_result = render(simple_path, plan_dir)
         if render_result.returncode != 0:
             raise AssertionError(render_result.stderr)
@@ -343,6 +357,7 @@ def main() -> int:
         if "<nav" not in html or "S-001" not in html:
             raise AssertionError("rendered HTML missing nav or step content")
 
+        # Standard without forced council
         standard_dir = root / "plan-standard"
         standard_path = root / "standard.json"
         standard = base_standard_report(str(standard_dir))
@@ -353,53 +368,31 @@ def main() -> int:
             raise AssertionError(render_result.stderr)
         assert_valid(standard_dir / "plan-report.json", require_html=True)
 
-        # Adversarial: simple depth with too many chapters
-        too_many = deepcopy(simple)
-        too_many["chapters"] = [
-            deepcopy(simple["chapters"][0]),
-            {
-                "id": "01",
-                "slug": "dois",
-                "title": "Dois",
-                "summary": "x",
-                "sections": [
-                    {
-                        "heading": "H",
-                        "blocks": [{"type": "paragraph", "text": "y"}],
-                    }
-                ],
-            },
-            {
-                "id": "02",
-                "slug": "tres",
-                "title": "Tres",
-                "summary": "x",
-                "sections": [
-                    {
-                        "heading": "H",
-                        "blocks": [{"type": "paragraph", "text": "y"}],
-                    }
-                ],
-            },
-            {
-                "id": "03",
-                "slug": "quatro",
-                "title": "Quatro",
-                "summary": "x",
-                "sections": [
-                    {
-                        "heading": "H",
-                        "blocks": [{"type": "paragraph", "text": "y"}],
-                    }
-                ],
-            },
-        ]
-        too_many["output"]["html_files"] = [
-            f"{c['id']}-{c['slug']}.html" for c in too_many["chapters"]
-        ]
-        bad_path = root / "too-many.json"
-        write_report(bad_path, too_many)
-        assert_invalid(bad_path, "at most 3 chapters")
+        # Risk flags require council runs
+        risk_ok = base_risk_council_report(str(root / "risk-ok"))
+        risk_ok_path = root / "risk-ok.json"
+        write_report(risk_ok_path, risk_ok)
+        assert_valid(risk_ok_path)
+
+        risk_bad = deepcopy(risk_ok)
+        risk_bad["council"] = {
+            "required": False,
+            "skip_reason": "wrongly skipped",
+            "runs": [],
+        }
+        risk_bad_path = root / "risk-bad.json"
+        write_report(risk_bad_path, risk_bad)
+        assert_invalid(risk_bad_path, "risk_flags require council.required=true")
+
+        no_council_run = deepcopy(risk_ok)
+        no_council_run["council"] = {
+            "required": True,
+            "skip_reason": None,
+            "runs": [],
+        }
+        no_council_path = root / "no-council.json"
+        write_report(no_council_path, no_council_run)
+        assert_invalid(no_council_path, "council.runs must not be empty")
 
         # READY with material unknown
         unknown_ready = deepcopy(simple)
@@ -414,16 +407,70 @@ def main() -> int:
         write_report(unknown_path, unknown_ready)
         assert_invalid(unknown_path, "material unknowns")
 
-        # standard without council run
-        no_council = deepcopy(standard)
-        no_council["council"] = {
-            "required": True,
-            "skip_reason": None,
-            "runs": [],
-        }
-        no_council_path = root / "no-council.json"
-        write_report(no_council_path, no_council)
-        assert_invalid(no_council_path, "council.runs must not be empty")
+        # READY without rejected alternatives
+        no_reject = deepcopy(simple)
+        no_reject["thesis"]["rejected_alternatives"] = []
+        no_reject_path = root / "no-reject.json"
+        write_report(no_reject_path, no_reject)
+        assert_invalid(no_reject_path, "rejected_alternatives")
+
+        # READY without FACT locator
+        no_fact = deepcopy(simple)
+        no_fact["evidence"] = [
+            {
+                "id": "E-001",
+                "kind": "NOTE",
+                "classification": "ASSUMPTION",
+                "claim": "Maybe totals are null",
+                "locator": "",
+            }
+        ]
+        no_fact_path = root / "no-fact.json"
+        write_report(no_fact_path, no_fact)
+        assert_invalid(no_fact_path, "FACT evidence with locator")
+
+        # READY without study surfaces
+        no_surfaces = deepcopy(simple)
+        no_surfaces["study"]["surfaces_mapped"] = []
+        no_surfaces_path = root / "no-surfaces.json"
+        write_report(no_surfaces_path, no_surfaces)
+        assert_invalid(no_surfaces_path, "surfaces_mapped")
+
+        # READY without tools_used
+        no_tools = deepcopy(simple)
+        no_tools["study"]["tools_used"] = []
+        no_tools_path = root / "no-tools.json"
+        write_report(no_tools_path, no_tools)
+        assert_invalid(no_tools_path, "tools_used")
+
+        # Missing acceptance_trace for success criterion
+        no_trace = deepcopy(simple)
+        no_trace["acceptance_trace"] = []
+        no_trace_path = root / "no-trace.json"
+        write_report(no_trace_path, no_trace)
+        assert_invalid(no_trace_path, "acceptance_trace")
+
+        # Fake locator fails with --repo-root
+        bad_loc = deepcopy(simple)
+        bad_loc["evidence"][0]["locator"] = "src/views/DoesNotExist.tsx:1"
+        bad_loc_path = root / "bad-loc.json"
+        write_report(bad_loc_path, bad_loc)
+        assert_invalid(
+            bad_loc_path,
+            "locator path does not exist",
+            repo_root=repo,
+            check_locators=True,
+        )
+
+        # Heuristic: migration language without flags
+        underflag = deepcopy(simple)
+        underflag["frozen"]["goal"] = (
+            "Apply an irreversible schema migration with backfill for users."
+        )
+        underflag["risk_flags"] = []
+        underflag_path = root / "underflag.json"
+        write_report(underflag_path, underflag)
+        assert_invalid(underflag_path, "missing risk_flags suggested by heuristics")
 
         # READY with unverified assumption
         unverified = deepcopy(simple)
@@ -449,8 +496,8 @@ def main() -> int:
         write_report(blocked_ok_path, blocked_ok)
         assert_valid(blocked_ok_path)
 
-        # HTML files mismatch
-        mismatch = deepcopy(simple)
+        # HTML files mismatch when chapters present
+        mismatch = deepcopy(standard)
         mismatch["output"]["html_files"] = ["99-missing.html"]
         mismatch_path = root / "mismatch.json"
         write_report(mismatch_path, mismatch)

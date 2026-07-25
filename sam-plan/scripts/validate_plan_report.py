@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate sam-plan plan-report.json against the output contract."""
+"""Validate sam-plan plan-report.json: hard freeze core, optional HTML pack."""
 
 from __future__ import annotations
 
@@ -17,6 +17,18 @@ DEPTHS = {"simple", "standard", "deep"}
 CASE_TYPES = {"BUG", "FEATURE", "PRODUCT", "MIGRATION", "OPS", "SPIKE"}
 CLASSIFICATIONS = {"FACT", "ASSUMPTION", "UNKNOWN"}
 PROOF_STATUSES = {"PASS", "PLANNED", "NOT_RUN", "BLOCKED", "NOT_APPLICABLE"}
+RISK_FLAGS = {
+    "security_privacy",
+    "auth_boundary",
+    "data_migration",
+    "irreversible",
+    "public_contract",
+    "multi_service",
+    "payments",
+    "compliance",
+    "user_requested_council",
+    "material_uncertainty",
+}
 ID_PATTERNS = {
     "evidence": re.compile(r"^E-\d{3,}$"),
     "assumptions": re.compile(r"^A-\d{3,}$"),
@@ -26,8 +38,86 @@ ID_PATTERNS = {
     "verifications": re.compile(r"^V-\d{3,}$"),
     "thesis": re.compile(r"^T-\d{3,}$"),
 }
+# Soft: allow free-form IDs if unique; hard patterns preferred but not required
+# when they already match uniqueness. Keep patterns as soft warnings? No —
+# harness and docs use E-###. Keep pattern enforcement for known series when
+# id looks like series prefix, else require non-empty unique ids.
+LOOSE_ID = re.compile(r"^[A-Za-z][A-Za-z0-9._:-]{0,63}$")
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 CHAPTER_ID_RE = re.compile(r"^\d{2}$")
+# path, path:line, path:line:col — optional trailing symbol notes
+PATH_LOCATOR_RE = re.compile(
+    r"^(?P<path>(?:[A-Za-z]:)?[^:\n]+?)(?::(?P<line>\d+))?(?::(?P<col>\d+))?$"
+)
+DECISION_LOCATOR_RE = re.compile(
+    r"^(?:user\s+decision|decision|owner\s+decision)\s*:\s*.+",
+    re.IGNORECASE,
+)
+COMMAND_LOCATOR_RE = re.compile(r"^(?:command|cmd|shell)\s*:\s*.+", re.IGNORECASE)
+
+# Heuristic keyword → risk_flag (strong signals for READY under-flagging)
+RISK_HEURISTICS: list[tuple[str, re.Pattern[str]]] = [
+    (
+        "auth_boundary",
+        re.compile(
+            r"\b(authz|authorization|login|oauth|rbac|session|permission|role-based|"
+            r"identity\s+provider|sso)\b",
+            re.I,
+        ),
+    ),
+    (
+        "security_privacy",
+        re.compile(
+            r"\b(secret|pii|privacy|gdpr|tenanc|encryption|credential|password|"
+            r"security\s+boundary)\b",
+            re.I,
+        ),
+    ),
+    (
+        "data_migration",
+        re.compile(
+            r"\b(migration|migrate|schema\s+change|backfill|dual-?write|"
+            r"data\s+rewrite)\b",
+            re.I,
+        ),
+    ),
+    (
+        "irreversible",
+        re.compile(
+            r"\b(irreversible|destructive|drop\s+table|one-?way|hard\s+delete|"
+            r"no\s+rollback)\b",
+            re.I,
+        ),
+    ),
+    (
+        "public_contract",
+        re.compile(
+            r"\b(public\s+api|breaking\s+change|sdk\s+compat|semver|"
+            r"api\s+compatibility|open\s+api)\b",
+            re.I,
+        ),
+    ),
+    (
+        "multi_service",
+        re.compile(
+            r"\b(multi-?service|cross-?service|microservice|multi-?system|"
+            r"service\s+mesh)\b",
+            re.I,
+        ),
+    ),
+    (
+        "payments",
+        re.compile(
+            r"\b(payment|stripe|payout|charge\s+card|billing\s+capture|"
+            r"money\s+movement|pci)\b",
+            re.I,
+        ),
+    ),
+    (
+        "compliance",
+        re.compile(r"\b(compliance|hipaa|sox|audit\s+log|regulated)\b", re.I),
+    ),
+]
 
 
 def load_json(path: Path) -> JsonObject:
@@ -75,19 +165,134 @@ def string_list(
 
 
 def unique_ids(
-    items: list[JsonObject], key: str, pattern: re.Pattern[str], label: str, errors: list[str]
+    items: list[JsonObject],
+    pattern: re.Pattern[str] | None,
+    label: str,
+    errors: list[str],
 ) -> set[str]:
     seen: set[str] = set()
     for index, item in enumerate(items):
         item_id = nonempty_text(item.get("id"), f"{label}[{index}].id", errors)
         if not item_id:
             continue
-        if not pattern.fullmatch(item_id):
-            errors.append(f"{label}[{index}].id must match {pattern.pattern}")
+        if pattern is not None and not pattern.fullmatch(item_id):
+            if not LOOSE_ID.fullmatch(item_id):
+                errors.append(
+                    f"{label}[{index}].id must match {pattern.pattern} or a short id"
+                )
+            # Prefer series patterns; accept loose unique ids for flexibility
+            elif not pattern.fullmatch(item_id) and item_id[0] in "EAUSRTV":
+                # Looks like series but wrong shape
+                if not re.match(r"^[EAUSRTV]-", item_id):
+                    pass
+                elif not pattern.fullmatch(item_id):
+                    errors.append(
+                        f"{label}[{index}].id must match {pattern.pattern}"
+                    )
         if item_id in seen:
             errors.append(f"{label} repeats id {item_id}")
         seen.add(item_id)
     return seen
+
+
+def parse_path_locator(locator: str) -> tuple[str | None, int | None]:
+    """Return (relative_path, line) for filesystem locators; None path if exempt."""
+    text = locator.strip()
+    if not text:
+        return None, None
+    if DECISION_LOCATOR_RE.fullmatch(text) or COMMAND_LOCATOR_RE.fullmatch(text):
+        return None, None
+    # Allow "symbol @ path:line"
+    if " @" in text:
+        text = text.split(" @", 1)[1].strip()
+    # Strip trailing parenthetical notes: path:12 (function)
+    if " (" in text and text.endswith(")"):
+        text = text[: text.rfind(" (")].strip()
+    match = PATH_LOCATOR_RE.fullmatch(text)
+    if not match:
+        return None, None
+    path = match.group("path").strip().strip("\"'")
+    line_raw = match.group("line")
+    line = int(line_raw) if line_raw else None
+    # Reject bare words without path separators as non-path (still count as locator text)
+    if "/" not in path and "\\" not in path and not path.endswith(
+        (".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rs", ".java", ".kt", ".md", ".json", ".yml", ".yaml", ".toml", ".sql")
+    ):
+        return None, None
+    return path, line
+
+
+def resolve_locator_path(repo_root: Path, rel: str) -> Path | None:
+    candidate = Path(rel)
+    if candidate.is_absolute():
+        path = candidate
+    else:
+        path = (repo_root / rel).resolve()
+        try:
+            path.relative_to(repo_root.resolve())
+        except ValueError:
+            return None
+    return path
+
+
+def check_locator_against_repo(
+    locator: str, repo_root: Path, label: str, errors: list[str]
+) -> bool:
+    """Return True if locator is path-like and valid, or exempt (decision/command)."""
+    rel, line = parse_path_locator(locator)
+    if rel is None:
+        # decision/command or non-path prose locator — structural only
+        return DECISION_LOCATOR_RE.fullmatch(locator.strip()) is not None or (
+            COMMAND_LOCATOR_RE.fullmatch(locator.strip()) is not None
+        )
+    path = resolve_locator_path(repo_root, rel)
+    if path is None or not path.is_file():
+        errors.append(f"{label}: locator path does not exist under repo: {rel}")
+        return False
+    if line is not None:
+        try:
+            line_count = sum(1 for _ in path.open(encoding="utf-8", errors="replace"))
+        except OSError as error:
+            errors.append(f"{label}: cannot read locator path {rel}: {error}")
+            return False
+        if line < 1 or line > line_count:
+            errors.append(
+                f"{label}: locator line {line} out of range for {rel} ({line_count} lines)"
+            )
+            return False
+    return True
+
+
+def collect_heuristic_risk_flags(report: JsonObject) -> set[str]:
+    """Suggest risk_flags from case_type + goal/steps/surfaces (not negating rationales)."""
+    frozen = report.get("frozen") if isinstance(report.get("frozen"), dict) else {}
+    # Intentionally exclude complexity_rationale / non_goals — they often say "no migration".
+    blobs: list[str] = [
+        str(frozen.get("goal") or ""),
+        str(frozen.get("prompt_summary") or ""),
+    ]
+    case_type = str(report.get("case_type") or "")
+    suggested: set[str] = set()
+    if case_type == "MIGRATION":
+        suggested.update({"data_migration", "irreversible"})
+    study = report.get("study") if isinstance(report.get("study"), dict) else {}
+    surfaces = (
+        study.get("surfaces_mapped")
+        if isinstance(study.get("surfaces_mapped"), list)
+        else []
+    )
+    blobs.append(" ".join(str(s) for s in surfaces))
+    for step in report.get("steps") or []:
+        if isinstance(step, dict):
+            blobs.append(str(step.get("title") or ""))
+            blobs.append(str(step.get("why") or ""))
+            sur = step.get("surfaces") if isinstance(step.get("surfaces"), list) else []
+            blobs.append(" ".join(str(s) for s in sur))
+    text = "\n".join(blobs)
+    for flag, pattern in RISK_HEURISTICS:
+        if pattern.search(text):
+            suggested.add(flag)
+    return suggested
 
 
 def validate_blocks(blocks: list[Any], label: str, errors: list[str]) -> None:
@@ -134,7 +339,14 @@ def validate_blocks(blocks: list[Any], label: str, errors: list[str]) -> None:
                 errors.append(f"{label}[{index}].type is unsupported: {block_type}")
 
 
-def validate_report(report: JsonObject, *, require_html: bool, report_path: Path) -> list[str]:
+def validate_report(
+    report: JsonObject,
+    *,
+    require_html: bool,
+    report_path: Path,
+    repo_root: Path | None = None,
+    check_locators: bool = False,
+) -> list[str]:
     errors: list[str] = []
 
     if report.get("schema_version") != 1:
@@ -156,6 +368,13 @@ def validate_report(report: JsonObject, *, require_html: bool, report_path: Path
 
     nonempty_text(report.get("complexity_rationale"), "complexity_rationale", errors)
 
+    risk_flags = string_list(
+        report.get("risk_flags", []), "risk_flags", errors, allow_empty=True
+    )
+    for flag in risk_flags:
+        if flag not in RISK_FLAGS:
+            errors.append(f"risk_flags contains unknown flag: {flag}")
+
     frozen = mapping(report.get("frozen"), "frozen", errors)
     for key in (
         "prompt_hash",
@@ -163,19 +382,57 @@ def validate_report(report: JsonObject, *, require_html: bool, report_path: Path
         "goal",
     ):
         nonempty_text(frozen.get(key), f"frozen.{key}", errors)
+    success_criteria = string_list(
+        frozen.get("success_criteria"), "frozen.success_criteria", errors, allow_empty=True
+    )
     for key in (
         "non_goals",
-        "success_criteria",
         "invariants",
         "constraints",
         "no_go",
     ):
         string_list(frozen.get(key), f"frozen.{key}", errors, allow_empty=True)
 
+    # Study receipts
+    study = mapping(report.get("study"), "study", errors) if "study" in report else {}
+    if status == "READY_TO_EXECUTE" and "study" not in report:
+        errors.append("READY_TO_EXECUTE requires study object")
+    surfaces_mapped: list[str] = []
+    tools_used: list[str] = []
+    if study or "study" in report:
+        study = mapping(report.get("study"), "study", errors)
+        surfaces_mapped = string_list(
+            study.get("surfaces_mapped", []),
+            "study.surfaces_mapped",
+            errors,
+            allow_empty=True,
+        )
+        tools_used = string_list(
+            study.get("tools_used", []),
+            "study.tools_used",
+            errors,
+            allow_empty=True,
+        )
+        string_list(
+            study.get("prompt_ambiguities", []),
+            "study.prompt_ambiguities",
+            errors,
+            allow_empty=True,
+        )
+        if study.get("repo_root") is not None:
+            rr = nonempty_text(study.get("repo_root"), "study.repo_root", errors)
+            if rr and repo_root is None:
+                candidate = Path(rr).expanduser()
+                if candidate.is_dir():
+                    repo_root = candidate.resolve()
+
     output = mapping(report.get("output"), "output", errors)
     plan_dir = nonempty_text(output.get("plan_dir"), "output.plan_dir", errors)
+    html_files_raw = output.get("html_files", [])
+    if html_files_raw is None:
+        html_files_raw = []
     html_files = string_list(
-        output.get("html_files"), "output.html_files", errors, allow_empty=False
+        html_files_raw, "output.html_files", errors, allow_empty=True
     )
     for name in html_files:
         if not name.endswith(".html") or "/" in name or "\\" in name:
@@ -186,8 +443,11 @@ def validate_report(report: JsonObject, *, require_html: bool, report_path: Path
         for index, item in enumerate(sequence(report.get("evidence"), "evidence", errors))
     ]
     evidence_ids = unique_ids(
-        evidence_items, "id", ID_PATTERNS["evidence"], "evidence", errors
+        evidence_items, ID_PATTERNS["evidence"], "evidence", errors
     )
+    fact_with_locator = 0
+    resolved_fact_locators = 0
+    do_check_locators = check_locators or repo_root is not None
     for index, item in enumerate(evidence_items):
         classification = nonempty_text(
             item.get("classification"), f"evidence[{index}].classification", errors
@@ -198,7 +458,19 @@ def validate_report(report: JsonObject, *, require_html: bool, report_path: Path
         nonempty_text(item.get("claim"), f"evidence[{index}].claim", errors)
         locator = item.get("locator", "")
         if classification == "FACT":
-            nonempty_text(locator, f"evidence[{index}].locator", errors)
+            loc = nonempty_text(locator, f"evidence[{index}].locator", errors)
+            if loc:
+                fact_with_locator += 1
+                if do_check_locators and repo_root is not None:
+                    if check_locator_against_repo(
+                        loc, repo_root, f"evidence[{index}].locator", errors
+                    ):
+                        # Count path-like or exempt decision locators as resolved
+                        rel, _ = parse_path_locator(loc)
+                        if rel is not None or DECISION_LOCATOR_RE.fullmatch(loc.strip()):
+                            resolved_fact_locators += 1
+                elif not do_check_locators:
+                    resolved_fact_locators += 1
         elif locator is not None and not isinstance(locator, str):
             errors.append(f"evidence[{index}].locator must be text")
 
@@ -209,7 +481,7 @@ def validate_report(report: JsonObject, *, require_html: bool, report_path: Path
         )
     ]
     assumption_ids = unique_ids(
-        assumption_items, "id", ID_PATTERNS["assumptions"], "assumptions", errors
+        assumption_items, ID_PATTERNS["assumptions"], "assumptions", errors
     )
     for index, item in enumerate(assumption_items):
         nonempty_text(item.get("claim"), f"assumptions[{index}].claim", errors)
@@ -235,7 +507,7 @@ def validate_report(report: JsonObject, *, require_html: bool, report_path: Path
         mapping(item, f"unknowns[{index}]", errors)
         for index, item in enumerate(sequence(report.get("unknowns"), "unknowns", errors))
     ]
-    unique_ids(unknown_items, "id", ID_PATTERNS["unknowns"], "unknowns", errors)
+    unique_ids(unknown_items, ID_PATTERNS["unknowns"], "unknowns", errors)
     for index, item in enumerate(unknown_items):
         nonempty_text(item.get("claim"), f"unknowns[{index}].claim", errors)
         if "material" not in item or not isinstance(item.get("material"), bool):
@@ -243,11 +515,13 @@ def validate_report(report: JsonObject, *, require_html: bool, report_path: Path
 
     thesis = mapping(report.get("thesis"), "thesis", errors)
     thesis_id = nonempty_text(thesis.get("id"), "thesis.id", errors)
-    if thesis_id and not ID_PATTERNS["thesis"].fullmatch(thesis_id):
-        errors.append("thesis.id must match T-###")
+    if thesis_id and not (
+        ID_PATTERNS["thesis"].fullmatch(thesis_id) or LOOSE_ID.fullmatch(thesis_id)
+    ):
+        errors.append("thesis.id must be a stable id (prefer T-###)")
     nonempty_text(thesis.get("summary"), "thesis.summary", errors)
     nonempty_text(thesis.get("approach"), "thesis.approach", errors)
-    string_list(
+    rejected = string_list(
         thesis.get("rejected_alternatives"),
         "thesis.rejected_alternatives",
         errors,
@@ -260,7 +534,7 @@ def validate_report(report: JsonObject, *, require_html: bool, report_path: Path
     ]
     if not step_items:
         errors.append("steps must not be empty")
-    step_ids = unique_ids(step_items, "id", ID_PATTERNS["steps"], "steps", errors)
+    step_ids = unique_ids(step_items, ID_PATTERNS["steps"], "steps", errors)
     for index, item in enumerate(step_items):
         nonempty_text(item.get("title"), f"steps[{index}].title", errors)
         nonempty_text(item.get("why"), f"steps[{index}].why", errors)
@@ -281,7 +555,7 @@ def validate_report(report: JsonObject, *, require_html: bool, report_path: Path
         mapping(item, f"risks[{index}]", errors)
         for index, item in enumerate(sequence(report.get("risks"), "risks", errors))
     ]
-    unique_ids(risk_items, "id", ID_PATTERNS["risks"], "risks", errors)
+    unique_ids(risk_items, ID_PATTERNS["risks"], "risks", errors)
     for index, item in enumerate(risk_items):
         nonempty_text(item.get("claim"), f"risks[{index}].claim", errors)
         severity = nonempty_text(item.get("severity"), f"risks[{index}].severity", errors)
@@ -304,7 +578,7 @@ def validate_report(report: JsonObject, *, require_html: bool, report_path: Path
         )
     ]
     verification_ids = unique_ids(
-        verification_items, "id", ID_PATTERNS["verifications"], "verifications", errors
+        verification_items, ID_PATTERNS["verifications"], "verifications", errors
     )
     for index, item in enumerate(verification_items):
         nonempty_text(item.get("proof"), f"verifications[{index}].proof", errors)
@@ -326,12 +600,46 @@ def validate_report(report: JsonObject, *, require_html: bool, report_path: Path
             if proof_id not in verification_ids:
                 errors.append(f"steps[{index}].proof_ids unknown id {proof_id}")
 
+    # Optional acceptance_trace: map success criteria → steps/proofs
+    acceptance_raw = report.get("acceptance_trace", [])
+    if acceptance_raw is None:
+        acceptance_raw = []
+    acceptance_items = [
+        mapping(item, f"acceptance_trace[{index}]", errors)
+        for index, item in enumerate(
+            sequence(acceptance_raw, "acceptance_trace", errors)
+        )
+    ]
+    traced_criteria: set[str] = set()
+    for index, item in enumerate(acceptance_items):
+        criterion = nonempty_text(
+            item.get("criterion"), f"acceptance_trace[{index}].criterion", errors
+        )
+        if criterion:
+            traced_criteria.add(criterion)
+        for sid in string_list(
+            item.get("step_ids", []), f"acceptance_trace[{index}].step_ids", errors
+        ):
+            if sid not in step_ids:
+                errors.append(
+                    f"acceptance_trace[{index}].step_ids unknown id {sid}"
+                )
+        for pid in string_list(
+            item.get("proof_ids", []), f"acceptance_trace[{index}].proof_ids", errors
+        ):
+            if pid not in verification_ids:
+                errors.append(
+                    f"acceptance_trace[{index}].proof_ids unknown id {pid}"
+                )
+
+    # Optional chapters (pack presentation)
+    chapters_value = report.get("chapters", [])
+    if chapters_value is None:
+        chapters_value = []
     chapter_items = [
         mapping(item, f"chapters[{index}]", errors)
-        for index, item in enumerate(sequence(report.get("chapters"), "chapters", errors))
+        for index, item in enumerate(sequence(chapters_value, "chapters", errors))
     ]
-    if not chapter_items:
-        errors.append("chapters must not be empty")
     chapter_slugs: set[str] = set()
     for index, item in enumerate(chapter_items):
         chapter_id = nonempty_text(item.get("id"), f"chapters[{index}].id", errors)
@@ -373,9 +681,10 @@ def validate_report(report: JsonObject, *, require_html: bool, report_path: Path
                 errors,
             )
 
-    expected_html = [f"{item.get('id')}-{item.get('slug')}.html" for item in chapter_items]
-    if html_files and expected_html and set(html_files) != set(expected_html):
-        # allow exact order match preference but require same set
+    if chapter_items and html_files:
+        expected_html = [
+            f"{item.get('id')}-{item.get('slug')}.html" for item in chapter_items
+        ]
         missing = sorted(set(expected_html) - set(html_files))
         extra = sorted(set(html_files) - set(expected_html))
         if missing:
@@ -383,15 +692,14 @@ def validate_report(report: JsonObject, *, require_html: bool, report_path: Path
         if extra:
             errors.append(f"output.html_files has unknown files: {extra}")
 
-    if depth == "simple" and len(chapter_items) > 3:
-        errors.append("simple depth allows at most 3 chapters")
-
     council = mapping(report.get("council"), "council", errors)
     if "required" not in council or not isinstance(council.get("required"), bool):
         errors.append("council.required must be a boolean")
     required = bool(council.get("required"))
     skip_reason = council.get("skip_reason")
     runs = sequence(council.get("runs"), "council.runs", errors)
+    if risk_flags and not required:
+        errors.append("non-empty risk_flags require council.required=true")
     if required:
         if skip_reason not in (None, ""):
             errors.append("council.skip_reason must be empty when required")
@@ -405,11 +713,7 @@ def validate_report(report: JsonObject, *, require_html: bool, report_path: Path
                 run.get("thesis_id"), f"council.runs[{index}].thesis_id", errors
             )
     else:
-        if depth in {"standard", "deep"}:
-            # standard/deep may still skip only with explicit reason when blocked
-            nonempty_text(skip_reason, "council.skip_reason", errors)
-        elif depth == "simple":
-            nonempty_text(skip_reason, "council.skip_reason", errors)
+        nonempty_text(skip_reason, "council.skip_reason", errors)
 
     simplicity = mapping(report.get("simplicity"), "simplicity", errors)
     string_list(simplicity.get("cuts"), "simplicity.cuts", errors, allow_empty=True)
@@ -460,6 +764,45 @@ def validate_report(report: JsonObject, *, require_html: bool, report_path: Path
             errors.append(
                 "READY_TO_EXECUTE forbids UNVERIFIED assumptions; accept or verify them"
             )
+        if not rejected:
+            errors.append(
+                "READY_TO_EXECUTE requires non-empty thesis.rejected_alternatives"
+            )
+        if fact_with_locator < 1:
+            errors.append(
+                "READY_TO_EXECUTE requires at least one FACT evidence with locator"
+            )
+        if case_type != "SPIKE" and not surfaces_mapped:
+            errors.append(
+                "READY_TO_EXECUTE requires non-empty study.surfaces_mapped "
+                "(except case_type=SPIKE)"
+            )
+        if case_type != "SPIKE" and not tools_used:
+            errors.append(
+                "READY_TO_EXECUTE requires non-empty study.tools_used "
+                "(except case_type=SPIKE)"
+            )
+        if do_check_locators and repo_root is not None and resolved_fact_locators < 1:
+            errors.append(
+                "READY_TO_EXECUTE with --repo-root requires at least one FACT "
+                "locator that resolves under the repo (or user decision: …)"
+            )
+        if success_criteria:
+            missing_criteria = [
+                c for c in success_criteria if c not in traced_criteria
+            ]
+            if missing_criteria:
+                errors.append(
+                    "READY_TO_EXECUTE requires acceptance_trace covering each "
+                    f"success criterion; missing: {missing_criteria}"
+                )
+        suggested = collect_heuristic_risk_flags(report)
+        missing_flags = sorted(suggested - set(risk_flags))
+        if missing_flags:
+            errors.append(
+                "READY_TO_EXECUTE missing risk_flags suggested by heuristics: "
+                f"{missing_flags}"
+            )
         if required and runs:
             terminal = {run.get("status") for run in runs if isinstance(run, dict)}
             blockedish = terminal & {"BLOCKED", "REVISE", "ESCALATE_TO_FULL"}
@@ -485,6 +828,8 @@ def validate_report(report: JsonObject, *, require_html: bool, report_path: Path
                 report_on_disk = root / "plan-report.json"
                 if not report_on_disk.is_file():
                     errors.append("plan_dir must contain plan-report.json")
+                if not html_files:
+                    errors.append("--require-html needs non-empty output.html_files")
                 for name in html_files:
                     path = root / name
                     if not path.is_file():
@@ -496,8 +841,7 @@ def validate_report(report: JsonObject, *, require_html: bool, report_path: Path
                         if "<nav" not in text.lower():
                             errors.append(f"{name} missing nav")
 
-    # silence unused for linters / future checks
-    _ = (assumption_ids, residuals, report_path)
+    _ = (assumption_ids, residuals, report_path, depth)
     return errors
 
 
@@ -509,6 +853,17 @@ def main() -> int:
         action="store_true",
         help="Also require rendered HTML files on disk under output.plan_dir",
     )
+    parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=None,
+        help="Target repository root for locator path resolution",
+    )
+    parser.add_argument(
+        "--check-locators",
+        action="store_true",
+        help="Require FACT path locators to exist under --repo-root (or study.repo_root)",
+    )
     args = parser.parse_args()
 
     try:
@@ -517,8 +872,20 @@ def main() -> int:
         print(f"INVALID\nfailed to load report: {error}")
         return 2
 
+    repo_root = args.repo_root.expanduser().resolve() if args.repo_root else None
+    if repo_root is not None and not repo_root.is_dir():
+        print(f"INVALID\n--repo-root is not a directory: {repo_root}")
+        return 2
+    if args.check_locators and repo_root is None:
+        # Allow study.repo_root inside validate_report
+        pass
+
     errors = validate_report(
-        report, require_html=args.require_html, report_path=args.report
+        report,
+        require_html=args.require_html,
+        report_path=args.report,
+        repo_root=repo_root,
+        check_locators=args.check_locators or repo_root is not None,
     )
     if errors:
         print("INVALID")

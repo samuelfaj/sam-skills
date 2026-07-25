@@ -41,7 +41,8 @@ Write `task-report.json` (UTF-8 object):
     "plan_dir": "/absolute/plan",
     "depth": "simple",
     "status": "READY_TO_EXECUTE",
-    "validator_receipt": "VALID"
+    "validator_receipt": "VALID",
+    "freeze_path": "/absolute/plan/plan-report.json"
   },
   "phases": [],
   "closure": {},
