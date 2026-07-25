@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate sam-plan plan-report.json: hard freeze core, optional HTML pack."""
+"""Validate sam-plan plan-report.json: hard freeze core, required light HTML pack (--require-html)."""
 
 from __future__ import annotations
 

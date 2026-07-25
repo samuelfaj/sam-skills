@@ -340,14 +340,14 @@ def main() -> int:
             encoding="utf-8",
         )
 
-        # Compact freeze READY without chapters/HTML
+        # Compact freeze READY (machine core may validate before HTML render)
         simple_path = root / "simple.json"
         simple = base_simple_report(str(plan_dir), repo_root=str(repo))
         write_report(simple_path, simple)
         assert_valid(simple_path)
         assert_valid(simple_path, repo_root=repo, check_locators=True)
 
-        # Optional pack: render synthesizes or uses chapters
+        # Required human pack: render synthesizes light HTML or uses chapters
         render_result = render(simple_path, plan_dir)
         if render_result.returncode != 0:
             raise AssertionError(render_result.stderr)
@@ -356,6 +356,10 @@ def main() -> int:
         html = (plan_dir / "00-plano.html").read_text(encoding="utf-8")
         if "<nav" not in html or "S-001" not in html:
             raise AssertionError("rendered HTML missing nav or step content")
+        if 'name="color-scheme" content="light"' not in html:
+            raise AssertionError("rendered HTML missing light color-scheme meta")
+        if "color-scheme: light" not in html:
+            raise AssertionError("rendered HTML missing light theme CSS")
 
         # Standard without forced council
         standard_dir = root / "plan-standard"

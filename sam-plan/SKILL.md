@@ -1,6 +1,6 @@
 ---
 name: sam-plan
-description: "Conduct task study and emit a machine freeze plan (goal, thesis, steps, evidence, status) with optional HTML pack; assertive investigation first, form flexible, council only on risk triggers. Use when the user runs /sam-plan, asks for an implementation plan, or needs pre-implementation planning before sam-task/sam-work."
+description: "Conduct task study and emit a machine freeze plan (goal, thesis, steps, evidence, status) plus a required light-theme HTML pack for humans; assertive investigation first, council only on risk triggers. Use when the user runs /sam-plan, asks for an implementation plan, or needs pre-implementation planning before sam-task/sam-work."
 ---
 
 # Sam Plan
@@ -8,22 +8,26 @@ description: "Conduct task study and emit a machine freeze plan (goal, thesis, s
 ## Purpose
 
 Turn one planning prompt into a **conducted inquiry + decision freeze**, not a
-document factory. Investigate the repo, freeze decisions, and emit a machine
-`plan-report.json` that parents can consume. Default presentation is compact
-(chat and/or short Markdown projection). Optional HTML pack only when the user
-asks or handoff risk warrants it.
+document factory. Investigate the repo, freeze decisions, and emit:
+
+1. Machine freeze: `plan-report.json` for parents (`sam-task`, validators)
+2. **Human plan pack: light-theme HTML** under `$PLAN_DIR` so people can read
+   the plan without parsing JSON
+
+Default human presentation is always HTML (light theme). Chat/Markdown may
+summarize, but the durable human artifact is the HTML pack.
 
 ## Non-Negotiable Contract
 
-Honesty and scope only—form stays flexible (compact freeze default; optional pack).
+Honesty and scope only—presentation form for humans is HTML light pack.
 
 - Do not implement the target system. No production code edits, commits, PRs,
   deploys, or external writes beyond the plan output directory and local
   scratch/report files.
 - Separate `FACT`, `ASSUMPTION`, and `UNKNOWN`. Never invent locators or promote
   guesses to facts.
-- Always emit a validated machine freeze (`plan-report.json`). Chat/MD is a
-  projection; HTML pack is optional.
+- Always emit a validated machine freeze (`plan-report.json`) **and** a rendered
+  light-theme HTML pack (`scripts/render_plan_html.py` + `--require-html`).
 - Fail closed: `NOT_CONFIDENT` or `BLOCKED` beats a false `READY_TO_EXECUTE`.
 - Council only on risk triggers or explicit user request—not on depth labels.
 - Redact secrets and private data from all plan artifacts.
@@ -45,7 +49,8 @@ in [references/output-contract.md](references/output-contract.md):
 - Council policy for risk triggers (run or explicit skip reason)
 
 Chat or Markdown is a **projection** of this freeze. It does not replace it for
-`sam-task` or other parents.
+`sam-task` or other parents. HTML is the human-readable projection and is
+required on every terminal plan.
 
 ## Resources (load on demand)
 
@@ -53,27 +58,27 @@ Always:
 
 1. [references/output-contract.md](references/output-contract.md) — freeze + READY invariants
 2. [references/simplicity-rules.md](references/simplicity-rules.md)
+3. [references/html-shell.md](references/html-shell.md) — required light HTML pack
 
 When classifying effort or risk:
 
-3. [references/complexity-routing.md](references/complexity-routing.md)
-4. [references/evidence-policy.md](references/evidence-policy.md)
+4. [references/complexity-routing.md](references/complexity-routing.md)
+5. [references/evidence-policy.md](references/evidence-policy.md)
 
 When risk triggers fire or the user requests council:
 
-5. [references/council-integration.md](references/council-integration.md)
-6. `../sam-council/SKILL.md` (full; do not emulate)
+6. [references/council-integration.md](references/council-integration.md)
+7. `../sam-council/SKILL.md` (full; do not emulate)
 
-When emitting an HTML pack:
+When enriching the HTML pack with extra lenses:
 
-7. [references/html-shell.md](references/html-shell.md)
 8. [references/chapter-taxonomy.md](references/chapter-taxonomy.md) — optional lenses only
 
 Runtime scripts (invoke; do not reimplement):
 
 - `scripts/scaffold_plan_dir.py`
 - `scripts/validate_plan_report.py`
-- `scripts/render_plan_html.py` (optional pack)
+- `scripts/render_plan_html.py` (required human pack)
 
 ## Study loop (assertive conduct)
 
@@ -138,12 +143,13 @@ python3 -B "$SAM_PLAN_DIR/scripts/validate_plan_report.py" \
 target tree is unavailable (`BLOCKED` / `NOT_CONFIDENT` is better than fake
 paths). Copy the validated report to `$PLAN_DIR/plan-report.json`.
 
-### 4. Optional HTML pack
+### 4. Required HTML pack (light theme, for humans)
 
-Only when the user asks for HTML/pack or handoff risk warrants it:
+Always render a human-readable light-theme HTML pack after a valid freeze:
 
 - Optionally attach `chapters[]` (lenses from the taxonomy catalog—not a required set).
-- Render and re-validate with HTML on disk:
+- If `chapters` is empty, the renderer synthesizes a single compact page from the freeze.
+- Theme is light (soft page background, white cards)—never emit a dark-only pack.
 
 ```bash
 python3 -B "$SAM_PLAN_DIR/scripts/render_plan_html.py" \
@@ -152,8 +158,8 @@ python3 -B "$SAM_PLAN_DIR/scripts/validate_plan_report.py" \
   "$PLAN_DIR/plan-report.json" --require-html
 ```
 
-If `chapters` is empty, the renderer synthesizes a single compact page from the
-freeze.
+Open the primary HTML file (e.g. `00-plano.html` or the first entry in
+`output.html_files`) as the human plan. Parents still consume `plan-report.json`.
 
 ### 5. Return
 
@@ -161,19 +167,19 @@ Report:
 
 1. Terminal status: `READY_TO_EXECUTE` | `NOT_CONFIDENT` | `BLOCKED`
 2. Depth signal and complexity rationale
-3. Absolute `PLAN_DIR` and whether HTML pack was emitted
+3. Absolute `PLAN_DIR`, primary HTML path(s), and freeze path
 4. Thesis summary and step count
 5. Council skipped (reason) or terminal council result
 6. Residuals, blockers, risk flags
-7. Validator result (`VALID` required before claiming readiness)
+7. Validator result (`VALID` with HTML on disk required before claiming a finished plan)
 
-Do not claim readiness without a passing freeze validator. Remove scratch outside
-the plan directory when done.
+Do not claim a finished plan without a passing freeze validator **and** rendered
+HTML under `$PLAN_DIR`. Remove scratch outside the plan directory when done.
 
 ## Operating notes
 
-- Locale: match the user's language for prose projections when practical.
+- Locale: match the user's language for prose projections and HTML body when practical.
 - Parent workflows may set `PLAN_DIR`. Default is `$PWD/plan`.
-- `sam-task` advances on validated freeze core (`plan-report.json`); HTML is not
-  required for that gate.
+- `sam-task` advances on validated freeze core (`plan-report.json`); HTML is the
+  required human artifact of this skill, not the parent machine gate.
 - Run `scripts/test_plan_harness.py` only when changing this skill.

@@ -3,25 +3,34 @@
 ## Contents
 
 1. When to render
-2. Visual contract
+2. Visual contract (light theme)
 3. Page structure
 4. Components
 5. Generation rule
 
 ## When to render
 
-HTML pack is **optional**. Emit only when the user asks for HTML/pack or handoff
-risk warrants a human-readable multi-page view. The freeze (`plan-report.json`)
-remains the machine source of truth.
+HTML pack is **required** on every terminal plan. It is the human-readable plan
+artifact: openable in a browser so people understand goal, thesis, steps,
+evidence, and status without reading JSON.
 
-## Visual contract
+The freeze (`plan-report.json`) remains the machine source of truth for parents
+and validators. Chat/Markdown may summarize; they do not replace the pack.
 
-Self-contained HTML (CSS in `<style>`, no external build). Match the readability
-of a Lacco-style plan pack without hardcoding a product brand:
+If `chapters` is empty, still render: the renderer synthesizes a single compact
+page from the freeze.
 
-- Soft page background, white cards, sticky horizontal nav
+## Visual contract (light theme)
+
+Self-contained HTML (CSS in `<style>`, no external build). **Light theme only**
+(soft page background, white cards, dark ink). Do not ship dark-only packs.
+
+Match the readability of a Lacco-style plan pack without hardcoding a product brand:
+
+- Soft page background (`#f5f7f6` or equivalent), white cards, sticky horizontal nav
 - Clear H1/H2 hierarchy, dense tables, monospace for paths
 - Callouts: neutral, ok, warn, danger, decision
+- `color-scheme: light` so OS/browser UI stays light around the pack
 
 Use system UI fonts. Keep contrast readable on mobile.
 
@@ -53,3 +62,6 @@ Never hand-author divergent CSS per chapter. Use
 IDs, and shell stay consistent. If `chapters` is empty, the renderer synthesizes
 a single compact page from the freeze. Body content may include safe HTML
 fragments already sanitized by the planner (no scripts, no inline event handlers).
+
+After render, re-validate with `--require-html` so files exist on disk under
+`output.plan_dir`.

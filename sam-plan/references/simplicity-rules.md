@@ -32,8 +32,8 @@ Record:
   for a falsifiable reason (compat, safety, measured constraint).
 
 If the council simplification seat proposes a cut and the plan keeps the complex
-path, the justification must appear in the freeze (and in HTML pack as a warn
-callout when pack is emitted).
+path, the justification must appear in the freeze (and in the HTML pack as a
+warn callout).
 
 ## Anti-patterns
 

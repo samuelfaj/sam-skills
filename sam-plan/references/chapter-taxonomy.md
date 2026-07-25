@@ -9,11 +9,12 @@
 
 ## Role
 
-Chapters are **optional presentation lenses** for an HTML pack. They are not a
-required matrix. Compact freeze plans may omit `chapters` entirely.
+Chapters are **optional presentation lenses** on top of the required light-theme
+HTML pack. They are not a required matrix. Plans may omit `chapters`; the
+renderer then emits a single compact page from the freeze.
 
 Never emit empty ceremonial pages. Only add a lens when it changes an
-implementation decision or the user requested a pack.
+implementation decision or the user asks for a multi-page pack.
 
 ## Lens catalog
 
@@ -58,8 +59,10 @@ prompt locale.
 
 ## When to emit
 
+HTML pack is always required. Chapters control pack shape only:
+
 | Situation | Chapters |
 | --- | --- |
-| Default compact plan | None (freeze only) |
-| User asks for HTML / Lacco-style pack | Minimal set that carries decisions |
-| Handoff to humans who will not read JSON | Compact `00-plano` or focused lenses |
+| Default plan | None → renderer synthesizes compact `00-plano` light HTML |
+| Multi-page / Lacco-style handoff | Minimal set that carries decisions |
+| Dense product / migration plan | Focused lenses that change decisions |

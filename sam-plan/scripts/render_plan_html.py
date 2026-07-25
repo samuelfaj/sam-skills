@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render a validated-style plan-report.json into a multi-page HTML plan pack."""
+"""Render a validated-style plan-report.json into a light-theme multi-page HTML plan pack."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ EVENT_RE = re.compile(r"\son[a-z]+\s*=", re.IGNORECASE)
 
 CSS = """
 :root {
+  color-scheme: light;
   --brand: #0f6b5c;
   --brand-strong: #0b5247;
   --lime: #c6f06c;
@@ -33,6 +34,7 @@ CSS = """
   --info: #1a6ca8;
 }
 * { box-sizing: border-box; }
+html { color-scheme: light; background: var(--bg); }
 body {
   margin: 0;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -232,6 +234,8 @@ def render_page(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f5f7f6">
   <title>{esc(title)}</title>
   <style>
 {CSS}

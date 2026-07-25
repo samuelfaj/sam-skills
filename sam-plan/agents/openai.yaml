@@ -1,4 +1,4 @@
 interface:
   display_name: "Sam Plan"
-  short_description: "Assertive freeze plans with optional HTML pack"
-  default_prompt: "Use $sam-plan to study this task, freeze an executable plan core, use council only on risk triggers, and emit HTML pack only if asked."
+  short_description: "Assertive freeze plans with required light-theme HTML pack"
+  default_prompt: "Use $sam-plan to study this task, freeze an executable plan core, use council only on risk triggers, and always emit a light-theme HTML pack for humans."

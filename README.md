@@ -43,8 +43,8 @@ and orchestration.
 - `sam-orchestrate`: coordinate complex work through capability- and risk-based
   delegation, skeptical verification, and an independent review gate.
 - `sam-plan`: conduct task study and emit a machine freeze plan (goal, thesis,
-  steps, evidence, status) with optional HTML pack; assertive investigation
-  first, form flexible, council only on risk triggers.
+  steps, evidence, status) plus a required light-theme HTML pack for humans;
+  assertive investigation first, council only on risk triggers.
 - `sam-task`: run plan → refine → `sam-work` delivery, then a closure loop of
   `sam-review` plus `sam-council` that fixes material findings until both gates
   are clean on one head.

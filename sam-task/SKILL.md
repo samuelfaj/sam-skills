@@ -64,11 +64,11 @@ blocking. On ambiguity: evidence first, else `BLOCKED`.
 
 Run against the frozen user prompt. Honor complexity routing (`simple` plans
 stay compact; do not force deep ceremony). Prefer the child's compact freeze;
-do not require an HTML pack unless the user asked for one.
+do not treat HTML as the machine gate (sam-plan still emits light HTML for humans).
 
 - Require validated `READY_TO_EXECUTE` with `$PLAN_DIR/plan-report.json` and a
-  freeze validator receipt of `VALID` (hard core only). HTML pack is optional
-  and is **not** a plan-phase gate.
+  freeze validator receipt of `VALID` (hard core only). Light HTML from
+  sam-plan is the human artifact, not the machine plan-phase gate.
 - `NOT_CONFIDENT` or `BLOCKED` → workflow `BLOCKED` (record plan residuals).
 - Freeze plan dir, depth, thesis, acceptance criteria, no-go, steps/DoD, and
   risk flags into the task ledger from the plan report. Downstream phases

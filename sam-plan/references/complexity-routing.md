@@ -13,9 +13,9 @@ Depth is a **routing signal**, not a chapter or council lock.
 
 | Depth | Use when | Plan shape | Council |
 | --- | --- | --- | --- |
-| `simple` | One clear change, low risk, reversible, few files | Compact freeze + short projection | Skip unless a risk trigger fires |
-| `standard` | Multi-step feature/bug with real seams | Denser freeze; optional lenses | Only on risk triggers or user request |
-| `deep` | Product-shaped, migration, multi-system | Dense freeze; use lenses that change decisions | Risk triggers likely; escalate per council |
+| `simple` | One clear change, low risk, reversible, few files | Compact freeze + light HTML pack | Skip unless a risk trigger fires |
+| `standard` | Multi-step feature/bug with real seams | Denser freeze + light HTML; optional lenses | Only on risk triggers or user request |
+| `deep` | Product-shaped, migration, multi-system | Dense freeze + light HTML; lenses that change decisions | Risk triggers likely; escalate per council |
 
 Default when uncertain: `standard`. Prefer `simple` over ceremony.
 
@@ -49,13 +49,14 @@ schema/state changes. Map these into `risk_flags` (see council-integration).
 
 ### `standard` / `deep`
 
-Same freeze shape, denser evidence and risks. Add optional chapter lenses only
-when they change an implementation decision. Run council when risk triggers fire
-or the user requests it—not because the depth label is `standard`.
+Same freeze shape, denser evidence and risks. Always render the light-theme HTML
+pack. Add optional chapter lenses only when they change an implementation
+decision. Run council when risk triggers fire or the user requests it—not
+because the depth label is `standard`.
 
 ## Escalation rules
 
-- Explicit user request for deep / full product plan → honor denser freeze and pack if asked.
+- Explicit user request for deep / full product plan → denser freeze and richer HTML lenses.
 - Council `ESCALATE_TO_FULL` or open blocker/high → deepen the plan; do not report
   `READY_TO_EXECUTE` while those remain open.
 - Do not invent chapters to look thorough. Prefer fewer pages that change decisions.

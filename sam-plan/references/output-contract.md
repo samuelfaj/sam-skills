@@ -5,7 +5,7 @@
 1. Terminal statuses
 2. Hard freeze core
 3. Study and acceptance
-4. Optional presentation
+4. Presentation (machine + human HTML)
 5. READY invariants
 6. Validation
 7. Human response
@@ -32,7 +32,7 @@ Write `plan-report.json` (UTF-8 object) with:
 - `study`: see below
 - `frozen`: `prompt_hash`, `prompt_summary`, `goal`, `non_goals`,
   `success_criteria`, `invariants`, `constraints`, `no_go`
-- `output`: `plan_dir` (absolute); `html_files` (may be empty when no pack)
+- `output`: `plan_dir` (absolute); `html_files` (non-empty after render for a finished plan)
 - `evidence[]`: `id`, `kind`, `classification` (`FACT|ASSUMPTION|UNKNOWN`),
   `claim`, `locator` (required when classification is `FACT`)
 - `assumptions[]`, `unknowns[]` (`material` bool on unknowns)
@@ -49,8 +49,8 @@ IDs should be unique within their series (`E-###`, `A-###`, `U-###`, `T-###`,
 `S-###`, `R-###`, `V-###`). Prefer that shape; the hard fail is uniqueness and
 reference integrity, not ceremony.
 
-Optional: `chapters[]` for HTML pack bodies. Empty chapters are valid for
-compact freeze-only plans.
+Optional: `chapters[]` for HTML pack bodies. Empty chapters are valid; the
+renderer then synthesizes a compact light-theme page from the freeze.
 
 ## Study and acceptance
 
@@ -83,14 +83,17 @@ With `--repo-root`, path locators must exist; line numbers must be in range.
 Each `frozen.success_criteria` entry must appear as `criterion` with
 `step_ids` / `proof_ids` that exist in the freeze.
 
-## Optional presentation
+## Presentation (machine + human HTML)
 
-| Mode | When | Artifacts |
+| Audience | Artifact | Required |
 | --- | --- | --- |
-| Compact (default) | Most plans | `plan-report.json` + chat/MD projection |
-| Pack | User asks or handoff risk | Same freeze + HTML via renderer |
+| Machine / parents | `plan-report.json` freeze | Always |
+| Humans | Light-theme HTML pack via `render_plan_html.py` | Always on terminal plan |
+| Chat | Short projection of status/thesis | Optional summary |
 
-Never treat HTML as the success criterion. Parents consume the freeze file.
+Parents (`sam-task`, etc.) advance on the freeze file. Humans open HTML under
+`$PLAN_DIR` (e.g. `00-plano.html`). Never treat HTML alone as proof that study
+happened; never skip HTML on a finished plan.
 
 ## READY invariants
 
@@ -119,16 +122,17 @@ Never treat HTML as the success criterion. Parents consume the freeze file.
 
 ```bash
 python3 -B scripts/validate_plan_report.py plan-report.json --repo-root "$PWD"
-# optional pack:
+# required human pack (light theme):
 python3 -B scripts/render_plan_html.py plan-report.json --out "$PLAN_DIR"
 python3 -B scripts/validate_plan_report.py plan-report.json --require-html
 ```
 
-Re-validate after any report edit. Cite only a validator `VALID` result as
-machine proof of the freeze.
+Re-validate after any report edit. Cite a freeze validator `VALID` result as
+machine proof; cite `--require-html` `VALID` as proof the human pack is on disk.
 
 ## Human response
 
-Return status, depth signal, plan directory path, whether HTML was emitted,
-thesis summary, open residuals/blockers, risk flags, study surfaces, and
-council skip or result. Do not claim readiness when the freeze validator fails.
+Return status, depth signal, plan directory path, primary HTML path(s), freeze
+path, thesis summary, open residuals/blockers, risk flags, study surfaces, and
+council skip or result. Do not claim a finished plan when freeze or HTML
+validation fails.

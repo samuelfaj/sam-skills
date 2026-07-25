@@ -22,7 +22,7 @@ stale, unvalidated, or non-terminal. Do not emulate a missing child skill.
 ## Child skill terminals
 
 - `sam-plan`: only `READY_TO_EXECUTE` with a `VALID` freeze
-  (`plan-report.json`) advances. HTML pack is optional and not required to
+  (`plan-report.json`) advances. HTML is sam-plan's human artifact and not required to
   advance. `NOT_CONFIDENT` and `BLOCKED` stop the workflow as `BLOCKED` with
   exact residuals.
 - `sam-refine-task`: only `HIGH_CONFIDENCE` advances. `NOT_CONFIDENT` requires
