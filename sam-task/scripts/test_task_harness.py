@@ -72,7 +72,7 @@ def phase(
 
 def valid_report() -> dict[str, Any]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "workflow": "task",
         "workflow_id": "task-001",
         "status": "COMPLETE",
@@ -99,6 +99,7 @@ def valid_report() -> dict[str, Any]:
             phase("refine", "sam-refine-task", "HIGH_CONFIDENCE", head=None),
             phase("work", "sam-work", "COMPLETE", head=HEAD),
             phase("closure", "sam-review+sam-council", "CLEAN", head=HEAD),
+            phase("learn", "sam-task", "LEARNING_AUDITED", head=HEAD),
         ],
         "closure": {
             "max_iterations": 5,
@@ -118,6 +119,14 @@ def valid_report() -> dict[str, Any]:
                     "evidence": ["clean review and council pair"],
                 }
             ],
+        },
+        "learning": {
+            "status": "LEARNING_AUDITED",
+            "write_policy": "PROPOSAL_ONLY",
+            "audited_head_sha": HEAD,
+            "candidates": [],
+            "writes_performed": [],
+            "evidence": ["learning audit found no durable candidate"],
         },
         "work_report_path": "/tmp/repository/work-report.json",
         "residuals": [],
@@ -212,10 +221,10 @@ def main() -> int:
 
         # missing phase
         missing = valid_report()
-        missing["phases"] = missing["phases"][:3]
+        missing["phases"] = missing["phases"][:4]
         missing_path = root / "missing.json"
         write(missing_path, missing)
-        assert_invalid(missing_path, "exactly plan, refine, work, closure")
+        assert_invalid(missing_path, "exactly plan, refine, work, closure, learn")
 
         # council fail on final
         council_fail = valid_report()
@@ -265,6 +274,51 @@ def main() -> int:
         over_path = root / "over.json"
         write(over_path, over)
         assert_invalid(over_path, "exceeded max_iterations")
+
+        # evidence-backed learning proposal is valid but performs no write
+        learned = valid_report()
+        learned["learning"]["candidates"] = [
+            {
+                "id": "L-001",
+                "observation": "Two current-head retries failed for the same stale receipt.",
+                "proposed_rule": "Recompute the receipt after every head change.",
+                "scope": ["sam-task freshness checks"],
+                "evidence": ["closure iterations 1 and 2"],
+                "destination": "SKILL",
+                "revalidate_when": "the report freshness contract changes",
+                "sensitivity": "INTERNAL",
+                "status": "PROPOSED",
+                "decision_reason": "The pattern repeated with current-run evidence.",
+            }
+        ]
+        learned_path = root / "learned.json"
+        write(learned_path, learned)
+        assert_valid(learned_path)
+
+        # learning candidates cannot mutate durable context automatically
+        auto_write = deepcopy(learned)
+        auto_write["learning"]["writes_performed"] = ["updated AGENTS.md"]
+        auto_write_path = root / "auto-write.json"
+        write(auto_write_path, auto_write)
+        assert_invalid(auto_write_path, "writes_performed must be empty")
+
+        # candidate evidence and revalidation conditions are mandatory
+        weak_learning = deepcopy(learned)
+        weak_learning["learning"]["candidates"][0]["evidence"] = []
+        weak_learning["learning"]["candidates"][0]["revalidate_when"] = ""
+        weak_learning_path = root / "weak-learning.json"
+        write(weak_learning_path, weak_learning)
+        assert_invalid(weak_learning_path, "evidence requires at least one receipt")
+        assert_invalid(weak_learning_path, "revalidate_when is required")
+
+        # a COMPLETE workflow cannot skip its learning audit
+        skipped_learning = valid_report()
+        skipped_learning["learning"]["status"] = "BLOCKED"
+        skipped_learning["phases"][4]["status"] = "BLOCKED"
+        skipped_learning["phases"][4]["iterations"] = [iteration("BLOCKED")]
+        skipped_learning_path = root / "skipped-learning.json"
+        write(skipped_learning_path, skipped_learning)
+        assert_invalid(skipped_learning_path, "LEARNING_AUDITED")
 
         print("sam-task harness passed")
     return 0

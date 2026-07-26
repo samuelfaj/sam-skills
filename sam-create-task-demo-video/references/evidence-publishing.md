@@ -2,6 +2,15 @@
 
 Read this file when media must leave the local machine for a PR/MR.
 
+## Contents
+
+1. Non-negotiable rules
+2. Embed markup
+3. Upload procedure
+4. Body composition checklist
+5. Verification
+6. Failure modes
+
 ## Non-negotiable rules
 
 1. **Never commit** generated videos, screenshots, contact sheets, traces, or

@@ -11,31 +11,38 @@ from pathlib import Path
 from typing import Any
 
 
-PHASE_IDS = ["plan", "refine", "work", "closure"]
+PHASE_IDS = ["plan", "refine", "work", "closure", "learn"]
 PHASE_SKILLS = {
     "plan": "sam-plan",
     "refine": "sam-refine-task",
     "work": "sam-work",
     "closure": "sam-review+sam-council",
+    "learn": "sam-task",
 }
 PHASE_TERMINALS = {
     "plan": {"READY_TO_EXECUTE"},
     "refine": {"HIGH_CONFIDENCE"},
     "work": {"COMPLETE"},
     "closure": {"CLEAN"},
+    "learn": {"LEARNING_AUDITED"},
 }
 PHASE_ITERATION_STATUSES = {
     "plan": {"READY_TO_EXECUTE", "NOT_CONFIDENT", "BLOCKED"},
     "refine": {"HIGH_CONFIDENCE", "NOT_CONFIDENT", "BLOCKED"},
     "work": {"COMPLETE", "BLOCKED", "IN_PROGRESS"},
     "closure": {"CLEAN", "OPEN", "BLOCKED"},
+    "learn": {"LEARNING_AUDITED", "BLOCKED"},
 }
 WORKFLOW_STATUSES = {"COMPLETE", "BLOCKED", "IN_PROGRESS"}
 CLASSIFICATIONS = {"BUG", "FEATURE"}
 DEPTHS = {"simple", "standard", "deep"}
 COUNCIL_PASS = {"TRIAGE_PASS", "APPROVED", "APPROVED_WITH_CONDITIONS"}
+LEARNING_DESTINATIONS = {"AGENTS.md", "SKILL", "MEMORY", "NONE"}
+LEARNING_SENSITIVITY = {"PUBLIC", "INTERNAL", "SENSITIVE"}
+LEARNING_STATUSES = {"PROPOSED", "REJECTED"}
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 REVISION = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+LEARNING_ID = re.compile(r"^L-\d{3}$")
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -251,10 +258,75 @@ def validate_closure(closure: Any, final_head: Any, workflow_status: str, errors
         errors.append("BLOCKED report cannot claim CLEAN closure without iterations")
 
 
+def validate_learning(
+    learning: Any,
+    final_head: Any,
+    workflow_status: str,
+    errors: list[str],
+) -> None:
+    if not isinstance(learning, dict):
+        errors.append("learning object is required")
+        return
+
+    status = learning.get("status")
+    if status not in {"LEARNING_AUDITED", "BLOCKED"}:
+        errors.append("learning.status must be LEARNING_AUDITED or BLOCKED")
+    if learning.get("write_policy") != "PROPOSAL_ONLY":
+        errors.append("learning.write_policy must be PROPOSAL_ONLY")
+    if learning.get("audited_head_sha") != final_head:
+        errors.append("learning.audited_head_sha must match target.final_head_sha")
+    if not string_list(learning.get("evidence"), nonempty=True):
+        errors.append("learning.evidence requires at least one receipt")
+
+    writes = learning.get("writes_performed")
+    if writes != []:
+        errors.append("learning.writes_performed must be empty")
+
+    candidates = learning.get("candidates")
+    if not isinstance(candidates, list):
+        errors.append("learning.candidates must be an array")
+        return
+
+    seen_ids: set[str] = set()
+    for index, candidate in enumerate(candidates, start=1):
+        prefix = f"learning candidate {index}"
+        if not isinstance(candidate, dict):
+            errors.append(f"{prefix} must be an object")
+            continue
+        candidate_id = candidate.get("id")
+        if not LEARNING_ID.fullmatch(str(candidate_id or "")):
+            errors.append(f"{prefix} id must match L-###")
+        elif candidate_id in seen_ids:
+            errors.append(f"{prefix} id must be unique")
+        else:
+            seen_ids.add(str(candidate_id))
+        for field in (
+            "observation",
+            "proposed_rule",
+            "revalidate_when",
+            "decision_reason",
+        ):
+            if not nonempty_string(candidate.get(field)):
+                errors.append(f"{prefix} {field} is required")
+        if not string_list(candidate.get("scope"), nonempty=True):
+            errors.append(f"{prefix} scope requires at least one entry")
+        if not string_list(candidate.get("evidence"), nonempty=True):
+            errors.append(f"{prefix} evidence requires at least one receipt")
+        if candidate.get("destination") not in LEARNING_DESTINATIONS:
+            errors.append(f"{prefix} destination is invalid")
+        if candidate.get("sensitivity") not in LEARNING_SENSITIVITY:
+            errors.append(f"{prefix} sensitivity is invalid")
+        if candidate.get("status") not in LEARNING_STATUSES:
+            errors.append(f"{prefix} status is invalid")
+
+    if workflow_status == "COMPLETE" and status != "LEARNING_AUDITED":
+        errors.append("COMPLETE requires learning.status LEARNING_AUDITED")
+
+
 def validate(report: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    if report.get("schema_version") != 1:
-        errors.append("schema_version must be 1")
+    if report.get("schema_version") != 2:
+        errors.append("schema_version must be 2")
     if report.get("workflow") != "task":
         errors.append("workflow must be 'task'")
     if not nonempty_string(report.get("workflow_id")):
@@ -310,15 +382,16 @@ def validate(report: dict[str, Any]) -> list[str]:
 
     phases = report.get("phases")
     if not isinstance(phases, list) or len(phases) != len(PHASE_IDS):
-        errors.append("phases must contain exactly plan, refine, work, closure")
+        errors.append("phases must contain exactly plan, refine, work, closure, learn")
         phases = []
     final_head = target.get("final_head_sha")
     for expected_id, phase in zip(PHASE_IDS, phases):
         validate_phase(phase, expected_id, final_head, str(status), errors)
     if phases and [p.get("id") for p in phases if isinstance(p, dict)] != PHASE_IDS:
-        errors.append("phases must be ordered plan, refine, work, closure")
+        errors.append("phases must be ordered plan, refine, work, closure, learn")
 
     validate_closure(report.get("closure"), final_head, str(status), errors)
+    validate_learning(report.get("learning"), final_head, str(status), errors)
 
     work_path = report.get("work_report_path")
     if status == "COMPLETE":

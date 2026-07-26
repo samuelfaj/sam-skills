@@ -6,12 +6,13 @@
 2. Report shape
 3. Phase objects
 4. Closure object
-5. Validation
+5. Learning object
+6. Validation
 
 ## Terminal statuses
 
-- `COMPLETE`: plan, refine, work, and closure are terminal and current for one
-  final head; validator returns `VALID`.
+- `COMPLETE`: plan, refine, work, closure, and learning audit are terminal and
+  current for one final head; validator returns `VALID`.
 - `BLOCKED`: a required child failed, exhausted, or could not produce receipts.
 - `IN_PROGRESS`: only for interrupted runs; never claim completion.
 
@@ -21,7 +22,7 @@ Write `task-report.json` (UTF-8 object):
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "workflow": "task",
   "workflow_id": "stable-id",
   "status": "COMPLETE",
@@ -46,6 +47,7 @@ Write `task-report.json` (UTF-8 object):
   },
   "phases": [],
   "closure": {},
+  "learning": {},
   "work_report_path": "/absolute/work-report.json",
   "residuals": [],
   "blockers": []
@@ -58,7 +60,7 @@ Write `task-report.json` (UTF-8 object):
 ## Phase objects
 
 `phases` contains exactly these ids in order: `plan`, `refine`, `work`,
-`closure`.
+`closure`, `learn`.
 
 Each phase:
 
@@ -92,6 +94,7 @@ Accepted phase terminals:
 | refine | `HIGH_CONFIDENCE` |
 | work | `COMPLETE` |
 | closure | `CLEAN` |
+| learn | `LEARNING_AUDITED` |
 
 ## Closure object
 
@@ -120,6 +123,41 @@ Accepted phase terminals:
 For `COMPLETE`, the last closure iteration must have empty `open_findings`,
 `review_status=APPROVE`, and an accepted council status
 (`TRIAGE_PASS|APPROVED|APPROVED_WITH_CONDITIONS` with conditions closed).
+
+## Learning object
+
+The learning audit runs on the final head and proposes durable knowledge without
+writing it:
+
+```json
+{
+  "status": "LEARNING_AUDITED",
+  "write_policy": "PROPOSAL_ONLY",
+  "audited_head_sha": "40-or-64 hex",
+  "candidates": [
+    {
+      "id": "L-001",
+      "observation": "current-run observation",
+      "proposed_rule": "narrow reusable rule",
+      "scope": ["where the rule applies"],
+      "evidence": ["current-run receipt"],
+      "destination": "AGENTS.md",
+      "revalidate_when": "condition that may make the rule stale",
+      "sensitivity": "INTERNAL",
+      "status": "PROPOSED",
+      "decision_reason": "why this is or is not durable"
+    }
+  ],
+  "writes_performed": [],
+  "evidence": ["learning audit receipt"]
+}
+```
+
+`destination` is `AGENTS.md|SKILL|MEMORY|NONE`; `sensitivity` is
+`PUBLIC|INTERNAL|SENSITIVE`; candidate status is `PROPOSED|REJECTED`.
+`candidates: []` is valid and preferable to inventing a lesson.
+`writes_performed` must remain empty. Promotion requires a separate explicit
+user action.
 
 ## Validation
 

@@ -23,8 +23,9 @@ workflow stack-, host-, provider-, and model-agnostic except for Playwright itse
   `glab` platform uploads) and place media in the PR/MR **description** or a
   **comment/note** using player/image embed markup. Follow
   [references/evidence-publishing.md](references/evidence-publishing.md).
-- **Video → inline/native player. Image → inline image. Never a hyperlink**
-  (`[label](url)`, “Download MP4”, blob/raw repo URLs, or HTML download anchors).
+- **Video → inline/native player. Image → inline image. Never a hyperlink.**
+  Forbid Markdown download links, “Download MP4” anchors, blob/raw repo URLs,
+  and HTML download anchors.
 - Never use production credentials, production services, customer tenants, or
   private data for automated browser tests.
 - Fail closed when real data is requested and the environment identity is unknown
@@ -214,8 +215,8 @@ enable video capture, run the suite, and publish without asking again. Follow
    - **GitLab video:** `![scenario title](/uploads/<hash>/file.webm)`
    - **GitHub video:** bare `https://github.com/user-attachments/assets/<id>`
      alone on its own line
-   - **Images (either host):** `![descriptive alt](<upload-url>)`
-4. Forbid `[Download](url)`, HTML-only download links, and repo blob/raw URLs.
+   - **Images (either host):** host-issued inline image markup with descriptive alt text
+4. Forbid Markdown download links, HTML-only download links, and repo blob/raw URLs.
 5. Read the remote body back; require a rendered **player** (video) or **image**.
 6. Record each as `ART-###` with receipt, markup, and player/image verification.
 

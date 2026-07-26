@@ -4,8 +4,9 @@
 
 1. Ordered phases
 2. Child skill terminals
-3. Authority and inheritance
-4. Freshness
+3. Learning audit
+4. Authority and inheritance
+5. Freshness
 
 ## Ordered phases
 
@@ -15,6 +16,7 @@
 | `refine` | `sam-refine-task` | `HIGH_CONFIDENCE` |
 | `work` | `sam-work` | `COMPLETE` |
 | `closure` | `sam-review` + `sam-council` loop | `CLEAN` |
+| `learn` | `sam-task` learning audit | `LEARNING_AUDITED` |
 
 Run strictly in order. Do not start a later phase while an earlier one is open,
 stale, unvalidated, or non-terminal. Do not emulate a missing child skill.
@@ -33,6 +35,20 @@ stale, unvalidated, or non-terminal. Do not emulate a missing child skill.
 - Closure loop: see [closure-loop.md](closure-loop.md). Terminal `CLEAN` only
   when both review and council gates pass on the same final head with zero open
   material items.
+- Learning audit: inspect the completed run for reusable rules. An empty
+  candidate list is valid. The audit may propose durable updates but must not
+  write them.
+
+## Learning audit
+
+Run only after closure is clean on the final head. For each candidate, record
+the current-run observation, proposed rule, narrow scope, evidence, destination,
+revalidation trigger, sensitivity, and decision. Do not promote a one-off event
+or unsupported inference.
+
+The audit is proposal-only. It never edits repository instructions, a skill,
+or host memory. A later explicit user action owns any durable write. This keeps
+learning reviewable and prevents stale or sensitive context from spreading.
 
 ## Authority and inheritance
 

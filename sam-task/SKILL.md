@@ -1,19 +1,20 @@
 ---
 name: sam-task
-description: "Run the full task pipeline: sam-plan, sam-refine-task, sam-work delivery, then a closure loop of sam-review plus sam-council that fixes material findings until both gates are clean on one head. Use when the user runs /sam-task, wants plan-to-PR delivery with final adversarial cleanup, or asks to plan refine implement and close all review/council issues."
+description: "Run the full task pipeline: sam-plan, sam-refine-task, sam-work delivery, closure review/council, and a proposal-only learning audit. Use when the user runs /sam-task, wants plan-to-PR delivery with final adversarial cleanup, or asks to plan refine implement close findings and capture reusable lessons."
 ---
 
 # Sam Task
 
 ## Purpose
 
-Turn one user request into a planned, refined, delivered, and adversarially
-closed task. Orchestrate child skills fail-closed. Do not treat a child as done
-because it was invoked—capture and validate its terminal result.
+Turn one user request into a planned, refined, delivered, adversarially closed,
+and learning-audited task. Orchestrate child skills fail-closed. Do not treat a
+child as done because it was invoked—capture and validate its terminal result.
 
 ## Non-Negotiable Contract
 
-- Run phases in order: `plan` → `refine` → `work` → `closure`. Never skip.
+- Run phases in order: `plan` → `refine` → `work` → `closure` → `learn`.
+  Never skip.
 - Never report `COMPLETE` while any phase is missing, stale, unvalidated, or
   non-terminal, or while the closure loop still has material findings.
 - Invoking this skill authorizes plan-dir writes, task-branch delivery writes
@@ -27,6 +28,8 @@ because it was invoked—capture and validate its terminal result.
 - Preserve unrelated dirty work. Keep secrets out of reports and plan HTML.
 - Child retry/exhaustion limits remain active; exhaustion is `BLOCKED`, never
   silent success.
+- Learning is proposal-only. Never write a candidate into repository
+  instructions, a skill, or host memory without a later explicit user action.
 
 ## Required skills
 
@@ -45,11 +48,22 @@ Also read:
 - [references/closure-loop.md](references/closure-loop.md)
 - [references/output-contract.md](references/output-contract.md)
 
+For periodic cross-version evaluation, read
+[references/behavior-evals.md](references/behavior-evals.md) and use the
+versioned catalog in `assets/behavior-eval-scenarios.json`.
+
 Runtime validation:
 
 ```bash
 SAM_TASK_DIR="<absolute directory containing this SKILL.md>"
 python3 -B "$SAM_TASK_DIR/scripts/validate_task_report.py" task-report.json
+```
+
+Behavior evaluation is a separate manual or scheduled gate:
+
+```bash
+python3 -B "$SAM_TASK_DIR/scripts/validate_behavior_eval.py" \
+  behavior-eval-run.json --require-complete-suite
 ```
 
 ## Autonomous execution
@@ -115,11 +129,24 @@ Both gates must pass on the **same** final head. Review `APPROVE` alone is
 insufficient without an accepted council terminal; council pass alone is
 insufficient without review `APPROVE`.
 
+### 5. Learn — proposal-only audit
+
+After closure is clean, inspect only the final run's evidence for reusable
+rules. Follow [references/phase-contract.md](references/phase-contract.md).
+
+- Emit `LEARNING_AUDITED` even when `candidates` is empty.
+- Propose a candidate only when current-run evidence supports a narrow rule.
+- Record its scope, destination, sensitivity, and revalidation trigger.
+- Do not turn a one-off failure, an inference, or stale memory into a rule.
+- Keep `writes_performed: []`. Promotion is outside this workflow and requires
+  a separate explicit user action.
+
 ## Completion
 
 After the last mutation:
 
-1. Confirm `plan`, `refine`, `work`, and `closure` are terminal and current.
+1. Confirm `plan`, `refine`, `work`, `closure`, and `learn` are terminal and
+   current.
 2. Confirm `target.final_head_sha` matches work + closure proofs and proposal
    remote head when a proposal exists.
 3. Write `task-report.json` per the output contract.
@@ -139,7 +166,9 @@ Report:
 2. Plan depth/dir and refine result
 3. Work result (proposal URL, classification)
 4. Closure iterations used; final review and council statuses
-5. Final head and validator receipt
-6. Exact blockers or open findings if not complete
+5. Learning candidate count and proposal-only receipt
+6. Final head and validator receipt
+7. Exact blockers or open findings if not complete
 
-Run `scripts/test_task_harness.py` only when changing this skill.
+Run `scripts/test_task_harness.py` and
+`scripts/test_behavior_eval_harness.py` only when changing this skill.

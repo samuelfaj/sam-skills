@@ -4,6 +4,16 @@ Choose the cheapest task shape that preserves evidence quality. After selecting
 capability, bind the host runtime from
 [host-runtime-matrix.md](host-runtime-matrix.md).
 
+## Contents
+
+1. Task classes
+2. Certainty budget
+3. Capability then runtime
+4. Fan-out
+5. Escalation
+6. Review cost
+7. Proof cost
+
 ## Task Classes
 
 - `T0`: one mechanical or read-only task, narrow scope, no material runtime,

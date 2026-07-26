@@ -40,8 +40,9 @@ coverage. Remain host-, provider-, tool-, and model-agnostic.
   `glab` platform uploads) and place the media in the PR/MR **description** or
   a **comment/note** using player/image embed markup. Follow
   [references/evidence-publishing.md](references/evidence-publishing.md).
-- **Video → inline/native player. Image → inline image. Never a hyperlink**
-  (`[label](url)`, “Download MP4”, blob/raw repo URLs, or HTML download anchors).
+- **Video → inline/native player. Image → inline image. Never a hyperlink.**
+  Forbid Markdown download links, “Download MP4” anchors, blob/raw repo URLs,
+  and HTML download anchors.
 - Never expose secrets, tokens, credentials, private customer data, internal
   identifiers, or sensitive production information.
 - Record and clean every process, container, port, record, override, raw video,
@@ -174,8 +175,8 @@ the frozen proposal—upload and embed without asking for permission again. Foll
    - **GitLab video:** `![scenario title](/uploads/<hash>/file.mp4)`
    - **GitHub video:** bare `https://github.com/user-attachments/assets/<id>`
      alone on its own line
-   - **Images (either host):** `![descriptive alt](<upload-url>)`
-4. Forbid `[Download](url)`, HTML-only download links, and repo blob/raw URLs.
+   - **Images (either host):** host-issued inline image markup with descriptive alt text
+4. Forbid Markdown download links, HTML-only download links, and repo blob/raw URLs.
 5. Read the remote body back; require a rendered **player** (video) or **image**.
 6. Record receipt, markup, and `player_verified` under `ART-###`. Stop on drift
    or link-only readback.

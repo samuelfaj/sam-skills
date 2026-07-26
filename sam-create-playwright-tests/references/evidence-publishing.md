@@ -3,6 +3,16 @@
 Read this file when Playwright videos, screenshots, or traces must leave the
 local machine for a PR/MR.
 
+## Contents
+
+1. Non-negotiable rules
+2. What to publish
+3. Embed markup
+4. Upload procedure
+5. Body composition checklist
+6. Verification
+7. Failure modes
+
 ## Non-negotiable rules
 
 1. **Never commit** generated videos, screenshots, traces, reports, or

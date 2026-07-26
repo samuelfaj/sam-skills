@@ -1,4 +1,4 @@
 interface:
   display_name: "Sam Task"
-  short_description: "Plan, refine, deliver, then close findings"
-  default_prompt: "Use $sam-task to plan, refine, deliver with $sam-work, then loop $sam-review and $sam-council until no material problems remain. Never ask mid-run; execute fully or report BLOCKED with exact failures."
+  short_description: "Plan, deliver, close, and audit learning"
+  default_prompt: "Use $sam-task to plan, refine, deliver with $sam-work, close findings through $sam-review and $sam-council, then audit evidence for proposal-only reusable learning. Never ask mid-run; execute fully or report BLOCKED with exact failures."

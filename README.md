@@ -45,9 +45,9 @@ and orchestration.
 - `sam-plan`: conduct task study and emit a machine freeze plan (goal, thesis,
   steps, evidence, status) plus a required light-theme HTML pack for humans;
   assertive investigation first, council only on risk triggers.
-- `sam-task`: run plan → refine → `sam-work` delivery, then a closure loop of
-  `sam-review` plus `sam-council` that fixes material findings until both gates
-  are clean on one head.
+- `sam-task`: run plan → refine → `sam-work` delivery, a closure loop of
+  `sam-review` plus `sam-council`, and a proposal-only learning audit that
+  captures evidence-backed reusable rules without mutating durable memory.
 - `sam-council`: rapidly triage or fully falsify consequential
   system-development plans through portable blind reviews, bounded responses,
   maximum safe parallelism, and evidence-weighted decision gates;
@@ -74,6 +74,11 @@ The first command checks package structure, metadata, resource routing,
 portability, executable permissions, and forbidden operational coupling. The
 second discovers and runs every skill harness, including adversarial failure
 fixtures.
+
+`sam-task` also ships a provider-neutral behavioral evaluation pack with eight
+versioned scenarios. Run it manually or periodically to compare real task
+outcomes, false completions, corrections, latency, token use, and cost across
+skill revisions; unavailable host metrics remain `null`.
 
 ## Install
 

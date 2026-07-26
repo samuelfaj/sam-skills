@@ -86,13 +86,17 @@ Run this **before** drafting the freeze. Ask the user only when a material
 unknown blocks planning; otherwise investigate with tools first.
 
 1. **Freeze intent** — goal, non-goals, success criteria, invariants, constraints, no-go from the prompt and explicit owner decisions.
-2. **Map surfaces** — locate code, tests, configs, and seams; record them in
+2. **Revalidate durable context** — inspect repository instructions and any
+   user-approved durable context supplied by the host. Treat it as a lead, not
+   current proof: confirm it against the live repository and record it as a
+   `FACT` only with a current locator; otherwise use `ASSUMPTION` or `UNKNOWN`.
+3. **Map surfaces** — locate code, tests, configs, and seams; record them in
    `study.surfaces_mapped` and note tools in `study.tools_used`.
-3. **Ledger** — material FACT / ASSUMPTION / UNKNOWN with stable IDs; FACT needs a
+4. **Ledger** — material FACT / ASSUMPTION / UNKNOWN with stable IDs; FACT needs a
    locator that exists in the repo (`path` or `path:line`) or `user decision: …`.
-4. **Thesis** — falsifiable approach plus at least one simpler path rejected with reason.
-5. **Steps** — ordered work with why, surfaces, DoD, and proof method IDs.
-6. **Gates** — risks, risk flags (do not under-flag migration/auth/etc.),
+5. **Thesis** — falsifiable approach plus at least one simpler path rejected with reason.
+6. **Steps** — ordered work with why, surfaces, DoD, and proof method IDs.
+7. **Gates** — risks, risk flags (do not under-flag migration/auth/etc.),
    `acceptance_trace`, residuals; what must be true for `READY_TO_EXECUTE`.
 
 Decision points that must appear in the freeze (not empty template pages):
