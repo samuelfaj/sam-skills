@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Claude Advisor"
+  short_description: "Read-only Claude advisor; caller binds model and effort"
+  default_prompt: "Use $sam-claude-advisor to get a focused second opinion. Bind model and effort from the sam-orchestrate host-runtime-matrix advisor row."

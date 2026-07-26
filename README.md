@@ -52,12 +52,12 @@ and orchestration.
   system-development plans through portable blind reviews, bounded responses,
   maximum safe parallelism, and evidence-weighted decision gates;
   multi-provider confrontation remains explicit opt-in.
-- `sam-codex-advisor`: obtain a bounded read-only second opinion through a
-  fixed-model advisor with explicit effort routing.
-- `sam-claude-opus-advisor`: obtain a bounded read-only second opinion through a
-  fixed-model advisor with explicit effort routing.
-- `sam-fable-advisor`: obtain a bounded read-only second opinion through a
-  fixed-model advisor with explicit effort routing.
+- `sam-codex-advisor`: obtain a bounded read-only second opinion; the calling
+  agent binds model and effort from the sam-orchestrate host-runtime-matrix
+  advisor row (or an explicit user override).
+- `sam-claude-advisor`: obtain a bounded read-only second opinion; the calling
+  agent binds model and effort from the sam-orchestrate host-runtime-matrix
+  advisor row (or an explicit user override).
 - `sam-grok-worker`: delegate a bounded implementation task to a fixed worker
   runtime under workspace sandbox and headless execution.
 

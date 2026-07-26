@@ -35,15 +35,11 @@ ALLOWED_RESOURCE_DIRS = {"agents", "assets", "references", "scripts"}
 PROVIDER_SPECIFIC_REPLACEMENTS = {
     "sam-codex-advisor": (
         (re.compile(r"\bcodex\b", re.IGNORECASE), "advisor-runtime"),
-        (re.compile(r"\bgpt-5\.6-sol\b", re.IGNORECASE), "approved-model"),
+        (re.compile(r"\bgpt-5\.6-(?:luna|sol)\b", re.IGNORECASE), "approved-model"),
     ),
-    "sam-claude-opus-advisor": (
+    "sam-claude-advisor": (
         (re.compile(r"\bclaude\b", re.IGNORECASE), "advisor-runtime"),
-        (re.compile(r"\bopus\b", re.IGNORECASE), "approved-model"),
-    ),
-    "sam-fable-advisor": (
-        (re.compile(r"\bclaude\b", re.IGNORECASE), "advisor-runtime"),
-        (re.compile(r"\bfable\b", re.IGNORECASE), "approved-model"),
+        (re.compile(r"\b(?:haiku|sonnet|opus|fable)\b", re.IGNORECASE), "approved-model"),
     ),
 
     "sam-orchestrate": (

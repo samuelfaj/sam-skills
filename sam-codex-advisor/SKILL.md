@@ -1,6 +1,6 @@
 ---
 name: sam-codex-advisor
-description: "Consult Codex on gpt-5.6-sol as a read-only advisor for a focused assumption, tradeoff, architecture question, security concern, difficult diagnosis, or high-risk decision. Use when the user requests a Codex second opinion or when another AI agent needs a bounded independent advisory pass; default reasoning effort to high unless the user explicitly supplies an effort."
+description: "Consult Codex as a read-only advisor for a focused assumption, tradeoff, architecture question, security concern, difficult diagnosis, or high-risk decision. The calling agent binds model and reasoning effort from the sam-orchestrate host-runtime-matrix advisor row (or the user's exact override). Use when the user requests a Codex second opinion or when another AI agent needs a bounded independent advisory pass."
 ---
 
 # Sam Codex Advisor
@@ -10,9 +10,13 @@ the final decision, implementation, and proof.
 
 ## Non-Negotiable Contract
 
-- Use `gpt-5.6-sol` exactly. Do not substitute another model.
-- Use reasoning effort `high` unless the user explicitly supplies `low`,
-  `medium`, `high`, `xhigh`, or `max`; use the supplied value exactly.
+- Bind `model` and `effort` in the calling agent. Prefer the **advisor** row for
+  the Codex host in
+  [../sam-orchestrate/references/host-runtime-matrix.md](../sam-orchestrate/references/host-runtime-matrix.md).
+  Do not hardcode a model or invent one outside that matrix and an explicit
+  user override.
+- If the user supplies an effort (`low`, `medium`, `high`, `xhigh`, or `max`),
+  use that value exactly. Otherwise use the matrix advisor effort for Codex.
 - Do not infer a lower effort from urgency, simplicity, cost, or latency.
 - Run the advisor read-only and ephemerally. Do not let it edit files, spawn
   subagents, publish, commit, push, or perform external writes.
@@ -30,23 +34,24 @@ Record:
 - Constraints and no-go surfaces.
 - Current hypothesis, if any.
 - Desired output: recommendation, risks, and strongest verification path.
-
-If the request contains an explicit effort, preserve it. Otherwise select `high`.
-Do not treat words such as “deep”, “quick”, or “careful” as effort values.
+- Selected `model` and `effort` (matrix advisor binding, or user override) and
+  whether effort was user-specified.
 
 ## 2. Resolve the Invocation
 
-Run the deterministic resolver before invoking the advisor:
+Run the deterministic resolver before invoking the advisor. Both flags are
+required:
 
 ```bash
 SAM_CODEX_ADVISOR_DIR="<absolute directory containing this SKILL.md>"
-python3 "$SAM_CODEX_ADVISOR_DIR/scripts/resolve_advisor.py"
-python3 "$SAM_CODEX_ADVISOR_DIR/scripts/resolve_advisor.py" --effort high
+python3 "$SAM_CODEX_ADVISOR_DIR/scripts/resolve_advisor.py" \
+  --model "<caller-selected-model>" \
+  --effort "<caller-selected-effort>"
 ```
 
-Use the first form when effort is absent. Use the second form with the user's
-exact effort when supplied. The resolver returns an argv array fixed to Codex,
-`gpt-5.6-sol`, the selected effort, ephemeral execution, and read-only sandboxing.
+The resolver returns an argv array fixed to Codex, the selected model and
+effort, ephemeral execution, and read-only sandboxing. It does not invent
+defaults.
 
 ## 3. Invoke Safely
 
@@ -75,8 +80,8 @@ using direct evidence or present the tradeoff to the user; do not defer blindly.
 
 Return:
 
-- `Advisor`: Codex `gpt-5.6-sol`.
-- `Effort`: selected effort and whether it was defaulted or user-specified.
+- `Advisor`: Codex with the selected model.
+- `Effort`: selected effort and whether it was matrix-default or user-specified.
 - `Recommendation`: concise advisory conclusion.
 - `Risks`: material risks and hard assumptions.
 - `Verification`: strongest next proof.

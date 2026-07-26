@@ -1,4 +1,4 @@
 interface:
   display_name: "Sam Codex Advisor"
-  short_description: "Consult a fixed Codex model as advisor"
-  default_prompt: "Use $sam-codex-advisor to get a focused second opinion."
+  short_description: "Read-only Codex advisor; caller binds model and effort"
+  default_prompt: "Use $sam-codex-advisor to get a focused second opinion. Bind model and effort from the sam-orchestrate host-runtime-matrix advisor row."

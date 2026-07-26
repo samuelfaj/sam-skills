@@ -1,4 +1,0 @@
-interface:
-  display_name: "Sam Claude Opus Advisor"
-  short_description: "Consult Claude Opus as a read-only advisor"
-  default_prompt: "Use $sam-claude-opus-advisor to get a focused second opinion."

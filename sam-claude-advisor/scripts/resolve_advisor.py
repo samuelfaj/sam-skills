@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Resolve a safe, fixed Fable advisor invocation without executing it."""
+"""Resolve a safe Claude advisor invocation without executing it.
+
+The calling agent supplies model and effort (from the sam-orchestrate
+host-runtime-matrix advisor row, or an explicit user override).
+"""
 
 from __future__ import annotations
 
@@ -9,26 +13,36 @@ import sys
 
 
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
-MODEL = "fable"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--effort", choices=EFFORTS, default="high")
+    parser.add_argument(
+        "--model",
+        required=True,
+        help="Caller-selected Claude model alias/id (matrix advisor row or user override)",
+    )
+    parser.add_argument(
+        "--effort",
+        required=True,
+        choices=EFFORTS,
+        help="Caller-selected effort (matrix advisor row or user override)",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
-    effort = parse_args().effort
-    effort_supplied = any(
-        argument == "--effort" or argument.startswith("--effort=")
-        for argument in sys.argv[1:]
-    )
+    args = parse_args()
+    model = args.model.strip()
+    if not model:
+        print("error: --model must be non-empty", file=sys.stderr)
+        return 2
+    effort = args.effort
     command = [
         "claude",
         "--print",
         "--model",
-        MODEL,
+        model,
         "--effort",
         effort,
         "--permission-mode",
@@ -43,9 +57,8 @@ def main() -> int:
         json.dumps(
             {
                 "advisor": "claude",
-                "model": MODEL,
+                "model": model,
                 "effort": effort,
-                "defaulted": not effort_supplied,
                 "read_only": True,
                 "ephemeral": True,
                 "prompt_transport": "stdin",

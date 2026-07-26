@@ -1,18 +1,22 @@
 ---
-name: sam-fable-advisor
-description: "Consult Claude Fable as a read-only advisor for a focused assumption, tradeoff, architecture question, security concern, difficult diagnosis, or high-risk decision. Use when the user requests a Fable second opinion or when another AI agent needs a bounded independent advisory pass; default effort to high unless the user explicitly supplies an effort."
+name: sam-claude-advisor
+description: "Consult Claude as a read-only advisor for a focused assumption, tradeoff, architecture question, security concern, difficult diagnosis, or high-risk decision. The calling agent binds model and reasoning effort from the sam-orchestrate host-runtime-matrix advisor row (or the user's exact override). Use when the user requests a Claude second opinion or when another AI agent needs a bounded independent advisory pass."
 ---
 
-# Sam Fable Advisor
+# Sam Claude Advisor
 
 Obtain one independent advisory answer. Keep the calling agent responsible for
 the final decision, implementation, and proof.
 
 ## Non-Negotiable Contract
 
-- Use Claude model alias `fable` exactly. Do not substitute another model.
-- Use effort `high` unless the user explicitly supplies `low`, `medium`, `high`,
-  `xhigh`, or `max`; use the supplied value exactly.
+- Bind `model` and `effort` in the calling agent. Prefer the **advisor** row for
+  the Claude Code host in
+  [../sam-orchestrate/references/host-runtime-matrix.md](../sam-orchestrate/references/host-runtime-matrix.md).
+  Do not hardcode a model or invent one outside that matrix and an explicit
+  user override.
+- If the user supplies an effort (`low`, `medium`, `high`, `xhigh`, or `max`),
+  use that value exactly. Otherwise use the matrix advisor effort for Claude Code.
 - Do not infer a lower effort from urgency, simplicity, cost, or latency.
 - Run the advisor read-only with plan permissions and no session persistence.
 - Permit only `Read`, `Glob`, and `Grep` tools. Do not let it edit files, run
@@ -31,24 +35,24 @@ Record:
 - Constraints and no-go surfaces.
 - Current hypothesis, if any.
 - Desired output: recommendation, risks, and strongest verification path.
-
-If the request contains an explicit effort, preserve it. Otherwise select `high`.
-Do not treat words such as “deep”, “quick”, or “careful” as effort values.
+- Selected `model` and `effort` (matrix advisor binding, or user override) and
+  whether effort was user-specified.
 
 ## 2. Resolve the Invocation
 
-Run the deterministic resolver before invoking the advisor:
+Run the deterministic resolver before invoking the advisor. Both flags are
+required:
 
 ```bash
-SAM_FABLE_ADVISOR_DIR="<absolute directory containing this SKILL.md>"
-python3 "$SAM_FABLE_ADVISOR_DIR/scripts/resolve_advisor.py"
-python3 "$SAM_FABLE_ADVISOR_DIR/scripts/resolve_advisor.py" --effort high
+SAM_CLAUDE_ADVISOR_DIR="<absolute directory containing this SKILL.md>"
+python3 "$SAM_CLAUDE_ADVISOR_DIR/scripts/resolve_advisor.py" \
+  --model "<caller-selected-model>" \
+  --effort "<caller-selected-effort>"
 ```
 
-Use the first form when effort is absent. Use the second form with the user's
-exact effort when supplied. The resolver returns an argv array fixed to Claude
-Fable, the selected effort, plan permission mode, read-only tools, JSON output,
-and disabled session persistence.
+The resolver returns an argv array fixed to Claude, the selected model and
+effort, plan permission mode, read-only tools, JSON output, and disabled session
+persistence. It does not invent defaults.
 
 ## 3. Invoke Safely
 
@@ -78,8 +82,8 @@ using direct evidence or present the tradeoff to the user; do not defer blindly.
 
 Return:
 
-- `Advisor`: Claude Fable.
-- `Effort`: selected effort and whether it was defaulted or user-specified.
+- `Advisor`: Claude with the selected model.
+- `Effort`: selected effort and whether it was matrix-default or user-specified.
 - `Recommendation`: concise advisory conclusion.
 - `Risks`: material risks and hard assumptions.
 - `Verification`: strongest next proof.
