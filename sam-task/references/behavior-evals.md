@@ -20,7 +20,7 @@ gate: live agent runs cost time and tokens and may be nondeterministic.
 
 ## Scenario catalog
 
-`assets/behavior-eval-scenarios.json` contains eight versioned scenarios across
+`assets/behavior-eval-scenarios.json` contains twelve versioned scenarios across
 planning, bugs, features, stale evidence, risk routing, learning, and delegated
 scope control. Each scenario defines accepted terminals, unsafe completion
 terminals, and observable acceptance checks.

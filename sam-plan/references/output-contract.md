@@ -136,3 +136,18 @@ Return status, depth signal, plan directory path, primary HTML path(s), freeze
 path, thesis summary, open residuals/blockers, risk flags, study surfaces, and
 council skip or result. Do not claim a finished plan when freeze or HTML
 validation fails.
+
+## Ledger gap engine (READY)
+
+Under `READY_TO_EXECUTE` (except `case_type=SPIKE` where noted):
+
+- `frozen.success_criteria` must be non-empty
+- Each `acceptance_trace` entry needs ≥1 `step_ids` and ≥1 `proof_ids`
+- Steps with `dod` need ≥1 `proof_ids`
+- `steps[].depends_on` must be acyclic
+- Non-simple depth: every step reachable from acceptance_trace or has
+  `out_of_acceptance` reason
+- `ASSUMPTION` with state `ACCEPTED` needs `decision_reason` or `evidence_ids`
+- Material `UNKNOWN` needs `probe`; non-simple immaterial needs `why_immaterial`
+- `FACT` claims must not use hedge language (`appears`, `seems`, `maybe`, …)
+

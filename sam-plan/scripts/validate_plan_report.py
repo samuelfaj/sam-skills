@@ -17,6 +17,11 @@ DEPTHS = {"simple", "standard", "deep"}
 CASE_TYPES = {"BUG", "FEATURE", "PRODUCT", "MIGRATION", "OPS", "SPIKE"}
 CLASSIFICATIONS = {"FACT", "ASSUMPTION", "UNKNOWN"}
 PROOF_STATUSES = {"PASS", "PLANNED", "NOT_RUN", "BLOCKED", "NOT_APPLICABLE"}
+FACT_HEDGE_RE = re.compile(
+    r"\b(?:appears|seems|maybe|likely|probably|roughly|approximately|might|could be)\b",
+    re.IGNORECASE,
+)
+
 RISK_FLAGS = {
     "security_privacy",
     "auth_boundary",
@@ -502,6 +507,13 @@ def validate_report(
                 errors.append(
                     f"assumptions[{index}].evidence_ids unknown id {evidence_id}"
                 )
+        if state == "ACCEPTED":
+            evid = item.get("evidence_ids") if isinstance(item.get("evidence_ids"), list) else []
+            reason = item.get("decision_reason")
+            if not evid and not (isinstance(reason, str) and reason.strip()):
+                errors.append(
+                    f"assumptions[{index}] ACCEPTED requires decision_reason or evidence_ids"
+                )
 
     unknown_items = [
         mapping(item, f"unknowns[{index}]", errors)
@@ -512,6 +524,15 @@ def validate_report(
         nonempty_text(item.get("claim"), f"unknowns[{index}].claim", errors)
         if "material" not in item or not isinstance(item.get("material"), bool):
             errors.append(f"unknowns[{index}].material must be a boolean")
+        # structural optional fields validated when present
+        if "probe" in item and item["probe"] is not None and not isinstance(item["probe"], str):
+            errors.append(f"unknowns[{index}].probe must be text when present")
+        if (
+            "why_immaterial" in item
+            and item["why_immaterial"] is not None
+            and not isinstance(item["why_immaterial"], str)
+        ):
+            errors.append(f"unknowns[{index}].why_immaterial must be text when present")
 
     thesis = mapping(report.get("thesis"), "thesis", errors)
     thesis_id = nonempty_text(thesis.get("id"), "thesis.id", errors)
@@ -545,11 +566,43 @@ def validate_report(
             if dep not in step_ids:
                 errors.append(f"steps[{index}].depends_on unknown id {dep}")
         string_list(item.get("surfaces", []), f"steps[{index}].surfaces", errors)
-        string_list(item.get("dod", []), f"steps[{index}].dod", errors, allow_empty=False)
-        string_list(item.get("proof_ids", []), f"steps[{index}].proof_ids", errors)
+        dod_list = string_list(
+            item.get("dod", []), f"steps[{index}].dod", errors, allow_empty=False
+        )
+        proof_list = string_list(
+            item.get("proof_ids", []), f"steps[{index}].proof_ids", errors
+        )
+        item["_dod"] = dod_list
+        item["_proof_ids"] = proof_list
+        item["_depends_on"] = depends
         if "simpler_rejected" in item and item["simpler_rejected"] is not None:
             if not isinstance(item["simpler_rejected"], str):
                 errors.append(f"steps[{index}].simpler_rejected must be text or null")
+
+    # depends_on acyclicity
+    if step_ids:
+        graph = {
+            sid: list(item.get("_depends_on") or [])
+            for sid, item in zip(step_ids, step_items)
+        }
+        visiting: set[str] = set()
+        visited: set[str] = set()
+
+        def dfs(node: str) -> bool:
+            if node in visiting:
+                return True
+            if node in visited:
+                return False
+            visiting.add(node)
+            for nxt in graph.get(node, []):
+                if nxt in graph and dfs(nxt):
+                    return True
+            visiting.remove(node)
+            visited.add(node)
+            return False
+
+        if any(dfs(node) for node in graph):
+            errors.append("steps.depends_on must be acyclic")
 
     risk_items = [
         mapping(item, f"risks[{index}]", errors)
@@ -787,6 +840,12 @@ def validate_report(
                 "READY_TO_EXECUTE with --repo-root requires at least one FACT "
                 "locator that resolves under the repo (or user decision: …)"
             )
+        # Gap engine: non-empty success criteria (except SPIKE)
+        if case_type != "SPIKE" and not success_criteria:
+            errors.append(
+                "READY_TO_EXECUTE requires non-empty frozen.success_criteria "
+                "(except case_type=SPIKE)"
+            )
         if success_criteria:
             missing_criteria = [
                 c for c in success_criteria if c not in traced_criteria
@@ -795,6 +854,74 @@ def validate_report(
                 errors.append(
                     "READY_TO_EXECUTE requires acceptance_trace covering each "
                     f"success criterion; missing: {missing_criteria}"
+                )
+        # Each acceptance_trace entry needs ≥1 step and ≥1 proof
+        for index, raw in enumerate(sequence(report.get("acceptance_trace", []), "acceptance_trace", errors) if isinstance(report.get("acceptance_trace", []), list) else []):
+            if not isinstance(raw, dict):
+                continue
+            sids = raw.get("step_ids") if isinstance(raw.get("step_ids"), list) else []
+            pids = raw.get("proof_ids") if isinstance(raw.get("proof_ids"), list) else []
+            if not sids:
+                errors.append(
+                    f"READY_TO_EXECUTE acceptance_trace[{index}] requires ≥1 step_ids"
+                )
+            if not pids:
+                errors.append(
+                    f"READY_TO_EXECUTE acceptance_trace[{index}] requires ≥1 proof_ids"
+                )
+        # Step reachability from criteria (skip for depth simple)
+        if depth != "simple" and step_ids:
+            referenced_steps: set[str] = set()
+            for raw in report.get("acceptance_trace", []) if isinstance(report.get("acceptance_trace"), list) else []:
+                if isinstance(raw, dict):
+                    for sid in raw.get("step_ids") or []:
+                        if isinstance(sid, str):
+                            referenced_steps.add(sid)
+            for index, item in enumerate(step_items):
+                sid = item.get("id")
+                if not isinstance(sid, str):
+                    continue
+                if sid in referenced_steps:
+                    continue
+                if isinstance(item.get("out_of_acceptance"), str) and item["out_of_acceptance"].strip():
+                    continue
+                errors.append(
+                    f"READY_TO_EXECUTE step {sid} must be reachable from acceptance_trace "
+                    "or set out_of_acceptance reason"
+                )
+        # Steps with DoD need proof_ids
+        for index, item in enumerate(step_items):
+            dod = item.get("_dod") or item.get("dod") or []
+            proofs = item.get("_proof_ids") if "_proof_ids" in item else item.get("proof_ids") or []
+            if dod and not proofs:
+                errors.append(
+                    f"READY_TO_EXECUTE steps[{index}] with dod requires ≥1 proof_ids"
+                )
+        # UNKNOWN probes (depth simple skips non-material probe/why rules)
+        for index, item in enumerate(unknown_items):
+            material = item.get("material") is True
+            probe = item.get("probe")
+            why = item.get("why_immaterial")
+            if material:
+                if not (isinstance(probe, str) and probe.strip()):
+                    errors.append(
+                        f"READY_TO_EXECUTE unknowns[{index}] material requires probe"
+                    )
+            elif depth != "simple":
+                if not (isinstance(why, str) and why.strip()):
+                    errors.append(
+                        f"READY_TO_EXECUTE unknowns[{index}] immaterial requires why_immaterial"
+                    )
+        # Hedge-vs-FACT
+        for index, raw in enumerate(report.get("evidence", []) if isinstance(report.get("evidence"), list) else []):
+            if not isinstance(raw, dict):
+                continue
+            if raw.get("classification") != "FACT":
+                continue
+            claim = raw.get("claim")
+            if isinstance(claim, str) and FACT_HEDGE_RE.search(claim):
+                errors.append(
+                    f"READY_TO_EXECUTE evidence[{index}] FACT claim uses hedge language"
                 )
         suggested = collect_heuristic_risk_flags(report)
         missing_flags = sorted(suggested - set(risk_flags))

@@ -67,3 +67,18 @@ not force another iteration; blockers and importants do.
   child retry limits exhaust without new evidence → workflow `BLOCKED`.
 - **Scope escape:** `STOP_AND_ESCALATE` or out-of-scope redesign → `BLOCKED`
   with the exact decision needed; do not silently expand the task.
+
+## Adversarial ledger pass (contract-only)
+
+Before the first review of a closure iteration (budget ≤1 turn), run a self-check
+over structural gap categories and record results in residuals (not a new phase
+or terminal):
+
+1. Acceptance criteria without step/proof linkage in the freeze
+2. Material assumptions without probe or acceptance reason
+3. Open findings without named correction receipts
+4. Evidence claims that look like hedges labeled as facts
+
+Skip with an explicit residual reason when cost exceeds value. This pass never
+alone changes `CLEAN`; review + council gates still own the terminal.
+

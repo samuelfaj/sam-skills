@@ -127,4 +127,10 @@ python3 "$SAM_REFINE_DIR/scripts/validate_report.py" \
 
 The baseline and current file state must match. Follow
 [references/output-contract.md](references/output-contract.md). Do not weaken
-the validator to force confidence. Remove temporary artifacts before returning.
+the validator to force confidence.
+
+When invoked under `sam-task` (or any parent that needs durable receipts), copy
+the validated report to `$PLAN_DIR/refine-report.json` (or another absolute path
+the parent records as `refine_report_path`) before cleaning temp artifacts.
+
+Remove temporary artifacts before returning.

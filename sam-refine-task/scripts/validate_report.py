@@ -285,6 +285,10 @@ def validate_domain(
             )
             if status == "FACT" and not ids:
                 errors.append(f"claims[{index}] fact needs evidence")
+            if status == "UNKNOWN":
+                probe = item.get("probe")
+                if not (isinstance(probe, str) and probe.strip()):
+                    errors.append(f"claims[{index}] UNKNOWN requires probe")
             if item.get("material") is True and status != "FACT":
                 blockers.append(f"material claim {index} is not proven")
         loopholes = sequence(report.get("loopholes"), "loopholes", errors)
@@ -304,6 +308,7 @@ def validate_domain(
                     f"loopholes[{index}].evidence_ids",
                     evidence,
                     errors,
+                    require_pass=True,
                     allow_empty=False,
                 )
         verification = sequence(

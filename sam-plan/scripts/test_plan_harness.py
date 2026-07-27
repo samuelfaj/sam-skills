@@ -121,6 +121,7 @@ def base_simple_report(plan_dir: str, *, repo_root: str | None = None) -> JsonOb
                 "id": "A-001",
                 "claim": "Null totals only appear for draft invoices.",
                 "state": "ACCEPTED",
+                "decision_reason": "Accepted for local UI guard; drafts only in this module.",
                 "evidence_ids": [],
             }
         ],
@@ -507,7 +508,107 @@ def main() -> int:
         write_report(mismatch_path, mismatch)
         assert_invalid(mismatch_path, "missing chapter files")
 
+
+        surface = "src/views/InvoiceDetail.tsx"
+        criterion = simple["frozen"]["success_criteria"][0]
+
+        # P1: empty success_criteria fails READY
+        empty_sc = deepcopy(simple)
+        empty_sc["frozen"]["success_criteria"] = []
+        empty_sc["acceptance_trace"] = []
+        empty_sc_path = root / "empty-success-criteria.json"
+        write_report(empty_sc_path, empty_sc)
+        assert_invalid(empty_sc_path, "non-empty frozen.success_criteria")
+
+        # P1: acceptance_trace without proof_ids
+        no_proof_ids = deepcopy(simple)
+        no_proof_ids["acceptance_trace"][0]["proof_ids"] = []
+        no_proof_path = root / "trace-no-proof.json"
+        write_report(no_proof_path, no_proof_ids)
+        assert_invalid(no_proof_path, "requires ≥1 proof_ids")
+
+        # P1: depends_on cycle
+        cyclic = deepcopy(simple)
+        cyclic["steps"] = [
+            {
+                "id": "S-001",
+                "title": "A",
+                "why": "a",
+                "depends_on": ["S-002"],
+                "surfaces": [surface],
+                "dod": ["done"],
+                "proof_ids": ["V-001"],
+            },
+            {
+                "id": "S-002",
+                "title": "B",
+                "why": "b",
+                "depends_on": ["S-001"],
+                "surfaces": [surface],
+                "dod": ["done"],
+                "proof_ids": ["V-001"],
+            },
+        ]
+        cyclic["acceptance_trace"] = [
+            {
+                "criterion": criterion,
+                "step_ids": ["S-001", "S-002"],
+                "proof_ids": ["V-001"],
+            }
+        ]
+        cyclic_path = root / "cyclic-depends.json"
+        write_report(cyclic_path, cyclic)
+        assert_invalid(cyclic_path, "acyclic")
+
+        # P1: step with dod but no proof_ids
+        no_step_proof = deepcopy(simple)
+        no_step_proof["steps"][0]["proof_ids"] = []
+        no_step_proof_path = root / "step-no-proof.json"
+        write_report(no_step_proof_path, no_step_proof)
+        assert_invalid(no_step_proof_path, "with dod requires")
+
+        # P1: ACCEPTED without decision_reason/evidence
+        bare_accept = deepcopy(simple)
+        bare_accept["assumptions"][0]["decision_reason"] = ""
+        bare_accept["assumptions"][0]["evidence_ids"] = []
+        bare_accept_path = root / "bare-accept.json"
+        write_report(bare_accept_path, bare_accept)
+        assert_invalid(bare_accept_path, "decision_reason or evidence_ids")
+
+        # P1: FACT with hedge language
+        hedge = deepcopy(simple)
+        hedge["evidence"][0]["claim"] = "This appears to be a null total crash."
+        hedge_path = root / "hedge-fact.json"
+        write_report(hedge_path, hedge)
+        assert_invalid(hedge_path, "hedge language")
+
+        # Benign: hedge word only outside FACT
+        benign = deepcopy(simple)
+        benign["frozen"]["goal"] = "Fix render so the UI never appears broken on null."
+        benign_path = root / "benign-hedge-nonfact.json"
+        write_report(benign_path, benign)
+        assert_valid(benign_path)
+
+        # P1: standard depth unreachable step without out_of_acceptance
+        orphan_step = deepcopy(simple)
+        orphan_step["depth"] = "standard"
+        orphan_step["steps"].append(
+            {
+                "id": "S-002",
+                "title": "Unrelated cleanup",
+                "why": "should be linked or marked",
+                "depends_on": [],
+                "surfaces": [surface],
+                "dod": ["cleanup done"],
+                "proof_ids": ["V-001"],
+            }
+        )
+        orphan_step_path = root / "orphan-step.json"
+        write_report(orphan_step_path, orphan_step)
+        assert_invalid(orphan_step_path, "reachable from acceptance_trace")
+
         print("sam-plan harness passed")
+
     return 0
 
 

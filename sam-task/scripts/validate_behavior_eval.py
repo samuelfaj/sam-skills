@@ -61,8 +61,8 @@ def validate_catalog(catalog: dict[str, Any]) -> tuple[list[str], dict[str, dict
     if not nonempty_string(catalog.get("suite_id")):
         errors.append("catalog.suite_id is required")
     scenarios = catalog.get("scenarios")
-    if not isinstance(scenarios, list) or not 6 <= len(scenarios) <= 10:
-        errors.append("catalog.scenarios must contain 6 to 10 scenarios")
+    if not isinstance(scenarios, list) or not 6 <= len(scenarios) <= 16:
+        errors.append("catalog.scenarios must contain 6 to 16 scenarios")
         return errors, {}
 
     by_id: dict[str, dict[str, Any]] = {}

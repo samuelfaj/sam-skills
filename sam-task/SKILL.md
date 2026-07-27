@@ -112,6 +112,7 @@ do not treat HTML as the machine gate (sam-plan still emits light HTML for human
 - Require validated `READY_TO_EXECUTE` with `$PLAN_DIR/plan-report.json` and a
   freeze validator receipt of `VALID` (hard core only). Light HTML from
   sam-plan is the human artifact, not the machine plan-phase gate.
+- Record absolute `plan.freeze_path` for parent re-validation on COMPLETE.
 - `NOT_CONFIDENT` or `BLOCKED` → workflow `BLOCKED` (record plan residuals).
 - Freeze plan dir, depth, thesis, acceptance criteria, no-go, steps/DoD, and
   risk flags into the task ledger from the plan report. Downstream phases
@@ -126,6 +127,9 @@ code.
 - `NOT_CONFIDENT` → revise the plan (re-run `sam-plan` sections as needed) or
   strategy notes, then refine again within child limits.
 - `BLOCKED` or exhaustion → workflow `BLOCKED`.
+- Copy the validated refine report to a durable path (default
+  `$PLAN_DIR/refine-report.json`) and record absolute `refine_report_path` for
+  parent re-validation on COMPLETE. Temp-only refine reports are not sufficient.
 
 If refine changes the executable strategy, update plan artifacts so work does
 not implement a stale thesis.

@@ -245,6 +245,33 @@ def validate_closure(closure: Any, final_head: Any, workflow_status: str, errors
         is_last = index == len(iterations)
         if open_findings and not corrections and not is_last:
             errors.append(f"{prefix} with open findings requires correction receipts")
+        if index > 1 and isinstance(iterations[index - 2], dict):
+            prev = iterations[index - 2]
+            prev_open = (
+                prev.get("open_findings")
+                if isinstance(prev.get("open_findings"), list)
+                else []
+            )
+            prev_corr = (
+                prev.get("correction_receipts")
+                if isinstance(prev.get("correction_receipts"), list)
+                else []
+            )
+            curr_norm = {_normalize_finding(x) for x in open_findings}
+            corr_norm = [_normalize_finding(x) for x in prev_corr]
+            corr_blob = " ".join(corr_norm)
+            for raw in prev_open:
+                key = _normalize_finding(raw)
+                if not key or key in curr_norm:
+                    continue
+                named = any(
+                    key == c or key in c or c in key for c in corr_norm if c
+                ) or (key in corr_blob)
+                if not named:
+                    errors.append(
+                        f"closure iteration {index - 1}: finding disappeared "
+                        f"without named correction: {raw!r}"
+                    )
         if is_last and workflow_status == "COMPLETE":
             if open_findings:
                 errors.append("final closure iteration cannot have open findings for COMPLETE")
@@ -457,10 +484,102 @@ def validate_web_and_video_evidence(
         errors.append("non-web workflow cannot claim Playwright videos")
 
 
+def _normalize_finding(value: Any) -> str:
+    return " ".join(str(value).strip().lower().split())
+
+
+def _load_json_object(path: Path, label: str, errors: list[str]) -> dict[str, Any] | None:
+    if not path.is_file():
+        errors.append(f"{label} is not a readable file: {path}")
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        errors.append(f"{label} is unreadable: {exc}")
+        return None
+    if not isinstance(value, dict):
+        errors.append(f"{label} root must be an object")
+        return None
+    return value
+
+
+def validate_child_artifacts(
+    report: dict[str, Any], status: str, errors: list[str]
+) -> None:
+    """Re-check durable plan freeze and refine reports on COMPLETE (not bare receipts)."""
+    if status != "COMPLETE":
+        return
+
+    plan = report.get("plan") if isinstance(report.get("plan"), dict) else {}
+    freeze_raw = plan.get("freeze_path")
+    if not nonempty_string(freeze_raw) or not Path(str(freeze_raw)).is_absolute():
+        # plan block already records missing absolute path
+        return
+    freeze_path = Path(str(freeze_raw))
+    freeze = _load_json_object(freeze_path, "plan.freeze_path", errors)
+    if freeze is not None:
+        if freeze.get("status") != "READY_TO_EXECUTE":
+            errors.append(
+                "plan freeze on disk must have status READY_TO_EXECUTE "
+                f"(got {freeze.get('status')!r} at {freeze_path})"
+            )
+        frozen = freeze.get("frozen") if isinstance(freeze.get("frozen"), dict) else {}
+        prompt_hash = frozen.get("prompt_hash")
+        request = report.get("request") if isinstance(report.get("request"), dict) else {}
+        prompt_sha = request.get("prompt_sha256")
+        if (
+            nonempty_string(prompt_hash)
+            and nonempty_string(prompt_sha)
+            and str(prompt_hash) != str(prompt_sha)
+        ):
+            errors.append(
+                "plan freeze frozen.prompt_hash must match request.prompt_sha256"
+            )
+        plan_goal = frozen.get("goal")
+        summary = request.get("prompt_summary")
+        # Soft goal drift: only residual expectation when both present and diverge
+        residuals = report.get("residuals") if isinstance(report.get("residuals"), list) else []
+        if (
+            nonempty_string(plan_goal)
+            and nonempty_string(summary)
+            and str(plan_goal).strip() != str(summary).strip()
+            and not any("goal" in str(r).lower() or "drift" in str(r).lower() for r in residuals)
+        ):
+            # Do not hard-fail; plan permits refine to update strategy. Soft residual nudge only.
+            pass
+
+    refine_raw = report.get("refine_report_path")
+    if not nonempty_string(refine_raw) or not Path(str(refine_raw)).is_absolute():
+        errors.append("COMPLETE requires absolute refine_report_path")
+        return
+    refine_path = Path(str(refine_raw))
+    refine = _load_json_object(refine_path, "refine_report_path", errors)
+    if refine is None:
+        return
+    decision = refine.get("decision") if isinstance(refine.get("decision"), dict) else {}
+    result = decision.get("result")
+    if result != "HIGH_CONFIDENCE":
+        errors.append(
+            "refine report decision.result must be HIGH_CONFIDENCE "
+            f"(got {result!r} at {refine_path})"
+        )
+    remaining = decision.get("remaining", [])
+    if remaining is None:
+        remaining = []
+    if not isinstance(remaining, list):
+        errors.append("refine report decision.remaining must be an array")
+    elif remaining:
+        errors.append(
+            "refine report decision.remaining must be empty for COMPLETE "
+            f"(got {remaining!r} at {refine_path})"
+        )
+
+
+
 def validate(report: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    if report.get("schema_version") != 2:
-        errors.append("schema_version must be 2")
+    if report.get("schema_version") != 3:
+        errors.append("schema_version must be 3")
     if report.get("workflow") != "task":
         errors.append("workflow must be 'task'")
     if not nonempty_string(report.get("workflow_id")):
@@ -513,6 +632,12 @@ def validate(report: dict[str, Any]) -> list[str]:
             errors.append("COMPLETE requires plan.status READY_TO_EXECUTE")
         if not nonempty_string(plan.get("validator_receipt")):
             errors.append("plan.validator_receipt is required")
+        if status == "COMPLETE":
+            freeze_path = plan.get("freeze_path")
+            if not nonempty_string(freeze_path) or not Path(
+                str(freeze_path)
+            ).is_absolute():
+                errors.append("COMPLETE requires absolute plan.freeze_path")
 
     phases = report.get("phases")
     if not isinstance(phases, list) or len(phases) != len(PHASE_IDS):
@@ -536,6 +661,7 @@ def validate(report: dict[str, Any]) -> list[str]:
     ):
         errors.append("work_report_path must be absolute when present")
 
+    validate_child_artifacts(report, str(status), errors)
     validate_web_and_video_evidence(report, target, str(status), errors)
     validate_advisor_consults(report, errors)
 

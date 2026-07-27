@@ -59,3 +59,16 @@ prevents `READY_TO_EXECUTE`.
 
 Redact secrets, credentials, tokens, and private customer data from plans,
 HTML, and reports.
+
+## Graph impact (advisory)
+
+When a host code graph is available (`$RC_GRAPHIFY_GRAPH_JSON` or equivalent),
+prefer recording optional impact evidence during study:
+
+- Evidence `kind` such as `graph-impact` naming callers/dependents with locators
+- Cite `graphify query` / `path` / `explain` in `study.tools_used`
+
+When unavailable, do **not** fail `READY_TO_EXECUTE`. Record a residual or a
+non-material UNKNOWN with a probe. Never fabricate graph consultation. Graphify
+is not a hard dependency of sam-plan.
+

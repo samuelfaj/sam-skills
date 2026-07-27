@@ -80,7 +80,7 @@ portability, executable permissions, and forbidden operational coupling. The
 second discovers and runs every skill harness, including adversarial failure
 fixtures.
 
-`sam-task` also ships a provider-neutral behavioral evaluation pack with eight
+`sam-task` also ships a provider-neutral behavioral evaluation pack with twelve
 versioned scenarios. Run it manually or periodically to compare real task
 outcomes, false completions, corrections, latency, token use, and cost across
 skill revisions; unavailable host metrics remain `null`.

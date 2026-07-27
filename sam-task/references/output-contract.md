@@ -24,7 +24,7 @@ Write `task-report.json` (UTF-8 object):
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "workflow": "task",
   "workflow_id": "stable-id",
   "status": "COMPLETE",
@@ -53,6 +53,7 @@ Write `task-report.json` (UTF-8 object):
   "closure": {},
   "learning": {},
   "work_report_path": "/absolute/work-report.json",
+  "refine_report_path": "/absolute/plan/refine-report.json",
   "advisor_consults": [],
   "residuals": [],
   "blockers": []
@@ -219,6 +220,18 @@ phase, replaces a validator receipt, or changes a terminal status.
   must appear in `residuals`, never in `blockers`.
 - `caller_decision` is `ACCEPTED`, `REJECTED`, or `UNRESOLVED`.
 - At most 3 consults per run.
+
+## Validation
+
+On `COMPLETE`, the task validator re-opens durable child artifacts:
+
+- `plan.freeze_path` must exist and report `status == READY_TO_EXECUTE`
+- `frozen.prompt_hash` must match `request.prompt_sha256`
+- `refine_report_path` must exist with `decision.result == HIGH_CONFIDENCE` and empty `remaining`
+
+Bare `validator_receipt` strings are not sufficient.
+
+Closure iterations: a finding present in iteration *N* and absent in *N+1* must be named in iteration *N* `correction_receipts` (normalized substring match).
 
 ## Validation
 

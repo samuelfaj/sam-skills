@@ -121,7 +121,7 @@ def phase(
 
 def valid_report() -> dict[str, Any]:
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "workflow": "task",
         "workflow_id": "task-001",
         "status": "COMPLETE",
@@ -144,7 +144,9 @@ def valid_report() -> dict[str, Any]:
             "depth": "simple",
             "status": "READY_TO_EXECUTE",
             "validator_receipt": "VALID",
+            "freeze_path": "/tmp/repository/plan/plan-report.json",
         },
+        "refine_report_path": "/tmp/repository/plan/refine-report.json",
         "phases": [
             phase("plan", "sam-plan", "READY_TO_EXECUTE", head=None),
             phase("refine", "sam-refine-task", "HIGH_CONFIDENCE", head=None),
@@ -211,8 +213,40 @@ def main() -> int:
         WORK_PATH = str(root / "work-report.json")
         write(Path(WORK_PATH), work_report())
 
+        plan_dir = root / "plan"
+        plan_dir.mkdir()
+        freeze_path = plan_dir / "plan-report.json"
+        refine_path = plan_dir / "refine-report.json"
+        write(
+            freeze_path,
+            {
+                "schema_version": 1,
+                "workflow": "plan",
+                "status": "READY_TO_EXECUTE",
+                "frozen": {
+                    "prompt_hash": PROMPT,
+                    "goal": "Deliver the invoicing fix end to end",
+                },
+            },
+        )
+        write(
+            refine_path,
+            {
+                "schema_version": 1,
+                "workflow": "refinement",
+                "decision": {"result": "HIGH_CONFIDENCE", "remaining": []},
+            },
+        )
+
+        def with_child_paths(report: dict[str, Any]) -> dict[str, Any]:
+            report = deepcopy(report)
+            report["plan"]["plan_dir"] = str(plan_dir)
+            report["plan"]["freeze_path"] = str(freeze_path)
+            report["refine_report_path"] = str(refine_path)
+            return report
+
         good = root / "good.json"
-        write(good, valid_report())
+        write(good, with_child_paths(valid_report()))
         assert_valid(good)
 
         # multi-iteration closure that ends clean
@@ -229,7 +263,7 @@ def main() -> int:
                     "council_profile": "fast",
                     "council_status": "TRIAGE_PASS",
                     "open_findings": ["missing null guard test"],
-                    "correction_receipts": ["added regression test"],
+                    "correction_receipts": ["fixed missing null guard test via regression"],
                     "review_receipt": "VALID",
                     "council_receipt": "VALID",
                     "evidence": ["review found gap"],
@@ -249,7 +283,7 @@ def main() -> int:
             ],
         }
         multi_path = root / "multi.json"
-        write(multi_path, multi)
+        write(multi_path, with_child_paths(multi))
         assert_valid(multi_path)
 
         # COMPLETE but review not approve
@@ -257,35 +291,35 @@ def main() -> int:
         bad_review["closure"]["iterations"][0]["review_status"] = "CHANGES_REQUIRED"
         bad_review["closure"]["iterations"][0]["open_findings"] = ["x"]
         bad_path = root / "bad-review.json"
-        write(bad_path, bad_review)
+        write(bad_path, with_child_paths(bad_review))
         assert_invalid(bad_path, "APPROVE")
 
         # COMPLETE with open blockers
         blockers = valid_report()
         blockers["blockers"] = ["still broken"]
         blockers_path = root / "blockers.json"
-        write(blockers_path, blockers)
+        write(blockers_path, with_child_paths(blockers))
         assert_invalid(blockers_path, "forbids non-empty blockers")
 
         # stale work head
         stale = valid_report()
         stale["phases"][2]["validated_head_sha"] = "1" * 40
         stale_path = root / "stale.json"
-        write(stale_path, stale)
+        write(stale_path, with_child_paths(stale))
         assert_invalid(stale_path, "stale for the final head")
 
         # missing phase
         missing = valid_report()
         missing["phases"] = missing["phases"][:4]
         missing_path = root / "missing.json"
-        write(missing_path, missing)
+        write(missing_path, with_child_paths(missing))
         assert_invalid(missing_path, "exactly plan, refine, work, closure, learn")
 
         # council fail on final
         council_fail = valid_report()
         council_fail["closure"]["iterations"][0]["council_status"] = "REVISE"
         council_fail_path = root / "council-fail.json"
-        write(council_fail_path, council_fail)
+        write(council_fail_path, with_child_paths(council_fail))
         assert_invalid(council_fail_path, "accepted pass status")
 
         # valid BLOCKED
@@ -310,7 +344,7 @@ def main() -> int:
         # last iteration OPEN with open items is ok for non-COMPLETE
         blocked["phases"][3]["iterations"][0]["open_required_items"] = ["unresolved finding"]
         blocked_path = root / "blocked.json"
-        write(blocked_path, blocked)
+        write(blocked_path, with_child_paths(blocked))
         assert_valid(blocked_path)
 
         # empty BLOCKED invalid
@@ -318,7 +352,7 @@ def main() -> int:
         empty_blocked["blockers"] = []
         empty_blocked["residuals"] = []
         empty_path = root / "empty-blocked.json"
-        write(empty_path, empty_blocked)
+        write(empty_path, with_child_paths(empty_blocked))
         assert_invalid(empty_path, "requires residuals or blockers")
 
         # exceeded max iterations
@@ -327,7 +361,7 @@ def main() -> int:
         over["closure"]["iterations_used"] = 2
         over["closure"]["iterations"] = multi["closure"]["iterations"]
         over_path = root / "over.json"
-        write(over_path, over)
+        write(over_path, with_child_paths(over))
         assert_invalid(over_path, "exceeded max_iterations")
 
         # evidence-backed learning proposal is valid but performs no write
@@ -347,14 +381,14 @@ def main() -> int:
             }
         ]
         learned_path = root / "learned.json"
-        write(learned_path, learned)
+        write(learned_path, with_child_paths(learned))
         assert_valid(learned_path)
 
         # learning candidates cannot mutate durable context automatically
         auto_write = deepcopy(learned)
         auto_write["learning"]["writes_performed"] = ["updated AGENTS.md"]
         auto_write_path = root / "auto-write.json"
-        write(auto_write_path, auto_write)
+        write(auto_write_path, with_child_paths(auto_write))
         assert_invalid(auto_write_path, "writes_performed must be empty")
 
         # candidate evidence and revalidation conditions are mandatory
@@ -362,7 +396,7 @@ def main() -> int:
         weak_learning["learning"]["candidates"][0]["evidence"] = []
         weak_learning["learning"]["candidates"][0]["revalidate_when"] = ""
         weak_learning_path = root / "weak-learning.json"
-        write(weak_learning_path, weak_learning)
+        write(weak_learning_path, with_child_paths(weak_learning))
         assert_invalid(weak_learning_path, "evidence requires at least one receipt")
         assert_invalid(weak_learning_path, "revalidate_when is required")
 
@@ -372,7 +406,7 @@ def main() -> int:
         skipped_learning["phases"][4]["status"] = "BLOCKED"
         skipped_learning["phases"][4]["iterations"] = [iteration("BLOCKED")]
         skipped_learning_path = root / "skipped-learning.json"
-        write(skipped_learning_path, skipped_learning)
+        write(skipped_learning_path, with_child_paths(skipped_learning))
         assert_invalid(skipped_learning_path, "LEARNING_AUDITED")
 
         # a web system cannot complete without an uploaded Playwright video
@@ -381,7 +415,7 @@ def main() -> int:
         write(no_video_work, work_report(playwright_discovered=0, playwright_uploaded=0))
         no_video["work_report_path"] = str(no_video_work)
         no_video_path = root / "no-video.json"
-        write(no_video_path, no_video)
+        write(no_video_path, with_child_paths(no_video))
         assert_invalid(no_video_path, "at least one uploaded Playwright video")
 
         # every discovered browser video must be uploaded
@@ -390,7 +424,7 @@ def main() -> int:
         write(partial_work, work_report(playwright_discovered=2, playwright_uploaded=1))
         partial_video["work_report_path"] = str(partial_work)
         partial_path = root / "partial-video.json"
-        write(partial_path, partial_video)
+        write(partial_path, with_child_paths(partial_video))
         assert_invalid(partial_path, "every discovered Playwright video must be uploaded")
 
         # the demo video is required on every run
@@ -399,7 +433,7 @@ def main() -> int:
         write(no_demo_work, work_report(demo_uploaded=0))
         no_demo["work_report_path"] = str(no_demo_work)
         no_demo_path = root / "no-demo.json"
-        write(no_demo_path, no_demo)
+        write(no_demo_path, with_child_paths(no_demo))
         assert_invalid(no_demo_path, "at least one uploaded demo video")
 
         # the child cannot silently downgrade a web system to skip Playwright
@@ -411,7 +445,7 @@ def main() -> int:
         )
         downgrade["work_report_path"] = str(downgrade_work)
         downgrade_path = root / "downgrade.json"
-        write(downgrade_path, downgrade)
+        write(downgrade_path, with_child_paths(downgrade))
         assert_invalid(downgrade_path, "must match work report request.web_system")
 
         # a proven non-web workflow completes with zero Playwright videos
@@ -425,14 +459,14 @@ def main() -> int:
         )
         non_web["work_report_path"] = str(non_web_work)
         non_web_path = root / "non-web.json"
-        write(non_web_path, non_web)
+        write(non_web_path, with_child_paths(non_web))
         assert_valid(non_web_path)
 
         # COMPLETE cannot cite a work report that does not exist
         absent = valid_report()
         absent["work_report_path"] = str(root / "missing-work-report.json")
         absent_path = root / "absent-work.json"
-        write(absent_path, absent)
+        write(absent_path, with_child_paths(absent))
         assert_invalid(absent_path, "readable work report")
 
         # the child terminal itself must be COMPLETE
@@ -441,42 +475,42 @@ def main() -> int:
         write(child_open_work, work_report(result="IN_PROGRESS"))
         child_open["work_report_path"] = str(child_open_work)
         child_open_path = root / "child-open.json"
-        write(child_open_path, child_open)
+        write(child_open_path, with_child_paths(child_open))
         assert_invalid(child_open_path, "final.result COMPLETE")
 
         # web_surface must be decided, not omitted
         undecided = valid_report()
         del undecided["target"]["web_surface"]
         undecided_path = root / "undecided.json"
-        write(undecided_path, undecided)
+        write(undecided_path, with_child_paths(undecided))
         assert_invalid(undecided_path, "requires boolean target.web_surface")
 
         # a recorded advisor consult is evidence and does not break completion
         advised = valid_report()
         advised["advisor_consults"] = [advisor_consult()]
         advised_path = root / "advised.json"
-        write(advised_path, advised)
+        write(advised_path, with_child_paths(advised))
         assert_valid(advised_path)
 
         # advisors cannot be attached to the sam-work phase
         advised_work = valid_report()
         advised_work["advisor_consults"] = [advisor_consult(phase="work")]
         advised_work_path = root / "advised-work.json"
-        write(advised_work_path, advised_work)
+        write(advised_work_path, with_child_paths(advised_work))
         assert_invalid(advised_work_path, "owned by sam-work")
 
         # a consult must name an advisor skill, not an arbitrary child
         wrong_skill = valid_report()
         wrong_skill["advisor_consults"] = [{**advisor_consult(), "advisor": "sam-review"}]
         wrong_skill_path = root / "wrong-advisor-skill.json"
-        write(wrong_skill_path, wrong_skill)
+        write(wrong_skill_path, with_child_paths(wrong_skill))
         assert_invalid(wrong_skill_path, "must name a sam-<runtime>-advisor skill")
 
         # a failed consult needs a reason and must surface as a residual
         advisor_failed = valid_report()
         advisor_failed["advisor_consults"] = [advisor_consult(status="FAILED")]
         advisor_failed_path = root / "advisor-failed.json"
-        write(advisor_failed_path, advisor_failed)
+        write(advisor_failed_path, with_child_paths(advisor_failed))
         assert_invalid(advisor_failed_path, "FAILED requires a failure_reason")
         assert_invalid(advisor_failed_path, "must be recorded in residuals")
 
@@ -487,7 +521,7 @@ def main() -> int:
         ]
         advisor_residual["residuals"] = ["advisor consult A-001 unavailable"]
         advisor_residual_path = root / "advisor-residual.json"
-        write(advisor_residual_path, advisor_residual)
+        write(advisor_residual_path, with_child_paths(advisor_residual))
         assert_valid(advisor_residual_path)
 
         # the per-run consult cap is enforced
@@ -496,10 +530,133 @@ def main() -> int:
             {**advisor_consult(), "id": f"A-00{index}"} for index in range(1, 5)
         ]
         too_many_path = root / "too-many-advisors.json"
-        write(too_many_path, too_many)
+        write(too_many_path, with_child_paths(too_many))
         assert_invalid(too_many_path, "exceeds 3 per run")
 
+
+        # P0: receipt VALID but freeze on disk is NOT_CONFIDENT
+        disk_bad = with_child_paths(valid_report())
+        write(
+            freeze_path,
+            {
+                "schema_version": 1,
+                "workflow": "plan",
+                "status": "NOT_CONFIDENT",
+                "frozen": {"prompt_hash": PROMPT, "goal": "x"},
+            },
+        )
+        disk_bad_path = root / "disk-not-confident.json"
+        write(disk_bad_path, disk_bad)
+        assert_invalid(disk_bad_path, "READY_TO_EXECUTE")
+        # restore good freeze
+        write(
+            freeze_path,
+            {
+                "schema_version": 1,
+                "workflow": "plan",
+                "status": "READY_TO_EXECUTE",
+                "frozen": {
+                    "prompt_hash": PROMPT,
+                    "goal": "Deliver the invoicing fix end to end",
+                },
+            },
+        )
+
+        # P0: prompt hash mismatch
+        hash_bad = with_child_paths(valid_report())
+        write(
+            freeze_path,
+            {
+                "schema_version": 1,
+                "workflow": "plan",
+                "status": "READY_TO_EXECUTE",
+                "frozen": {"prompt_hash": "0" * 64, "goal": "x"},
+            },
+        )
+        hash_path = root / "hash-mismatch.json"
+        write(hash_path, hash_bad)
+        assert_invalid(hash_path, "prompt_hash must match")
+        write(
+            freeze_path,
+            {
+                "schema_version": 1,
+                "workflow": "plan",
+                "status": "READY_TO_EXECUTE",
+                "frozen": {
+                    "prompt_hash": PROMPT,
+                    "goal": "Deliver the invoicing fix end to end",
+                },
+            },
+        )
+
+        # P0: missing refine_report_path
+        no_refine = with_child_paths(valid_report())
+        del no_refine["refine_report_path"]
+        no_refine_path = root / "no-refine-path.json"
+        write(no_refine_path, no_refine)
+        assert_invalid(no_refine_path, "refine_report_path")
+
+        # P0: refine not HIGH_CONFIDENCE
+        write(
+            refine_path,
+            {
+                "schema_version": 1,
+                "workflow": "refinement",
+                "decision": {"result": "NOT_CONFIDENT", "remaining": ["gap"]},
+            },
+        )
+        refine_bad = with_child_paths(valid_report())
+        refine_bad_path = root / "refine-not-confident.json"
+        write(refine_bad_path, refine_bad)
+        assert_invalid(refine_bad_path, "HIGH_CONFIDENCE")
+        write(
+            refine_path,
+            {
+                "schema_version": 1,
+                "workflow": "refinement",
+                "decision": {"result": "HIGH_CONFIDENCE", "remaining": []},
+            },
+        )
+
+        # P2: finding disappears without named correction
+        orphan_finding = with_child_paths(valid_report())
+        orphan_finding["closure"] = {
+            "max_iterations": 5,
+            "iterations_used": 2,
+            "final_status": "CLEAN",
+            "iterations": [
+                {
+                    "sequence": 1,
+                    "head_sha": HEAD,
+                    "review_status": "CHANGES_REQUIRED",
+                    "council_profile": "fast",
+                    "council_status": "TRIAGE_PASS",
+                    "open_findings": ["missing auth check"],
+                    "correction_receipts": ["touched unrelated tests"],
+                    "review_receipt": "VALID",
+                    "council_receipt": "VALID",
+                    "evidence": ["review found gap"],
+                },
+                {
+                    "sequence": 2,
+                    "head_sha": HEAD,
+                    "review_status": "APPROVE",
+                    "council_profile": "fast",
+                    "council_status": "TRIAGE_PASS",
+                    "open_findings": [],
+                    "correction_receipts": [],
+                    "review_receipt": "VALID",
+                    "council_receipt": "VALID",
+                    "evidence": ["re-review clean"],
+                },
+            ],
+        }
+        orphan_path = root / "orphan-finding.json"
+        write(orphan_path, orphan_finding)
+        assert_invalid(orphan_path, "without named correction")
+
         print("sam-task harness passed")
+
     return 0
 
 

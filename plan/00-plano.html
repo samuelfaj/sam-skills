@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f5f7f6">
+  <title>Plano</title>
+  <style>
+:root {
+  color-scheme: light;
+  --brand: #0f6b5c;
+  --brand-strong: #0b5247;
+  --lime: #c6f06c;
+  --ink: #14201f;
+  --muted: #5f6f6c;
+  --line: #d9e4e1;
+  --bg: #f5f7f6;
+  --card: #ffffff;
+  --warn: #9c6a00;
+  --danger: #a5272f;
+  --ok: #107c41;
+  --info: #1a6ca8;
+}
+* { box-sizing: border-box; }
+html { color-scheme: light; background: var(--bg); }
+body {
+  margin: 0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  line-height: 1.52;
+  color: var(--ink);
+  background: var(--bg);
+}
+header {
+  background: linear-gradient(135deg, #ffffff 0%, #eef7f4 100%);
+  border-bottom: 1px solid var(--line);
+  padding: 32px 5vw 20px;
+}
+header h1 { margin: 0; font-size: clamp(28px, 4vw, 48px); }
+header p { margin: 10px 0 0; color: var(--muted); max-width: 980px; font-size: 17px; }
+.meta { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+nav {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 12px 5vw;
+  background: #ffffff;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+nav a {
+  flex: 0 0 auto;
+  color: var(--brand);
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  background: #fff;
+}
+nav a[aria-current="page"] {
+  background: #e7f6f1;
+  border-color: #b9dcd3;
+  font-weight: 600;
+}
+main { padding: 24px 5vw 64px; max-width: 1440px; margin: 0 auto; }
+section {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 22px;
+  margin: 0 0 18px;
+}
+h2 { margin: 0 0 14px; font-size: 24px; }
+h3 { margin: 18px 0 8px; font-size: 17px; }
+p { margin: 8px 0; }
+ul, ol { margin: 8px 0 8px 22px; padding: 0; }
+li { margin: 6px 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  background: #fff;
+  font-size: 14px;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px;
+  vertical-align: top;
+  text-align: left;
+}
+th { background: #eef8f5; color: #143c38; }
+code, pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #f2f6f5;
+  border: 1px solid #dce7e5;
+  border-radius: 8px;
+}
+code { padding: 1px 5px; }
+pre { padding: 14px; overflow: auto; white-space: pre-wrap; }
+.callout {
+  border-left: 4px solid var(--brand);
+  background: #f3fbf9;
+  padding: 12px 14px;
+  border-radius: 8px;
+  margin: 10px 0;
+}
+.callout.danger { border-left-color: var(--danger); background: #fff4f4; }
+.callout.warn { border-left-color: var(--warn); background: #fff9ec; }
+.callout.ok { border-left-color: var(--ok); background: #f0fff5; }
+.callout.decision { border-left-color: #7aa312; background: #fbfff3; }
+.tag {
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin: 2px;
+  background: #fff;
+  font-size: 12px;
+  color: var(--muted);
+}
+.tag.strong { color: var(--brand-strong); border-color: #b9dcd3; background: #eef8f5; }
+.small { color: var(--muted); font-size: 13px; }
+@media (max-width: 760px) {
+  header { padding: 24px 18px 16px; }
+  nav { padding: 10px 18px; }
+  main { padding: 18px; }
+  section { padding: 16px; }
+}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Plano</h1>
+    <p>Claude advisor (max) + sam-plan: improve sam-task gap detection; use graph engineering only if it helps; save freeze to ./plan</p>
+    <div class="meta"><span class="tag strong">status:READY_TO_EXECUTE</span><span class="tag strong">depth:deep</span><span class="tag strong">case:FEATURE</span></div>
+  </header>
+  <nav aria-label="Plan files"><a href="./00-plano.html" aria-current="page">00-plano</a></nav>
+  <main>
+<section><h2>Plano</h2>
+<p class="small">Claude advisor (max) + sam-plan: improve sam-task gap detection; use graph engineering only if it helps; save freeze to ./plan</p>
+<h3>Goal</h3>
+<p>Make sam-task catch more structural and ledger gaps automatically (fail-closed) via deterministic validators and contracts, using a minimal ledger-graph approach—not a graph-runtime rebrand—and ship an executable phased plan under ./plan.</p>
+<h3>Thesis</h3>
+<p>Phased implementation P0→P4: (P0) sam-task schema v3 + validate_child_artifacts re-running plan/refine validators from durable paths; (P1) plan gap engine under READY only (non-empty criteria, AC↔step↔proof, step reachability, depends_on acyclic, UNKNOWN probes, ASSUMPTION acceptance hygiene, hedge-vs-FACT); (P2) refine CLOSED require_pass + UNKNOWN probes; closure per-finding correction tracking; (P3) contract-only adversarial ledger pass in closure-loop; (P4) document optional Graphify impact evidence in plan evidence-policy. No shared gap_engine import; no rebrand; duplicate tiny helpers only if needed under standalone install rules.</p>
+<ul><li>Rebrand/rewrite sam-task as graph engineering runtime with task-graph.json: Second serialization drifts from reports; zero extra gap detection once ID edges exist; high ceremony (advisor + simplicity rules).</li><li>Mandatory Graphify impact as READY gate: Host-dependent, non-deterministic availability; incentives to fabricate consultation; improves plan completeness not ledger integrity.</li><li>Shared cross-skill gap_engine.py library: Forbidden by validate_skill_suite standalone install contract.</li><li>Parallel DAG of canonical phases: Breaks single-final-head freshness; no latency evidence; contracts are intentionally serial.</li></ul>
+<h3>Steps</h3>
+<table><thead><tr><th>ID</th><th>Step</th><th>DoD</th></tr></thead><tbody><tr><td>S-001</td><td>P0 — Parent re-validates durable plan + refine artifacts</td><td>task-report schema_version 3 requires plan.freeze_path + refine_report_path absolute paths on COMPLETE; validate_child_artifacts opens freeze and refine reports and asserts READY_TO_EXECUTE / HIGH_CONFIDENCE with remaining empty; prompt_sha256 matches freeze frozen.prompt_hash; goal-text drift recorded residual not hard fail; refine skill copies validated report to durable path under plan_dir; Harness fixtures a–e from advisor DoD all pass</td></tr><tr><td>S-002</td><td>P1 — Plan ledger gap engine (READY-only rules)</td><td>READY forbids empty success_criteria (non-SPIKE); Each acceptance_trace entry has ≥1 step_id and ≥1 proof_id; Every step reachable from a criterion or explicit out_of_acceptance reason; depends_on acyclic; Material UNKNOWN requires probe; immaterial requires why_immaterial (depth-aware); ACCEPTED ASSUMPTION requires decision_reason; Tiny hedge wordlist only on FACT classification + benign fixture; One failing fixture per rule + one benign still VALID</td></tr><tr><td>S-003</td><td>P2 — Refine + closure orphan rules</td><td>CLOSED loopholes require evidence with require_pass semantics; UNKNOWN claims require probe fields; Finding present in iteration N open_findings and absent in N+1 must appear in N correction_receipts (stable finding ids or normalized text keys); Harness fixtures for each rule</td></tr><tr><td>S-004</td><td>P3 — Contract-only adversarial ledger pass</td><td>closure-loop documents one pre-review adversarial ledger pass (≤1 turn); Output goes to residuals; no new terminal status; Skippable when cost exceeds value (explicit residual reason)</td></tr><tr><td>S-005</td><td>P4 — Graphify impact as advisory evidence</td><td>Document optional impact evidence kind when RC_GRAPHIFY_GRAPH_JSON available; When unavailable: UNKNOWN with probe or skip with residual—not hard READY fail; No validator requires graph binary</td></tr><tr><td>S-006</td><td>Behavior-eval scenarios for escaped-gap classes</td><td>Add ≥3 scenarios: AC-without-proof, finding-without-reopen, assumption-without-probe; Bump catalog.suite_id as required by validator; Document metrics: false-completion=0, escaped-gap decreasing, BLOCKED-precision ≥0.9 target</td></tr><tr><td>S-007</td><td>Full suite harness green + optional real-report replay</td><td>validate_skill_suite.py passes; run_skill_harnesses.py passes for touched skills; If a prior task-report exists, replaying against new validator yields explained VALID or expected INVALID</td></tr></tbody></table>
+<h3>Evidence</h3>
+<ul><li>E-001: sam-plan allows empty frozen.success_criteria (allow_empty=True), which can skip acceptance_trace coverage for READY. (sam-plan/scripts/validate_plan_report.py:385)</li><li>E-002: acceptance_trace completeness gate only runs when success_criteria is non-empty. (sam-plan/scripts/validate_plan_report.py:790)</li><li>E-003: sam-task COMPLETE requires plan.status READY_TO_EXECUTE and a non-empty plan.validator_receipt string, but does not re-open freeze_path on disk. (sam-task/scripts/validate_task_report.py:501)</li><li>E-004: Skills cannot import across packages; shared logic must be duplicated or stay local to each skill&#x27;s scripts. (scripts/validate_skill_suite.py:36)</li><li>E-005: sam-refine validates report under $WORK_TMP and does not require a durable refine-report path for the parent task report. (sam-refine-task/SKILL.md:123)</li><li>E-006: Closure intermediate iterations require correction_receipts when open_findings exist, but do not require named per-finding mapping. (sam-task/scripts/validate_task_report.py:246)</li><li>E-007: CLOSED/REJECTED loopholes require evidence_ids but do not require_pass on those evidence receipts. (sam-refine-task/scripts/validate_report.py:302)</li><li>E-008: Plan step proof_ids are optional lists (membership only when present); depends_on checks membership not acyclicity. (sam-plan/scripts/validate_plan_report.py:544)</li><li>E-009: sam-task is ordered multi-phase orchestration with fail-closed child terminals. (sam-task/references/phase-contract.md:11)</li><li>E-010: Claude advisor (opus, effort max, user-specified) recommended ledger-graph validators over code-graph rebrand; Graphify advisory-only; P0 parent re-validation first. (command: claude --print --model opus --effort max --permission-mode plan)</li><li>E-011: Claude Code advisor matrix defaults to fable-or-opus; user override effort max was applied exactly. (sam-orchestrate/references/host-runtime-matrix.md:82)</li></ul>
+</section>
+  </main>
+</body>
+</html>

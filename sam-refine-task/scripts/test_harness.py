@@ -514,6 +514,41 @@ def main() -> int:
                 current,
                 expected=1,
             )
+            closed_not_run = deepcopy(valid)
+            closed_not_run["evidence"].append(
+                {
+                    "id": "E_NOT_RUN",
+                    "status": "NOT_RUN",
+                    "classification": "TARGET",
+                    "detail": "Never executed",
+                }
+            )
+            closed_not_run["loopholes"][0]["evidence_ids"] = ["E_NOT_RUN"]
+            validate(
+                artifacts,
+                "closed-loophole-without-pass",
+                closed_not_run,
+                baseline,
+                current,
+                expected=1,
+            )
+            unknown_no_probe = deepcopy(valid)
+            unknown_no_probe["claims"] = [
+                {
+                    "claim": "Maybe the approach works",
+                    "status": "UNKNOWN",
+                    "material": False,
+                    "evidence_ids": [],
+                }
+            ]
+            validate(
+                artifacts,
+                "unknown-claim-without-probe",
+                unknown_no_probe,
+                baseline,
+                current,
+                expected=1,
+            )
             nonempty_owned_paths = deepcopy(valid)
             nonempty_owned_paths["scope"]["initial_owned_paths"] = ["app.txt"]
             nonempty_owned_paths["scope"]["current_owned_paths"] = ["app.txt"]

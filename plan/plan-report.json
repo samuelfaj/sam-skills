@@ -1,0 +1,676 @@
+{
+  "schema_version": 1,
+  "workflow": "plan",
+  "status": "READY_TO_EXECUTE",
+  "depth": "deep",
+  "case_type": "FEATURE",
+  "complexity_rationale": "Multi-skill contract and validator changes (sam-task, sam-plan, sam-refine-task) that alter COMPLETE/READY gates, schema_version, and harness fixtures. Architecture tradeoff on graph engineering was advised at effort max; implementation is still small and sequential but crosses package boundaries under standalone-install rules.",
+  "risk_flags": [],
+  "study": {
+    "tools_used": [
+      "graphify query \"sam-task phases validators ledger gap detection evidence\"",
+      "graphify query prior session on sam-task purpose",
+      "rg gap|assumption|ledger|validate_ sam-task sam-refine-task sam-plan",
+      "read sam-task/SKILL.md, phase-contract, output-contract",
+      "read sam-plan/SKILL.md, output-contract, council-integration, simplicity-rules",
+      "read sam-claude-advisor/SKILL.md + resolve_advisor.py --model opus --effort max",
+      "claude advisor opus effort=max (read-only plan mode)",
+      "sed line verification of validate_plan_report.py, validate_task_report.py, validate_report.py, validate_skill_suite.py"
+    ],
+    "surfaces_mapped": [
+      "sam-task/SKILL.md",
+      "sam-task/references/phase-contract.md",
+      "sam-task/references/output-contract.md",
+      "sam-task/references/closure-loop.md",
+      "sam-task/references/behavior-evals.md",
+      "sam-task/scripts/validate_task_report.py",
+      "sam-task/scripts/test_task_harness.py",
+      "sam-plan/SKILL.md",
+      "sam-plan/references/output-contract.md",
+      "sam-plan/scripts/validate_plan_report.py",
+      "sam-refine-task/SKILL.md",
+      "sam-refine-task/scripts/validate_report.py",
+      "sam-refine-task/references/evidence-policy.md",
+      "scripts/validate_skill_suite.py",
+      "sam-orchestrate/references/host-runtime-matrix.md",
+      "sam-claude-advisor/scripts/resolve_advisor.py"
+    ],
+    "prompt_ambiguities": [
+      "User said 'graph engineering' — treated as optional technique for smarter gap detection, not a rebrand mandate (confirmed via advisor + prior chat)."
+    ],
+    "repo_root": "/Users/samuelfajreldines/dev/sam-skills"
+  },
+  "frozen": {
+    "prompt_hash": "f46a808b7c8c32bc58e948c500b489705bc298c33915519c2948f0beb937ae79",
+    "prompt_summary": "Claude advisor (max) + sam-plan: improve sam-task gap detection; use graph engineering only if it helps; save freeze to ./plan",
+    "goal": "Make sam-task catch more structural and ledger gaps automatically (fail-closed) via deterministic validators and contracts, using a minimal ledger-graph approach—not a graph-runtime rebrand—and ship an executable phased plan under ./plan.",
+    "non_goals": [
+      "Rebrand sam-task as graph engineering",
+      "Generic workflow/graph runtime or task-graph.json graph DB",
+      "Shared cross-skill Python import library for gap engine (forbidden by standalone install)",
+      "Parallelize canonical phases via DAG",
+      "Mandatory Graphify dependency for READY/COMPLETE",
+      "LLM/semantic scoring inside validators",
+      "Auto-promote learning candidates into skills",
+      "Implement production code in this plan run (plan-only)"
+    ],
+    "success_criteria": [
+      "Parent COMPLETE re-validates durable child plan and refine artifacts by path (not bare receipt strings)",
+      "Plan READY_TO_EXECUTE rejects empty success_criteria and other P1 ledger orphans",
+      "Refine/closure validators close documented fail-opens (CLOSED loophole evidence, finding-to-correction tracking)",
+      "Graphify remains advisory-only for impact completeness",
+      "No new cross-skill import graph engine; rules live in existing validators",
+      "Harness fixtures prove each new rule flips VALID→INVALID and a benign fixture still passes"
+    ],
+    "invariants": [
+      "Phases remain strictly ordered: plan → refine → work → closure → learn",
+      "Learning stays proposal-only",
+      "Validators stay deterministic and offline",
+      "Skills install standalone; no cross-package imports",
+      "Fail-closed beats false COMPLETE"
+    ],
+    "constraints": [
+      "Smallest diffs: SKILL/contracts + validators + harnesses",
+      "schema_version bumps when required COMPLETE fields change",
+      "Depth-aware relief for simple plans on non-material probes",
+      "Escape hatches via explicit reason strings (existing pattern)"
+    ],
+    "no_go": [
+      "Do not mandate Graphify for hosts without RC graph",
+      "Do not hard-equal plan-goal text vs refine-goal (false BLOCKED)",
+      "Do not add a second task-graph serialization alongside reports",
+      "Do not weaken validators to force confidence"
+    ]
+  },
+  "output": {
+    "plan_dir": "/Users/samuelfajreldines/dev/sam-skills/plan",
+    "html_files": [
+      "00-plano.html"
+    ]
+  },
+  "evidence": [
+    {
+      "id": "E-001",
+      "kind": "code",
+      "classification": "FACT",
+      "claim": "sam-plan allows empty frozen.success_criteria (allow_empty=True), which can skip acceptance_trace coverage for READY.",
+      "locator": "sam-plan/scripts/validate_plan_report.py:385"
+    },
+    {
+      "id": "E-002",
+      "kind": "code",
+      "classification": "FACT",
+      "claim": "acceptance_trace completeness gate only runs when success_criteria is non-empty.",
+      "locator": "sam-plan/scripts/validate_plan_report.py:790"
+    },
+    {
+      "id": "E-003",
+      "kind": "code",
+      "classification": "FACT",
+      "claim": "sam-task COMPLETE requires plan.status READY_TO_EXECUTE and a non-empty plan.validator_receipt string, but does not re-open freeze_path on disk.",
+      "locator": "sam-task/scripts/validate_task_report.py:501"
+    },
+    {
+      "id": "E-004",
+      "kind": "code",
+      "classification": "FACT",
+      "claim": "Skills cannot import across packages; shared logic must be duplicated or stay local to each skill's scripts.",
+      "locator": "scripts/validate_skill_suite.py:36"
+    },
+    {
+      "id": "E-005",
+      "kind": "code",
+      "classification": "FACT",
+      "claim": "sam-refine validates report under $WORK_TMP and does not require a durable refine-report path for the parent task report.",
+      "locator": "sam-refine-task/SKILL.md:123"
+    },
+    {
+      "id": "E-006",
+      "kind": "code",
+      "classification": "FACT",
+      "claim": "Closure intermediate iterations require correction_receipts when open_findings exist, but do not require named per-finding mapping.",
+      "locator": "sam-task/scripts/validate_task_report.py:246"
+    },
+    {
+      "id": "E-007",
+      "kind": "code",
+      "classification": "FACT",
+      "claim": "CLOSED/REJECTED loopholes require evidence_ids but do not require_pass on those evidence receipts.",
+      "locator": "sam-refine-task/scripts/validate_report.py:302"
+    },
+    {
+      "id": "E-008",
+      "kind": "code",
+      "classification": "FACT",
+      "claim": "Plan step proof_ids are optional lists (membership only when present); depends_on checks membership not acyclicity.",
+      "locator": "sam-plan/scripts/validate_plan_report.py:544"
+    },
+    {
+      "id": "E-009",
+      "kind": "code",
+      "classification": "FACT",
+      "claim": "sam-task is ordered multi-phase orchestration with fail-closed child terminals.",
+      "locator": "sam-task/references/phase-contract.md:11"
+    },
+    {
+      "id": "E-010",
+      "kind": "decision",
+      "classification": "FACT",
+      "claim": "Claude advisor (opus, effort max, user-specified) recommended ledger-graph validators over code-graph rebrand; Graphify advisory-only; P0 parent re-validation first.",
+      "locator": "command: claude --print --model opus --effort max --permission-mode plan"
+    },
+    {
+      "id": "E-011",
+      "kind": "code",
+      "classification": "FACT",
+      "claim": "Claude Code advisor matrix defaults to fable-or-opus; user override effort max was applied exactly.",
+      "locator": "sam-orchestrate/references/host-runtime-matrix.md:82"
+    }
+  ],
+  "assumptions": [
+    {
+      "id": "A-001",
+      "claim": "No external consumer requires immutable task-report schema_version 2 without a bump path; v3 for new COMPLETE fields is acceptable.",
+      "state": "ACCEPTED",
+      "decision_reason": "In-repo harnesses own the schema; bump is the documented pattern for required field growth (advisor + existing schema_version 2 already)."
+    },
+    {
+      "id": "A-002",
+      "claim": "Refine can emit a durable report under plan_dir (or task work dir) without breaking baseline/current capture_scope contract.",
+      "state": "ACCEPTED",
+      "decision_reason": "plan phase already freezes plan_dir absolute path; copy after validate is additive."
+    },
+    {
+      "id": "A-003",
+      "claim": "Primary escaped gaps are structural orphans at READY/COMPLETE boundaries rather than missing domain genius.",
+      "state": "ACCEPTED",
+      "decision_reason": "Advisor assumption accepted for MVP scope; work-report deep audit deferred as residual (R-004 mitigation)."
+    }
+  ],
+  "unknowns": [],
+  "thesis": {
+    "id": "T-001",
+    "summary": "Treat existing JSON reports as the ledger graph; add deterministic orphan/reachability rules in per-skill validators; parent re-checks child artifacts by path; Graphify stays optional advisory for impact.",
+    "approach": "Phased implementation P0→P4: (P0) sam-task schema v3 + validate_child_artifacts re-running plan/refine validators from durable paths; (P1) plan gap engine under READY only (non-empty criteria, AC↔step↔proof, step reachability, depends_on acyclic, UNKNOWN probes, ASSUMPTION acceptance hygiene, hedge-vs-FACT); (P2) refine CLOSED require_pass + UNKNOWN probes; closure per-finding correction tracking; (P3) contract-only adversarial ledger pass in closure-loop; (P4) document optional Graphify impact evidence in plan evidence-policy. No shared gap_engine import; no rebrand; duplicate tiny helpers only if needed under standalone install rules.",
+    "rejected_alternatives": [
+      "Rebrand/rewrite sam-task as graph engineering runtime with task-graph.json: Second serialization drifts from reports; zero extra gap detection once ID edges exist; high ceremony (advisor + simplicity rules).",
+      "Mandatory Graphify impact as READY gate: Host-dependent, non-deterministic availability; incentives to fabricate consultation; improves plan completeness not ledger integrity.",
+      "Shared cross-skill gap_engine.py library: Forbidden by validate_skill_suite standalone install contract.",
+      "Parallel DAG of canonical phases: Breaks single-final-head freshness; no latency evidence; contracts are intentionally serial."
+    ]
+  },
+  "steps": [
+    {
+      "id": "S-001",
+      "title": "P0 — Parent re-validates durable plan + refine artifacts",
+      "why": "Bare validator_receipt strings allow COMPLETE while disk freeze is not READY; highest integrity win.",
+      "depends_on": [],
+      "surfaces": [
+        "sam-task/references/output-contract.md",
+        "sam-task/SKILL.md",
+        "sam-task/scripts/validate_task_report.py",
+        "sam-task/scripts/test_task_harness.py",
+        "sam-refine-task/SKILL.md",
+        "sam-refine-task/references/output-contract.md"
+      ],
+      "dod": [
+        "task-report schema_version 3 requires plan.freeze_path + refine_report_path absolute paths on COMPLETE",
+        "validate_child_artifacts opens freeze and refine reports and asserts READY_TO_EXECUTE / HIGH_CONFIDENCE with remaining empty",
+        "prompt_sha256 matches freeze frozen.prompt_hash; goal-text drift recorded residual not hard fail",
+        "refine skill copies validated report to durable path under plan_dir",
+        "Harness fixtures a–e from advisor DoD all pass"
+      ],
+      "proof_ids": [
+        "V-001",
+        "V-002"
+      ]
+    },
+    {
+      "id": "S-002",
+      "title": "P1 — Plan ledger gap engine (READY-only rules)",
+      "why": "Closes strongest structural fail-opens (empty criteria, weak AC↔proof, unlabeled unknowns).",
+      "depends_on": [
+        "S-001"
+      ],
+      "surfaces": [
+        "sam-plan/scripts/validate_plan_report.py",
+        "sam-plan/references/output-contract.md",
+        "sam-plan/scripts/test_plan_harness.py"
+      ],
+      "dod": [
+        "READY forbids empty success_criteria (non-SPIKE)",
+        "Each acceptance_trace entry has ≥1 step_id and ≥1 proof_id",
+        "Every step reachable from a criterion or explicit out_of_acceptance reason",
+        "depends_on acyclic",
+        "Material UNKNOWN requires probe; immaterial requires why_immaterial (depth-aware)",
+        "ACCEPTED ASSUMPTION requires decision_reason",
+        "Tiny hedge wordlist only on FACT classification + benign fixture",
+        "One failing fixture per rule + one benign still VALID"
+      ],
+      "proof_ids": [
+        "V-003"
+      ]
+    },
+    {
+      "id": "S-003",
+      "title": "P2 — Refine + closure orphan rules",
+      "why": "Closes CLOSED-without-pass evidence and finding-without-named-correction orphans.",
+      "depends_on": [
+        "S-001"
+      ],
+      "surfaces": [
+        "sam-refine-task/scripts/validate_report.py",
+        "sam-refine-task/scripts/test_harness.py",
+        "sam-task/scripts/validate_task_report.py",
+        "sam-task/references/closure-loop.md"
+      ],
+      "dod": [
+        "CLOSED loopholes require evidence with require_pass semantics",
+        "UNKNOWN claims require probe fields",
+        "Finding present in iteration N open_findings and absent in N+1 must appear in N correction_receipts (stable finding ids or normalized text keys)",
+        "Harness fixtures for each rule"
+      ],
+      "proof_ids": [
+        "V-004",
+        "V-005"
+      ]
+    },
+    {
+      "id": "S-004",
+      "title": "P3 — Contract-only adversarial ledger pass",
+      "why": "Cheap human/agent self-check over P1/P2 categories without new phase/script gate.",
+      "depends_on": [
+        "S-002",
+        "S-003"
+      ],
+      "surfaces": [
+        "sam-task/references/closure-loop.md",
+        "sam-task/SKILL.md"
+      ],
+      "dod": [
+        "closure-loop documents one pre-review adversarial ledger pass (≤1 turn)",
+        "Output goes to residuals; no new terminal status",
+        "Skippable when cost exceeds value (explicit residual reason)"
+      ],
+      "proof_ids": [
+        "V-006"
+      ]
+    },
+    {
+      "id": "S-005",
+      "title": "P4 — Graphify impact as advisory evidence",
+      "why": "Improves plan completeness when host graph exists without creating false BLOCKED.",
+      "depends_on": [
+        "S-002"
+      ],
+      "surfaces": [
+        "sam-plan/references/evidence-policy.md",
+        "sam-plan/SKILL.md",
+        "sam-plan/references/output-contract.md"
+      ],
+      "dod": [
+        "Document optional impact evidence kind when RC_GRAPHIFY_GRAPH_JSON available",
+        "When unavailable: UNKNOWN with probe or skip with residual—not hard READY fail",
+        "No validator requires graph binary"
+      ],
+      "proof_ids": [
+        "V-007"
+      ]
+    },
+    {
+      "id": "S-006",
+      "title": "Behavior-eval scenarios for escaped-gap classes",
+      "why": "Measures automatic gap catch rate and BLOCKED precision over time.",
+      "depends_on": [
+        "S-002",
+        "S-003"
+      ],
+      "surfaces": [
+        "sam-task/assets/behavior-eval-scenarios.json",
+        "sam-task/references/behavior-evals.md",
+        "sam-task/scripts/validate_behavior_eval.py"
+      ],
+      "dod": [
+        "Add ≥3 scenarios: AC-without-proof, finding-without-reopen, assumption-without-probe",
+        "Bump catalog.suite_id as required by validator",
+        "Document metrics: false-completion=0, escaped-gap decreasing, BLOCKED-precision ≥0.9 target"
+      ],
+      "proof_ids": [
+        "V-008"
+      ]
+    },
+    {
+      "id": "S-007",
+      "title": "Full suite harness green + optional real-report replay",
+      "why": "Proves no suite/portability regression and rules are not inert.",
+      "depends_on": [
+        "S-001",
+        "S-002",
+        "S-003",
+        "S-004",
+        "S-005",
+        "S-006"
+      ],
+      "surfaces": [
+        "scripts/validate_skill_suite.py",
+        "scripts/run_skill_harnesses.py"
+      ],
+      "dod": [
+        "validate_skill_suite.py passes",
+        "run_skill_harnesses.py passes for touched skills",
+        "If a prior task-report exists, replaying against new validator yields explained VALID or expected INVALID"
+      ],
+      "proof_ids": [
+        "V-009"
+      ]
+    }
+  ],
+  "risks": [
+    {
+      "id": "R-001",
+      "claim": "False BLOCKED from structural rules that judge shape not substance",
+      "severity": "medium",
+      "status": "MITIGATED",
+      "mitigation": "READY/COMPLETE-only gates; depth-aware relief; explicit reason escape hatches; benign fixtures as over-strictness guard"
+    },
+    {
+      "id": "R-002",
+      "claim": "Hedge wordlist false positives on legitimate FACT prose",
+      "severity": "low",
+      "status": "MITIGATED",
+      "mitigation": "Tiny list; classify-field gated; ship benign fixture with hedge in non-FACT field"
+    },
+    {
+      "id": "R-003",
+      "claim": "schema_version 3 invalidates stored v2 COMPLETE reports",
+      "severity": "medium",
+      "status": "ACCEPTED",
+      "mitigation": "Document break; harness-only consumers expected; residual if external consumers appear"
+    },
+    {
+      "id": "R-004",
+      "claim": "Work-report fail-opens unexplored (advisor did not audit validate_work_report)",
+      "severity": "low",
+      "status": "ACCEPTED",
+      "mitigation": "Out of MVP; residual follow-up spike after P0–P2 land"
+    },
+    {
+      "id": "R-005",
+      "claim": "Durable path moves make old task reports INVALID",
+      "severity": "low",
+      "status": "MITIGATED",
+      "mitigation": "Errors name exact path/field; paths absolute and frozen at run time"
+    }
+  ],
+  "verifications": [
+    {
+      "id": "V-001",
+      "status": "PLANNED",
+      "reason": "Post-implement: python3 -B sam-task/scripts/test_task_harness.py",
+      "proof": "Unit/harness: validate_task_report fixtures for receipt-vs-disk mismatch, hash mismatch, missing refine path, refine not HIGH_CONFIDENCE, happy path"
+    },
+    {
+      "id": "V-002",
+      "status": "PLANNED",
+      "reason": "Post-implement against validate_task_report.py -- schema_version 3",
+      "proof": "Manual schema: COMPLETE sample with freeze_path + refine_report_path revalidated by parent"
+    },
+    {
+      "id": "V-003",
+      "status": "PLANNED",
+      "reason": "Post-implement: python3 -B sam-plan/scripts/test_plan_harness.py",
+      "proof": "Plan harness: one fail fixture per P1 rule + benign READY still VALID"
+    },
+    {
+      "id": "V-004",
+      "status": "PLANNED",
+      "reason": "Post-implement: python3 -B sam-refine-task/scripts/test_harness.py",
+      "proof": "Refine harness: CLOSED without pass evidence INVALID; UNKNOWN without probe INVALID"
+    },
+    {
+      "id": "V-005",
+      "status": "PLANNED",
+      "reason": "Post-implement: python3 -B sam-task/scripts/test_task_harness.py",
+      "proof": "Task harness: finding disappears without named correction → INVALID"
+    },
+    {
+      "id": "V-006",
+      "status": "PLANNED",
+      "reason": "Post-implement: rg + human read of closure-loop.md",
+      "proof": "Doc review: closure-loop adversarial pass is contract-only, no new terminal"
+    },
+    {
+      "id": "V-007",
+      "status": "PLANNED",
+      "reason": "Post-implement: rg graphify in validate_plan_report.py must not hard-require",
+      "proof": "Doc review: Graphify optional; validator does not require graph binary"
+    },
+    {
+      "id": "V-008",
+      "status": "PLANNED",
+      "reason": "Post-implement: validate_behavior_eval.py --require-complete-suite",
+      "proof": "behavior-eval catalog validates with new scenarios and bumped suite_id"
+    },
+    {
+      "id": "V-009",
+      "status": "PLANNED",
+      "reason": "Post-implement: python3 -B scripts/validate_skill_suite.py . && python3 -B scripts/run_skill_harnesses.py",
+      "proof": "Full skill suite + harness runner green"
+    }
+  ],
+  "acceptance_trace": [
+    {
+      "criterion": "Parent COMPLETE re-validates durable child plan and refine artifacts by path (not bare receipt strings)",
+      "step_ids": [
+        "S-001"
+      ],
+      "proof_ids": [
+        "V-001",
+        "V-002"
+      ]
+    },
+    {
+      "criterion": "Plan READY_TO_EXECUTE rejects empty success_criteria and other P1 ledger orphans",
+      "step_ids": [
+        "S-002"
+      ],
+      "proof_ids": [
+        "V-003"
+      ]
+    },
+    {
+      "criterion": "Refine/closure validators close documented fail-opens (CLOSED loophole evidence, finding-to-correction tracking)",
+      "step_ids": [
+        "S-003"
+      ],
+      "proof_ids": [
+        "V-004",
+        "V-005"
+      ]
+    },
+    {
+      "criterion": "Graphify remains advisory-only for impact completeness",
+      "step_ids": [
+        "S-005"
+      ],
+      "proof_ids": [
+        "V-007"
+      ]
+    },
+    {
+      "criterion": "No new cross-skill import graph engine; rules live in existing validators",
+      "step_ids": [
+        "S-001",
+        "S-002",
+        "S-003",
+        "S-007"
+      ],
+      "proof_ids": [
+        "V-009"
+      ]
+    },
+    {
+      "criterion": "Harness fixtures prove each new rule flips VALID→INVALID and a benign fixture still passes",
+      "step_ids": [
+        "S-001",
+        "S-002",
+        "S-003",
+        "S-006",
+        "S-007"
+      ],
+      "proof_ids": [
+        "V-001",
+        "V-003",
+        "V-004",
+        "V-005",
+        "V-008",
+        "V-009"
+      ]
+    }
+  ],
+  "council": {
+    "required": false,
+    "skip_reason": "No council risk triggers (no security/auth/migration/payments/public_contract/irreversible). Multi-skill validator hardening with fail-closed posture; advisor max already provided adversarial architecture critique. User did not request council.",
+    "runs": []
+  },
+  "simplicity": {
+    "cuts": [
+      "Generic graph runtime / task-graph.json",
+      "Mandatory Graphify",
+      "Cross-skill shared gap_engine package",
+      "Phase DAG parallelization",
+      "Deep audit of sam-work validate_work_report in MVP",
+      "LLM-based gap scoring"
+    ],
+    "retained_complexity_justifications": [
+      "schema_version 3 bump retained because new required COMPLETE fields would silently soft-fail on v2 consumers if unversioned",
+      "Per-skill rule duplication retained because standalone install forbids shared imports (validate_skill_suite)"
+    ]
+  },
+  "residuals": [
+    "Spike later: audit sam-work/scripts validate_work_report for similar receipt-only fail-opens (R-004)",
+    "If external consumers of task-report v2 appear, publish migration note",
+    "Advisor used model alias opus (matrix fable-when-available); fable not attempted when opus resolved cleanly"
+  ],
+  "blockers": [],
+  "advisor_consults": [
+    {
+      "advisor": "Claude",
+      "model": "opus",
+      "effort": "max",
+      "effort_source": "user-specified",
+      "focus": "Improve sam-task automatic gap detection; role of graph engineering; prioritised plan",
+      "recommendation": "Build ledger-graph rules inside existing validators; Graphify advisory-only; P0 parent path re-validation first; reject rebrand/runtime/shared import/mandatory graph",
+      "caller_decision": "accepted",
+      "caller_decision_reason": "Matches repo evidence (empty success_criteria, receipt-only plan check, standalone install); reorder ROI to merge gap engine+ledger; keep sequential phases"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "00",
+      "slug": "plano",
+      "title": "Plano",
+      "summary": "Claude advisor (max) + sam-plan: improve sam-task gap detection; use graph engineering only if it helps; save freeze to ./plan",
+      "sections": [
+        {
+          "heading": "Goal",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "text": "Make sam-task catch more structural and ledger gaps automatically (fail-closed) via deterministic validators and contracts, using a minimal ledger-graph approach—not a graph-runtime rebrand—and ship an executable phased plan under ./plan."
+            }
+          ]
+        },
+        {
+          "heading": "Thesis",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "text": "Phased implementation P0→P4: (P0) sam-task schema v3 + validate_child_artifacts re-running plan/refine validators from durable paths; (P1) plan gap engine under READY only (non-empty criteria, AC↔step↔proof, step reachability, depends_on acyclic, UNKNOWN probes, ASSUMPTION acceptance hygiene, hedge-vs-FACT); (P2) refine CLOSED require_pass + UNKNOWN probes; closure per-finding correction tracking; (P3) contract-only adversarial ledger pass in closure-loop; (P4) document optional Graphify impact evidence in plan evidence-policy. No shared gap_engine import; no rebrand; duplicate tiny helpers only if needed under standalone install rules."
+            },
+            {
+              "type": "list",
+              "items": [
+                "Rebrand/rewrite sam-task as graph engineering runtime with task-graph.json: Second serialization drifts from reports; zero extra gap detection once ID edges exist; high ceremony (advisor + simplicity rules).",
+                "Mandatory Graphify impact as READY gate: Host-dependent, non-deterministic availability; incentives to fabricate consultation; improves plan completeness not ledger integrity.",
+                "Shared cross-skill gap_engine.py library: Forbidden by validate_skill_suite standalone install contract.",
+                "Parallel DAG of canonical phases: Breaks single-final-head freshness; no latency evidence; contracts are intentionally serial."
+              ]
+            }
+          ]
+        },
+        {
+          "heading": "Steps",
+          "blocks": [
+            {
+              "type": "table",
+              "headers": [
+                "ID",
+                "Step",
+                "DoD"
+              ],
+              "rows": [
+                [
+                  "S-001",
+                  "P0 — Parent re-validates durable plan + refine artifacts",
+                  "task-report schema_version 3 requires plan.freeze_path + refine_report_path absolute paths on COMPLETE; validate_child_artifacts opens freeze and refine reports and asserts READY_TO_EXECUTE / HIGH_CONFIDENCE with remaining empty; prompt_sha256 matches freeze frozen.prompt_hash; goal-text drift recorded residual not hard fail; refine skill copies validated report to durable path under plan_dir; Harness fixtures a–e from advisor DoD all pass"
+                ],
+                [
+                  "S-002",
+                  "P1 — Plan ledger gap engine (READY-only rules)",
+                  "READY forbids empty success_criteria (non-SPIKE); Each acceptance_trace entry has ≥1 step_id and ≥1 proof_id; Every step reachable from a criterion or explicit out_of_acceptance reason; depends_on acyclic; Material UNKNOWN requires probe; immaterial requires why_immaterial (depth-aware); ACCEPTED ASSUMPTION requires decision_reason; Tiny hedge wordlist only on FACT classification + benign fixture; One failing fixture per rule + one benign still VALID"
+                ],
+                [
+                  "S-003",
+                  "P2 — Refine + closure orphan rules",
+                  "CLOSED loopholes require evidence with require_pass semantics; UNKNOWN claims require probe fields; Finding present in iteration N open_findings and absent in N+1 must appear in N correction_receipts (stable finding ids or normalized text keys); Harness fixtures for each rule"
+                ],
+                [
+                  "S-004",
+                  "P3 — Contract-only adversarial ledger pass",
+                  "closure-loop documents one pre-review adversarial ledger pass (≤1 turn); Output goes to residuals; no new terminal status; Skippable when cost exceeds value (explicit residual reason)"
+                ],
+                [
+                  "S-005",
+                  "P4 — Graphify impact as advisory evidence",
+                  "Document optional impact evidence kind when RC_GRAPHIFY_GRAPH_JSON available; When unavailable: UNKNOWN with probe or skip with residual—not hard READY fail; No validator requires graph binary"
+                ],
+                [
+                  "S-006",
+                  "Behavior-eval scenarios for escaped-gap classes",
+                  "Add ≥3 scenarios: AC-without-proof, finding-without-reopen, assumption-without-probe; Bump catalog.suite_id as required by validator; Document metrics: false-completion=0, escaped-gap decreasing, BLOCKED-precision ≥0.9 target"
+                ],
+                [
+                  "S-007",
+                  "Full suite harness green + optional real-report replay",
+                  "validate_skill_suite.py passes; run_skill_harnesses.py passes for touched skills; If a prior task-report exists, replaying against new validator yields explained VALID or expected INVALID"
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "heading": "Evidence",
+          "blocks": [
+            {
+              "type": "list",
+              "items": [
+                "E-001: sam-plan allows empty frozen.success_criteria (allow_empty=True), which can skip acceptance_trace coverage for READY. (sam-plan/scripts/validate_plan_report.py:385)",
+                "E-002: acceptance_trace completeness gate only runs when success_criteria is non-empty. (sam-plan/scripts/validate_plan_report.py:790)",
+                "E-003: sam-task COMPLETE requires plan.status READY_TO_EXECUTE and a non-empty plan.validator_receipt string, but does not re-open freeze_path on disk. (sam-task/scripts/validate_task_report.py:501)",
+                "E-004: Skills cannot import across packages; shared logic must be duplicated or stay local to each skill's scripts. (scripts/validate_skill_suite.py:36)",
+                "E-005: sam-refine validates report under $WORK_TMP and does not require a durable refine-report path for the parent task report. (sam-refine-task/SKILL.md:123)",
+                "E-006: Closure intermediate iterations require correction_receipts when open_findings exist, but do not require named per-finding mapping. (sam-task/scripts/validate_task_report.py:246)",
+                "E-007: CLOSED/REJECTED loopholes require evidence_ids but do not require_pass on those evidence receipts. (sam-refine-task/scripts/validate_report.py:302)",
+                "E-008: Plan step proof_ids are optional lists (membership only when present); depends_on checks membership not acyclicity. (sam-plan/scripts/validate_plan_report.py:544)",
+                "E-009: sam-task is ordered multi-phase orchestration with fail-closed child terminals. (sam-task/references/phase-contract.md:11)",
+                "E-010: Claude advisor (opus, effort max, user-specified) recommended ledger-graph validators over code-graph rebrand; Graphify advisory-only; P0 parent re-validation first. (command: claude --print --model opus --effort max --permission-mode plan)",
+                "E-011: Claude Code advisor matrix defaults to fable-or-opus; user override effort max was applied exactly. (sam-orchestrate/references/host-runtime-matrix.md:82)"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

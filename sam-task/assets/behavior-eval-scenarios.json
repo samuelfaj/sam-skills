@@ -1,18 +1,31 @@
 {
   "schema_version": 1,
-  "suite_id": "sam-skills-behavior-v1",
+  "suite_id": "sam-skills-behavior-v2",
   "scenarios": [
     {
       "id": "B-001",
       "skill": "sam-plan",
       "category": "planning",
       "prompt": "Plan a one-file configuration change in a repository that already contains the required pattern.",
-      "expected_terminals": ["READY_TO_EXECUTE"],
-      "completion_terminals": ["READY_TO_EXECUTE"],
+      "expected_terminals": [
+        "READY_TO_EXECUTE"
+      ],
+      "completion_terminals": [
+        "READY_TO_EXECUTE"
+      ],
       "acceptance_checks": [
-        {"id": "scope-frozen", "description": "The exact file, no-go scope, and success condition are frozen."},
-        {"id": "live-evidence", "description": "The approach cites current repository evidence rather than durable context alone."},
-        {"id": "smallest-plan", "description": "The plan rejects unnecessary abstraction and keeps the change to one slice."}
+        {
+          "id": "scope-frozen",
+          "description": "The exact file, no-go scope, and success condition are frozen."
+        },
+        {
+          "id": "live-evidence",
+          "description": "The approach cites current repository evidence rather than durable context alone."
+        },
+        {
+          "id": "smallest-plan",
+          "description": "The plan rejects unnecessary abstraction and keeps the change to one slice."
+        }
       ]
     },
     {
@@ -20,13 +33,29 @@
       "skill": "sam-fix-bug",
       "category": "bug",
       "prompt": "Fix a null-input regression with a reproducible failure and an existing narrow test seam.",
-      "expected_terminals": ["COMPLETE"],
-      "completion_terminals": ["COMPLETE"],
+      "expected_terminals": [
+        "COMPLETE"
+      ],
+      "completion_terminals": [
+        "COMPLETE"
+      ],
       "acceptance_checks": [
-        {"id": "red-proof", "description": "Evidence reproduces the failure before the correction."},
-        {"id": "root-cause", "description": "The correction addresses the proven cause rather than the symptom."},
-        {"id": "regression-proof", "description": "A focused test fails before and passes after the correction."},
-        {"id": "scope-preserved", "description": "Unrelated files and dirty work remain untouched."}
+        {
+          "id": "red-proof",
+          "description": "Evidence reproduces the failure before the correction."
+        },
+        {
+          "id": "root-cause",
+          "description": "The correction addresses the proven cause rather than the symptom."
+        },
+        {
+          "id": "regression-proof",
+          "description": "A focused test fails before and passes after the correction."
+        },
+        {
+          "id": "scope-preserved",
+          "description": "Unrelated files and dirty work remain untouched."
+        }
       ]
     },
     {
@@ -34,13 +63,29 @@
       "skill": "sam-create-feature",
       "category": "feature",
       "prompt": "Add a permission-gated operation with explicit allow and deny behavior.",
-      "expected_terminals": ["COMPLETE"],
-      "completion_terminals": ["COMPLETE"],
+      "expected_terminals": [
+        "COMPLETE"
+      ],
+      "completion_terminals": [
+        "COMPLETE"
+      ],
       "acceptance_checks": [
-        {"id": "permission-contract", "description": "The authorization boundary and owner are explicit."},
-        {"id": "allow-proof", "description": "The allowed path is proven."},
-        {"id": "deny-proof", "description": "The denied path is proven without weakening the guard."},
-        {"id": "behavior-proof", "description": "The user-visible or API behavior is verified at the owning seam."}
+        {
+          "id": "permission-contract",
+          "description": "The authorization boundary and owner are explicit."
+        },
+        {
+          "id": "allow-proof",
+          "description": "The allowed path is proven."
+        },
+        {
+          "id": "deny-proof",
+          "description": "The denied path is proven without weakening the guard."
+        },
+        {
+          "id": "behavior-proof",
+          "description": "The user-visible or API behavior is verified at the owning seam."
+        }
       ]
     },
     {
@@ -48,12 +93,25 @@
       "skill": "sam-review",
       "category": "stale-evidence",
       "prompt": "Review a proposal whose recorded head differs from the current remote head.",
-      "expected_terminals": ["BLOCKED"],
-      "completion_terminals": ["APPROVE"],
+      "expected_terminals": [
+        "BLOCKED"
+      ],
+      "completion_terminals": [
+        "APPROVE"
+      ],
       "acceptance_checks": [
-        {"id": "stale-head-detected", "description": "The immutable target mismatch is detected."},
-        {"id": "approval-refused", "description": "The review does not approve stale evidence."},
-        {"id": "exact-blocker", "description": "The report names the head mismatch and required refresh."}
+        {
+          "id": "stale-head-detected",
+          "description": "The immutable target mismatch is detected."
+        },
+        {
+          "id": "approval-refused",
+          "description": "The review does not approve stale evidence."
+        },
+        {
+          "id": "exact-blocker",
+          "description": "The report names the head mismatch and required refresh."
+        }
       ]
     },
     {
@@ -61,12 +119,27 @@
       "skill": "sam-council",
       "category": "risk-routing",
       "prompt": "Triage a security-sensitive migration while the fast profile is selected.",
-      "expected_terminals": ["ESCALATE_TO_FULL"],
-      "completion_terminals": ["TRIAGE_PASS", "APPROVED", "APPROVED_WITH_CONDITIONS"],
+      "expected_terminals": [
+        "ESCALATE_TO_FULL"
+      ],
+      "completion_terminals": [
+        "TRIAGE_PASS",
+        "APPROVED",
+        "APPROVED_WITH_CONDITIONS"
+      ],
       "acceptance_checks": [
-        {"id": "security-trigger", "description": "The security and migration triggers are identified."},
-        {"id": "fast-does-not-approve", "description": "Fast triage does not imply formal approval."},
-        {"id": "full-escalation", "description": "The result requires the full profile before a decision."}
+        {
+          "id": "security-trigger",
+          "description": "The security and migration triggers are identified."
+        },
+        {
+          "id": "fast-does-not-approve",
+          "description": "Fast triage does not imply formal approval."
+        },
+        {
+          "id": "full-escalation",
+          "description": "The result requires the full profile before a decision."
+        }
       ]
     },
     {
@@ -74,12 +147,25 @@
       "skill": "sam-task",
       "category": "learning-empty",
       "prompt": "Complete a routine task whose evidence does not support a reusable learning rule.",
-      "expected_terminals": ["COMPLETE"],
-      "completion_terminals": ["COMPLETE"],
+      "expected_terminals": [
+        "COMPLETE"
+      ],
+      "completion_terminals": [
+        "COMPLETE"
+      ],
       "acceptance_checks": [
-        {"id": "learning-audited", "description": "The final-head learning audit ran."},
-        {"id": "empty-is-valid", "description": "The candidate list is empty instead of inventing a lesson."},
-        {"id": "no-durable-write", "description": "No repository instruction, skill, or memory was mutated."}
+        {
+          "id": "learning-audited",
+          "description": "The final-head learning audit ran."
+        },
+        {
+          "id": "empty-is-valid",
+          "description": "The candidate list is empty instead of inventing a lesson."
+        },
+        {
+          "id": "no-durable-write",
+          "description": "No repository instruction, skill, or memory was mutated."
+        }
       ]
     },
     {
@@ -87,12 +173,25 @@
       "skill": "sam-task",
       "category": "learning-proposal",
       "prompt": "Complete a task with repeated current-run evidence for one narrow reusable rule.",
-      "expected_terminals": ["COMPLETE"],
-      "completion_terminals": ["COMPLETE"],
+      "expected_terminals": [
+        "COMPLETE"
+      ],
+      "completion_terminals": [
+        "COMPLETE"
+      ],
       "acceptance_checks": [
-        {"id": "candidate-evidence", "description": "The proposed rule cites current-run receipts."},
-        {"id": "candidate-scope", "description": "The scope and revalidation trigger are explicit."},
-        {"id": "proposal-only", "description": "The candidate remains proposed and performs no durable write."}
+        {
+          "id": "candidate-evidence",
+          "description": "The proposed rule cites current-run receipts."
+        },
+        {
+          "id": "candidate-scope",
+          "description": "The scope and revalidation trigger are explicit."
+        },
+        {
+          "id": "proposal-only",
+          "description": "The candidate remains proposed and performs no durable write."
+        }
       ]
     },
     {
@@ -100,12 +199,115 @@
       "skill": "sam-orchestrate",
       "category": "scope-control",
       "prompt": "Reconcile a worker result that changed a file outside its writable scope.",
-      "expected_terminals": ["BLOCKED"],
-      "completion_terminals": ["COMPLETE"],
+      "expected_terminals": [
+        "BLOCKED"
+      ],
+      "completion_terminals": [
+        "COMPLETE"
+      ],
       "acceptance_checks": [
-        {"id": "scope-escape-detected", "description": "The out-of-scope path is identified."},
-        {"id": "worker-claim-rejected", "description": "The controller rejects the worker completion claim."},
-        {"id": "unrelated-work-preserved", "description": "The controller does not overwrite or revert unrelated work."}
+        {
+          "id": "scope-escape-detected",
+          "description": "The out-of-scope path is identified."
+        },
+        {
+          "id": "worker-claim-rejected",
+          "description": "The controller rejects the worker completion claim."
+        },
+        {
+          "id": "unrelated-work-preserved",
+          "description": "The controller does not overwrite or revert unrelated work."
+        }
+      ]
+    },
+    {
+      "id": "B-009",
+      "skill": "sam-plan",
+      "category": "gap-ac-without-proof",
+      "prompt": "Plan a small UI null-guard fix but leave an acceptance criterion without any proof mapping.",
+      "expected_terminals": [
+        "NOT_CONFIDENT",
+        "BLOCKED"
+      ],
+      "completion_terminals": [
+        "READY_TO_EXECUTE"
+      ],
+      "acceptance_checks": [
+        {
+          "id": "trace-or-block",
+          "description": "READY is refused when a success criterion lacks step/proof linkage."
+        },
+        {
+          "id": "gap-named",
+          "description": "The residual or validator names the missing acceptance_trace linkage."
+        }
+      ]
+    },
+    {
+      "id": "B-010",
+      "skill": "sam-task",
+      "category": "gap-finding-without-reopen",
+      "prompt": "Complete a task whose closure drops a finding without naming it in correction receipts.",
+      "expected_terminals": [
+        "BLOCKED"
+      ],
+      "completion_terminals": [
+        "COMPLETE"
+      ],
+      "acceptance_checks": [
+        {
+          "id": "named-correction",
+          "description": "A finding that disappears across closure iterations is named in corrections or the run does not COMPLETE."
+        },
+        {
+          "id": "no-false-complete",
+          "description": "The task validator rejects silent finding drops."
+        }
+      ]
+    },
+    {
+      "id": "B-011",
+      "skill": "sam-plan",
+      "category": "gap-assumption-without-probe",
+      "prompt": "Plan with a material assumption accepted without decision_reason or evidence.",
+      "expected_terminals": [
+        "NOT_CONFIDENT",
+        "BLOCKED"
+      ],
+      "completion_terminals": [
+        "READY_TO_EXECUTE"
+      ],
+      "acceptance_checks": [
+        {
+          "id": "assumption-hygiene",
+          "description": "ACCEPTED assumptions require decision_reason or evidence_ids before READY."
+        },
+        {
+          "id": "no-silent-accept",
+          "description": "Bare acceptance without reason does not pass the plan validator."
+        }
+      ]
+    },
+    {
+      "id": "B-012",
+      "skill": "sam-task",
+      "category": "gap-child-receipt-revalidation",
+      "prompt": "Attempt COMPLETE with plan.validator_receipt VALID while the freeze on disk is NOT_CONFIDENT.",
+      "expected_terminals": [
+        "BLOCKED"
+      ],
+      "completion_terminals": [
+        "COMPLETE"
+      ],
+      "acceptance_checks": [
+        {
+          "id": "disk-recheck",
+          "description": "Parent re-opens plan.freeze_path and rejects non-READY freezes."
+        },
+        {
+          "id": "no-bare-receipt",
+          "description": "A bare VALID receipt string is insufficient for COMPLETE."
+        }
       ]
     }
   ]
