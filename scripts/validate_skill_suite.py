@@ -54,6 +54,12 @@ PROVIDER_SPECIFIC_REPLACEMENTS = {
         (re.compile(r"\bgrok-4\.5\b", re.IGNORECASE), "approved-model"),
         (re.compile(r"\b(?:haiku|sonnet|opus|fable)\b", re.IGNORECASE), "approved-model"),
     ),
+    "sam-orchestrate-codex-grok": (
+        (re.compile(r"\bcodex\b", re.IGNORECASE), "host-runtime"),
+        (re.compile(r"\bgrok\b", re.IGNORECASE), "host-runtime"),
+        (re.compile(r"\bgpt-5\.6-(?:luna|sol)\b", re.IGNORECASE), "approved-model"),
+        (re.compile(r"\bgrok-4\.5\b", re.IGNORECASE), "approved-model"),
+    ),
     "sam-council": (
         (re.compile(r"\bcodex\b", re.IGNORECASE), "host-runtime"),
         (re.compile(r"\bclaude(?:-code)?\b", re.IGNORECASE), "host-runtime"),
@@ -332,7 +338,9 @@ def validate_repository_docs(
         if skill.name not in raw_text:
             errors.append(f"README.md: missing skill catalog entry for {skill.name}")
     inspected = raw_text
-    for skill_name in PROVIDER_SPECIFIC_REPLACEMENTS:
+    # Longest skill names first so prefixes (e.g. sam-orchestrate) do not leave
+    # residual forbidden tokens inside longer names (sam-orchestrate-codex-grok).
+    for skill_name in sorted(PROVIDER_SPECIFIC_REPLACEMENTS, key=len, reverse=True):
         inspected = inspected.replace(skill_name, "provider-specific-advisor")
     for label, pattern in FORBIDDEN_TEXT:
         match = pattern.search(inspected)

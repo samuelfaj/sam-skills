@@ -47,6 +47,9 @@ and orchestration.
   the real base, commits, diff, and validation evidence.
 - `sam-orchestrate`: coordinate complex work through capability- and risk-based
   delegation, skeptical verification, and an independent review gate.
+- `sam-orchestrate-codex-grok`: hybrid controller/worker orchestration profile —
+  Grok 4.5 producers (medium LIGHT / high STANDARD+DEEP), Sol medium
+  independent review, and Sol high only for stall or multi-round unstick.
 - `sam-plan`: conduct task study and emit a machine freeze plan (goal, thesis,
   steps, evidence, status) plus a required light-theme HTML pack for humans;
   assertive investigation first, council only on risk triggers.

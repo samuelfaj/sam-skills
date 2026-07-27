@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Orchestrate Codex–Grok"
+  short_description: "Codex controller + Grok workers hybrid orchestration"
+  default_prompt: "Use $sam-orchestrate-codex-grok to coordinate this task: Codex controller, Grok producers, Sol medium review, Sol high only on stall/multi-round failure."
