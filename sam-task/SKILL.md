@@ -30,6 +30,8 @@ child as done because it was invoked—capture and validate its terminal result.
   silent success.
 - Learning is proposal-only. Never write a candidate into repository
   instructions, a skill, or host memory without a later explicit user action.
+- Advisors are subordinate consults, never a phase and never a gate. An advisor
+  answer cannot close a phase, replace a validator receipt, or end this run.
 
 ## Required skills
 
@@ -72,6 +74,33 @@ Same non-interactive rules as `sam-work`: no `AskUserQuestion`, no “should I
 continue?”, no waiting for OS grants mid-flow. Announce progress without
 blocking. On ambiguity: evidence first, else `BLOCKED`.
 
+## Advisors (subordinate, non-phase)
+
+The provider-specific advisor skills (`sam-*-advisor`) are optional bounded
+consults **inside** a phase. This workflow owns the phase ledger, the terminals,
+and the final response at all times.
+
+Rules:
+
+- Allowed only inside `plan`, `refine`, or `closure`. Never inside `work`—that
+  phase is owned by the `sam-work` ledger.
+- At most 3 consults per run, one focused question each. Never delegate a phase,
+  an implementation, or the whole task to an advisor.
+- Bind `model` and `effort` in this workflow and pass both to the advisor skill.
+  Read **only the advisor row** for the active host from
+  `../sam-orchestrate/references/host-runtime-matrix.md`. That document's
+  capability ladder, delegation topology, and controller-only rules do **not**
+  apply here and must not replace these phases. Use a user-supplied effort
+  exactly when the user gives one.
+- The advisor's `## Output` block is an inline consult record returned to this
+  workflow. It never becomes the final response and never ends the run.
+- An advisor failure (CLI, model, effort, or auth unavailable) is a residual, not
+  a blocker. Record it and continue the phase on repo evidence.
+- Treat every advisor claim as analysis. A phase still closes only on its own
+  child terminal plus validator receipt.
+
+Record every consult in `advisor_consults` per the output contract.
+
 ## Canonical phases
 
 ### 1. Plan — `sam-plan`
@@ -104,12 +133,33 @@ not implement a stale thesis.
 ### 3. Work — `sam-work`
 
 Hand off frozen goal, acceptance, invariants, no-go, and plan path. Run the
-full delivery workflow (implement through proposal, browser proof when
-applicable, demo video). Parent authorization covers every write `sam-work`
-requires.
+full delivery workflow (implement through proposal, browser proof, demo video).
+Parent authorization covers every write `sam-work` requires.
 
 - Require child `COMPLETE` with validated `work-report.json`.
 - Any other terminal → workflow `BLOCKED` with the work ledger.
+
+Web-surface determination is a receipt, not a judgement call. Before handing off,
+decide `target.web_surface` from repository evidence and record that evidence:
+
+- `true` when the repo serves a browser-reachable UI (HTTP/dev server script,
+  web framework entrypoint, routed pages/components, or an existing browser
+  test target).
+- `false` only with concrete evidence of no browser surface. Absent, unclear, or
+  unchecked evidence is `true`.
+
+When `target.web_surface` is `true`, Playwright **video is mandatory**:
+
+- Require `sam-work` phase `playwright` = `COMPLETE` with at least one video
+  discovered, every discovered video uploaded, and rendered-player readback.
+- `NOT_APPLICABLE`, zero videos, or "video not requested" is a `BLOCKED`
+  workflow—never a passing run. Do not accept screenshots or a textual claim
+  as a substitute.
+- A demo video is required on every run regardless of `web_surface`.
+
+Pass `web_surface` into the handoff so the child sets `request.web_system` to the
+same value. The task validator cross-checks both and reads the child's
+`video_inventory`; `work: COMPLETE` alone is not video proof.
 
 ### 4. Closure loop — `sam-review` + `sam-council`
 
@@ -149,8 +199,10 @@ After the last mutation:
    current.
 2. Confirm `target.final_head_sha` matches work + closure proofs and proposal
    remote head when a proposal exists.
-3. Write `task-report.json` per the output contract.
-4. Validate:
+3. Re-read the child `video_inventory`: at least one uploaded demo video, plus at
+   least one uploaded Playwright video whenever `target.web_surface` is `true`.
+4. Write `task-report.json` per the output contract.
+5. Validate:
 
 ```bash
 python3 -B "$SAM_TASK_DIR/scripts/validate_task_report.py" task-report.json
@@ -165,10 +217,16 @@ Report:
 1. `COMPLETE`, `BLOCKED`, or `IN_PROGRESS`
 2. Plan depth/dir and refine result
 3. Work result (proposal URL, classification)
-4. Closure iterations used; final review and council statuses
-5. Learning candidate count and proposal-only receipt
-6. Final head and validator receipt
-7. Exact blockers or open findings if not complete
+4. `web_surface` with its evidence, and the Playwright + demo video inventory
+   (discovered/uploaded, player readback)
+5. Closure iterations used; final review and council statuses
+6. Learning candidate count and proposal-only receipt
+7. Advisor consults used (count, phase, decision) or `none`
+8. Final head and validator receipt
+9. Exact blockers or open findings if not complete
+
+This structure is the run's final response. An advisor's output format never
+replaces it.
 
 Run `scripts/test_task_harness.py` and
 `scripts/test_behavior_eval_harness.py` only when changing this skill.

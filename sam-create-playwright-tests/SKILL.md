@@ -1,6 +1,6 @@
 ---
 name: sam-create-playwright-tests
-description: "Create and validate risk-based Playwright browser tests for changed or reported user flows, including real linked UI/backend proof, exact route and network assertions, permissions, persistence, and optional local video evidence. Use when asked for Playwright, browser E2E, UI regression tests, cross-browser flows, route or CORS verification, or explicitly requested PR/MR test evidence."
+description: "Create and validate risk-based Playwright browser tests for changed or reported user flows, including real linked UI/backend proof, exact route and network assertions, permissions, persistence, and video evidence (mandatory under a parent workflow, local-only otherwise). Use when asked for Playwright, browser E2E, UI regression tests, cross-browser flows, route or CORS verification, or explicitly requested PR/MR test evidence."
 ---
 
 # Sam Create Playwright Tests
@@ -63,7 +63,10 @@ workflow stack-, host-, provider-, and model-agnostic except for Playwright itse
 - Read [references/playwright-quality.md](references/playwright-quality.md)
   before implementing or changing browser tests.
 - Read [references/evidence-publishing.md](references/evidence-publishing.md)
-  only when video or external publication is explicitly requested.
+  **before the first run** whenever a parent workflow is active (`sam-work` and
+  `sam-task` always require video) or when video or external publication is
+  explicitly requested. Under a parent workflow, enable video capture up front—
+  video is mandatory there, not optional.
 - Read [references/output-contract.md](references/output-contract.md) before
   drafting the final report.
 
@@ -198,14 +201,15 @@ the browser, network, trace, screenshot, or local video evidence. `PROVEN`
 requires the real product UI and linked backend path. `FALLBACK` requires the
 attempt/blocker ledger and must not be reported as full real-UI confidence.
 
-## 7. Handle Evidence Only When Requested
+## 7. Handle Evidence
 
-Keep Playwright traces, screenshots, reports, and recordings local and safe by
-default. Never `git add` / commit them.
+Keep Playwright traces, screenshots, reports, and recordings local and safe when
+running standalone without a publication request. Never `git add` / commit them.
 
-When the user or parent workflow explicitly requests publication—including
-`sam-work`, which always requires Playwright video publication for web systems—
-enable video capture, run the suite, and publish without asking again. Follow
+Publication is required whenever the user or a parent workflow requests it, and
+`sam-work` and `sam-task` always require Playwright video for a web system. In
+those runs, enable video capture, run the suite, and publish without asking
+again; zero videos is a failed phase, not a quiet pass. Follow
 [references/evidence-publishing.md](references/evidence-publishing.md):
 
 1. Inventory every video (and required screenshots) with path + SHA-256.

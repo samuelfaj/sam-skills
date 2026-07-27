@@ -26,6 +26,22 @@ the final decision, implementation, and proof.
 - Do not silently fall back when the CLI, model, effort, or authentication is unavailable.
 - Treat the advisor response as analysis, not proof. Verify material claims before acting.
 
+## Subordinate mode (parent workflow active)
+
+When a parent workflow (`sam-task`, `sam-work`, `sam-orchestrate`, or any other
+skill) invoked this consult, the parent's contract stays in force and this skill
+is a step inside it, not the run:
+
+- If the caller already supplied `model` and `effort`, use them exactly and do
+  **not** open the host runtime matrix. The parent owns that binding.
+- Return the `## Output` fields as an inline consult record to the caller. Do not
+  emit a terminal workflow report, do not close the parent's phase, and do not
+  replace the parent's final response format.
+- Never ask the user anything. On failure, hand the exact blocker back to the
+  caller as a residual and let the parent decide.
+- Do not restate, renegotiate, or override the parent's phases, gates, or
+  evidence requirements.
+
 ## 1. Freeze the Advisory Request
 
 Record:

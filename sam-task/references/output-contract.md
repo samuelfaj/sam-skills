@@ -7,7 +7,9 @@
 3. Phase objects
 4. Closure object
 5. Learning object
-6. Validation
+6. Web surface and video evidence
+7. Advisor consults
+8. Validation
 
 ## Terminal statuses
 
@@ -36,7 +38,9 @@ Write `task-report.json` (UTF-8 object):
     "base_ref": "main",
     "base_sha": "40-or-64 hex",
     "final_head_sha": "40-or-64 hex",
-    "final_change_fingerprint": "64 lowercase hex"
+    "final_change_fingerprint": "64 lowercase hex",
+    "web_surface": true,
+    "web_surface_evidence": ["dev server script and routed pages"]
   },
   "plan": {
     "plan_dir": "/absolute/plan",
@@ -49,6 +53,7 @@ Write `task-report.json` (UTF-8 object):
   "closure": {},
   "learning": {},
   "work_report_path": "/absolute/work-report.json",
+  "advisor_consults": [],
   "residuals": [],
   "blockers": []
 }
@@ -158,6 +163,62 @@ writing it:
 `candidates: []` is valid and preferable to inventing a lesson.
 `writes_performed` must remain empty. Promotion requires a separate explicit
 user action.
+
+## Web surface and video evidence
+
+`COMPLETE` requires a boolean `target.web_surface` with at least one
+`target.web_surface_evidence` receipt. Decide it from repository evidence: `true`
+for any browser-reachable UI; `false` only with concrete evidence of no browser
+surface. Unclear or unchecked evidence is `true`.
+
+The validator opens `work_report_path` and checks the child receipt directly. A
+`work` phase of `COMPLETE` is not video proof on its own. For `COMPLETE`:
+
+- The work report must exist, load, and record `final.result = COMPLETE`.
+- `request.web_system` in the work report must equal `target.web_surface` here.
+  A mismatch is `INVALID`—the child cannot silently downgrade a web system.
+- `video_inventory.demo_uploaded` must be at least 1 on every run.
+- When `web_surface` is `true`, `video_inventory.playwright_uploaded` must be at
+  least 1 and must equal `playwright_discovered`.
+- When `web_surface` is `false`, Playwright counts must be 0.
+
+## Advisor consults
+
+`advisor_consults` is evidence-only and defaults to `[]`. It never closes a
+phase, replaces a validator receipt, or changes a terminal status.
+
+```json
+{
+  "advisor_consults": [
+    {
+      "id": "A-001",
+      "advisor": "sam-<runtime>-advisor",
+      "phase": "refine",
+      "model": "advisor model bound by this workflow",
+      "effort": "high",
+      "effort_source": "MATRIX_DEFAULT",
+      "question": "one focused question",
+      "status": "ANSWERED",
+      "caller_decision": "ACCEPTED",
+      "decision_reason": "why the caller accepted or rejected it",
+      "failure_reason": null,
+      "evidence": ["consult receipt"]
+    }
+  ]
+}
+```
+
+- `id` matches `A-###` and is unique.
+- `advisor` matches `sam-<runtime>-advisor` (the provider-specific advisor skill
+  that was consulted).
+- `phase` is `plan`, `refine`, or `closure`. `work` is rejected—that phase is
+  owned by the `sam-work` ledger.
+- `effort` is `low|medium|high|xhigh|max`; `effort_source` is `MATRIX_DEFAULT` or
+  `USER_SPECIFIED`.
+- `status` is `ANSWERED` or `FAILED`; `FAILED` requires a `failure_reason` and
+  must appear in `residuals`, never in `blockers`.
+- `caller_decision` is `ACCEPTED`, `REJECTED`, or `UNRESOLVED`.
+- At most 3 consults per run.
 
 ## Validation
 

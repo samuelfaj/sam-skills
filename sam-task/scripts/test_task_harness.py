@@ -20,6 +20,55 @@ FP = "c" * 64
 PROMPT = "d" * 64
 IN_FP = "e" * 64
 OUT_FP = "f" * 64
+WORK_PATH = "/tmp/repository/work-report.json"
+
+
+def work_report(
+    *,
+    web_system: bool = True,
+    playwright_discovered: int = 2,
+    playwright_uploaded: int = 2,
+    demo_uploaded: int = 1,
+    result: str = "COMPLETE",
+) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "workflow_id": "work-001",
+        "request": {
+            "prompt_sha256": PROMPT,
+            "classification": "BUG",
+            "web_system": web_system,
+        },
+        "video_inventory": {
+            "playwright_discovered": playwright_discovered,
+            "playwright_uploaded": playwright_uploaded,
+            "demo_discovered": demo_uploaded,
+            "demo_uploaded": demo_uploaded,
+        },
+        "final": {"result": result},
+    }
+
+
+def advisor_consult(
+    *,
+    phase: str = "refine",
+    status: str = "ANSWERED",
+    failure_reason: Any = None,
+) -> dict[str, Any]:
+    return {
+        "id": "A-001",
+        "advisor": "sam-example-advisor",
+        "phase": phase,
+        "model": "advisor-model",
+        "effort": "high",
+        "effort_source": "MATRIX_DEFAULT",
+        "question": "Is the frozen rollback path safe under partial writes?",
+        "status": status,
+        "caller_decision": "ACCEPTED",
+        "decision_reason": "Confirmed against the migration receipts.",
+        "failure_reason": failure_reason,
+        "evidence": ["consult receipt"],
+    }
 
 
 def run_validate(path: Path) -> subprocess.CompletedProcess[str]:
@@ -87,6 +136,8 @@ def valid_report() -> dict[str, Any]:
             "base_sha": BASE,
             "final_head_sha": HEAD,
             "final_change_fingerprint": FP,
+            "web_surface": True,
+            "web_surface_evidence": ["dev server script and routed pages"],
         },
         "plan": {
             "plan_dir": "/tmp/repository/plan",
@@ -128,7 +179,8 @@ def valid_report() -> dict[str, Any]:
             "writes_performed": [],
             "evidence": ["learning audit found no durable candidate"],
         },
-        "work_report_path": "/tmp/repository/work-report.json",
+        "work_report_path": WORK_PATH,
+        "advisor_consults": [],
         "residuals": [],
         "blockers": [],
     }
@@ -153,8 +205,11 @@ def assert_invalid(path: Path, snippet: str) -> None:
 
 
 def main() -> int:
+    global WORK_PATH
     with tempfile.TemporaryDirectory(prefix="sam-task-harness-") as raw:
         root = Path(raw)
+        WORK_PATH = str(root / "work-report.json")
+        write(Path(WORK_PATH), work_report())
 
         good = root / "good.json"
         write(good, valid_report())
@@ -319,6 +374,130 @@ def main() -> int:
         skipped_learning_path = root / "skipped-learning.json"
         write(skipped_learning_path, skipped_learning)
         assert_invalid(skipped_learning_path, "LEARNING_AUDITED")
+
+        # a web system cannot complete without an uploaded Playwright video
+        no_video = valid_report()
+        no_video_work = root / "work-no-video.json"
+        write(no_video_work, work_report(playwright_discovered=0, playwright_uploaded=0))
+        no_video["work_report_path"] = str(no_video_work)
+        no_video_path = root / "no-video.json"
+        write(no_video_path, no_video)
+        assert_invalid(no_video_path, "at least one uploaded Playwright video")
+
+        # every discovered browser video must be uploaded
+        partial_video = valid_report()
+        partial_work = root / "work-partial-video.json"
+        write(partial_work, work_report(playwright_discovered=2, playwright_uploaded=1))
+        partial_video["work_report_path"] = str(partial_work)
+        partial_path = root / "partial-video.json"
+        write(partial_path, partial_video)
+        assert_invalid(partial_path, "every discovered Playwright video must be uploaded")
+
+        # the demo video is required on every run
+        no_demo = valid_report()
+        no_demo_work = root / "work-no-demo.json"
+        write(no_demo_work, work_report(demo_uploaded=0))
+        no_demo["work_report_path"] = str(no_demo_work)
+        no_demo_path = root / "no-demo.json"
+        write(no_demo_path, no_demo)
+        assert_invalid(no_demo_path, "at least one uploaded demo video")
+
+        # the child cannot silently downgrade a web system to skip Playwright
+        downgrade = valid_report()
+        downgrade_work = root / "work-downgraded.json"
+        write(
+            downgrade_work,
+            work_report(web_system=False, playwright_discovered=0, playwright_uploaded=0),
+        )
+        downgrade["work_report_path"] = str(downgrade_work)
+        downgrade_path = root / "downgrade.json"
+        write(downgrade_path, downgrade)
+        assert_invalid(downgrade_path, "must match work report request.web_system")
+
+        # a proven non-web workflow completes with zero Playwright videos
+        non_web = valid_report()
+        non_web["target"]["web_surface"] = False
+        non_web["target"]["web_surface_evidence"] = ["CLI entrypoint only, no HTTP server"]
+        non_web_work = root / "work-non-web.json"
+        write(
+            non_web_work,
+            work_report(web_system=False, playwright_discovered=0, playwright_uploaded=0),
+        )
+        non_web["work_report_path"] = str(non_web_work)
+        non_web_path = root / "non-web.json"
+        write(non_web_path, non_web)
+        assert_valid(non_web_path)
+
+        # COMPLETE cannot cite a work report that does not exist
+        absent = valid_report()
+        absent["work_report_path"] = str(root / "missing-work-report.json")
+        absent_path = root / "absent-work.json"
+        write(absent_path, absent)
+        assert_invalid(absent_path, "readable work report")
+
+        # the child terminal itself must be COMPLETE
+        child_open = valid_report()
+        child_open_work = root / "work-in-progress.json"
+        write(child_open_work, work_report(result="IN_PROGRESS"))
+        child_open["work_report_path"] = str(child_open_work)
+        child_open_path = root / "child-open.json"
+        write(child_open_path, child_open)
+        assert_invalid(child_open_path, "final.result COMPLETE")
+
+        # web_surface must be decided, not omitted
+        undecided = valid_report()
+        del undecided["target"]["web_surface"]
+        undecided_path = root / "undecided.json"
+        write(undecided_path, undecided)
+        assert_invalid(undecided_path, "requires boolean target.web_surface")
+
+        # a recorded advisor consult is evidence and does not break completion
+        advised = valid_report()
+        advised["advisor_consults"] = [advisor_consult()]
+        advised_path = root / "advised.json"
+        write(advised_path, advised)
+        assert_valid(advised_path)
+
+        # advisors cannot be attached to the sam-work phase
+        advised_work = valid_report()
+        advised_work["advisor_consults"] = [advisor_consult(phase="work")]
+        advised_work_path = root / "advised-work.json"
+        write(advised_work_path, advised_work)
+        assert_invalid(advised_work_path, "owned by sam-work")
+
+        # a consult must name an advisor skill, not an arbitrary child
+        wrong_skill = valid_report()
+        wrong_skill["advisor_consults"] = [{**advisor_consult(), "advisor": "sam-review"}]
+        wrong_skill_path = root / "wrong-advisor-skill.json"
+        write(wrong_skill_path, wrong_skill)
+        assert_invalid(wrong_skill_path, "must name a sam-<runtime>-advisor skill")
+
+        # a failed consult needs a reason and must surface as a residual
+        advisor_failed = valid_report()
+        advisor_failed["advisor_consults"] = [advisor_consult(status="FAILED")]
+        advisor_failed_path = root / "advisor-failed.json"
+        write(advisor_failed_path, advisor_failed)
+        assert_invalid(advisor_failed_path, "FAILED requires a failure_reason")
+        assert_invalid(advisor_failed_path, "must be recorded in residuals")
+
+        # a failed consult is a residual, never a blocker, and still completes
+        advisor_residual = valid_report()
+        advisor_residual["advisor_consults"] = [
+            advisor_consult(status="FAILED", failure_reason="advisor CLI unavailable")
+        ]
+        advisor_residual["residuals"] = ["advisor consult A-001 unavailable"]
+        advisor_residual_path = root / "advisor-residual.json"
+        write(advisor_residual_path, advisor_residual)
+        assert_valid(advisor_residual_path)
+
+        # the per-run consult cap is enforced
+        too_many = valid_report()
+        too_many["advisor_consults"] = [
+            {**advisor_consult(), "id": f"A-00{index}"} for index in range(1, 5)
+        ]
+        too_many_path = root / "too-many-advisors.json"
+        write(too_many_path, too_many)
+        assert_invalid(too_many_path, "exceeds 3 per run")
 
         print("sam-task harness passed")
     return 0

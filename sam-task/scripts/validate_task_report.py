@@ -40,9 +40,17 @@ COUNCIL_PASS = {"TRIAGE_PASS", "APPROVED", "APPROVED_WITH_CONDITIONS"}
 LEARNING_DESTINATIONS = {"AGENTS.md", "SKILL", "MEMORY", "NONE"}
 LEARNING_SENSITIVITY = {"PUBLIC", "INTERNAL", "SENSITIVE"}
 LEARNING_STATUSES = {"PROPOSED", "REJECTED"}
+ADVISOR_PHASES = {"plan", "refine", "closure"}
+ADVISOR_EFFORTS = {"low", "medium", "high", "xhigh", "max"}
+ADVISOR_EFFORT_SOURCES = {"MATRIX_DEFAULT", "USER_SPECIFIED"}
+ADVISOR_STATUSES = {"ANSWERED", "FAILED"}
+ADVISOR_DECISIONS = {"ACCEPTED", "REJECTED", "UNRESOLVED"}
+MAX_ADVISOR_CONSULTS = 3
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 REVISION = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 LEARNING_ID = re.compile(r"^L-\d{3}$")
+ADVISOR_ID = re.compile(r"^A-\d{3}$")
+ADVISOR_SKILL = re.compile(r"^sam-[a-z0-9]+(?:-[a-z0-9]+)*-advisor$")
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -323,6 +331,132 @@ def validate_learning(
         errors.append("COMPLETE requires learning.status LEARNING_AUDITED")
 
 
+def positive_count(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 1
+
+
+def validate_advisor_consults(report: dict[str, Any], errors: list[str]) -> None:
+    consults = report.get("advisor_consults", [])
+    if not isinstance(consults, list):
+        errors.append("advisor_consults must be an array")
+        return
+    if len(consults) > MAX_ADVISOR_CONSULTS:
+        errors.append(f"advisor_consults exceeds {MAX_ADVISOR_CONSULTS} per run")
+
+    seen_ids: set[str] = set()
+    any_failed = False
+    for index, consult in enumerate(consults, start=1):
+        prefix = f"advisor consult {index}"
+        if not isinstance(consult, dict):
+            errors.append(f"{prefix} must be an object")
+            continue
+        consult_id = consult.get("id")
+        if not ADVISOR_ID.fullmatch(str(consult_id or "")):
+            errors.append(f"{prefix} id must match A-###")
+        elif consult_id in seen_ids:
+            errors.append(f"{prefix} id must be unique")
+        else:
+            seen_ids.add(str(consult_id))
+        if not ADVISOR_SKILL.fullmatch(str(consult.get("advisor") or "")):
+            errors.append(f"{prefix} advisor must name a sam-<runtime>-advisor skill")
+        if consult.get("phase") not in ADVISOR_PHASES:
+            errors.append(
+                f"{prefix} phase must be plan, refine, or closure; work is owned by sam-work"
+            )
+        if not nonempty_string(consult.get("model")):
+            errors.append(f"{prefix} model is required")
+        if consult.get("effort") not in ADVISOR_EFFORTS:
+            errors.append(f"{prefix} effort is invalid")
+        if consult.get("effort_source") not in ADVISOR_EFFORT_SOURCES:
+            errors.append(f"{prefix} effort_source is invalid")
+        if not nonempty_string(consult.get("question")):
+            errors.append(f"{prefix} question is required")
+        status = consult.get("status")
+        if status not in ADVISOR_STATUSES:
+            errors.append(f"{prefix} status must be ANSWERED or FAILED")
+        if consult.get("caller_decision") not in ADVISOR_DECISIONS:
+            errors.append(f"{prefix} caller_decision is invalid")
+        if not nonempty_string(consult.get("decision_reason")):
+            errors.append(f"{prefix} decision_reason is required")
+        if not string_list(consult.get("evidence"), nonempty=True):
+            errors.append(f"{prefix} requires evidence")
+        if status == "FAILED":
+            any_failed = True
+            if not nonempty_string(consult.get("failure_reason")):
+                errors.append(f"{prefix} FAILED requires a failure_reason")
+
+    if any_failed and not (
+        isinstance(report.get("residuals"), list) and report.get("residuals")
+    ):
+        errors.append("a FAILED advisor consult must be recorded in residuals")
+
+
+def validate_web_and_video_evidence(
+    report: dict[str, Any],
+    target: dict[str, Any],
+    status: str,
+    errors: list[str],
+) -> None:
+    web_surface = target.get("web_surface")
+    if status != "COMPLETE":
+        if web_surface is not None and not isinstance(web_surface, bool):
+            errors.append("target.web_surface must be boolean when present")
+        return
+
+    if not isinstance(web_surface, bool):
+        errors.append("COMPLETE requires boolean target.web_surface")
+        return
+    if not string_list(target.get("web_surface_evidence"), nonempty=True):
+        errors.append("target.web_surface_evidence requires at least one receipt")
+
+    work_path = report.get("work_report_path")
+    if not nonempty_string(work_path) or not Path(str(work_path)).is_absolute():
+        return
+    path = Path(str(work_path))
+    if not path.is_file():
+        errors.append("COMPLETE requires a readable work report at work_report_path")
+        return
+    try:
+        work = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        errors.append(f"work report is unreadable: {exc}")
+        return
+    if not isinstance(work, dict):
+        errors.append("work report root must be an object")
+        return
+
+    final = work.get("final")
+    if not isinstance(final, dict) or final.get("result") != "COMPLETE":
+        errors.append("work report must record final.result COMPLETE")
+
+    work_request = work.get("request")
+    work_web = work_request.get("web_system") if isinstance(work_request, dict) else None
+    if not isinstance(work_web, bool):
+        errors.append("work report request.web_system must be boolean")
+    elif work_web != web_surface:
+        errors.append("target.web_surface must match work report request.web_system")
+
+    inventory = work.get("video_inventory")
+    if not isinstance(inventory, dict):
+        errors.append("work report video_inventory is required")
+        return
+
+    if not positive_count(inventory.get("demo_uploaded")):
+        errors.append("COMPLETE requires at least one uploaded demo video")
+
+    discovered = inventory.get("playwright_discovered")
+    uploaded = inventory.get("playwright_uploaded")
+    if web_surface:
+        if not positive_count(uploaded):
+            errors.append(
+                "web surface requires at least one uploaded Playwright video"
+            )
+        elif uploaded != discovered:
+            errors.append("every discovered Playwright video must be uploaded")
+    elif discovered not in (0, None) or uploaded not in (0, None):
+        errors.append("non-web workflow cannot claim Playwright videos")
+
+
 def validate(report: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if report.get("schema_version") != 2:
@@ -401,6 +535,9 @@ def validate(report: dict[str, Any]) -> list[str]:
         not nonempty_string(work_path) or not Path(str(work_path)).is_absolute()
     ):
         errors.append("work_report_path must be absolute when present")
+
+    validate_web_and_video_evidence(report, target, str(status), errors)
+    validate_advisor_consults(report, errors)
 
     if not string_list(report.get("residuals")):
         errors.append("residuals must be a string array")
