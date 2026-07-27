@@ -50,6 +50,9 @@ and orchestration.
 - `sam-orchestrate-codex-grok`: hybrid controller/worker orchestration profile —
   Grok 4.5 producers (medium LIGHT / high STANDARD+DEEP), Sol medium
   independent review, and Sol high only for stall or multi-round unstick.
+- `sam-orchestrate-claude-grok`: hybrid controller/worker orchestration profile —
+  Grok 4.5 producers (medium LIGHT / high STANDARD+DEEP), high independent
+  review, xhigh only for stall or multi-round unstick, max-effort advisor.
 - `sam-plan`: conduct task study and emit a machine freeze plan (goal, thesis,
   steps, evidence, status) plus a required light-theme HTML pack for humans;
   assertive investigation first, council only on risk triggers.

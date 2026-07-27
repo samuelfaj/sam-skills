@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Orchestrate Claude–Grok"
+  short_description: "Claude controller + Grok workers hybrid orchestration"
+  default_prompt: "Use $sam-orchestrate-claude-grok to coordinate this task: Claude controller, Grok producers, Opus high review, Opus xhigh only on stall/multi-round failure, Opus max advisor."
