@@ -189,9 +189,34 @@ Treat every audit finding as blocking until disproven from the exact diff.
 
 ## 6. Run and Classify Validation
 
+Every reported result must come from an execution receipt. A typed `PASS` is not
+a result. Run each command through the wrapper:
+
+```bash
+python3 "$SAM_PLAYWRIGHT_DIR/scripts/run_checked.py" \
+  --id CMD-001 --receipts-dir "$WORK_TMP/receipts" \
+  --classification TARGET --repeat 3 -- <command and arguments>
+```
+
 Run the narrowest new tests first, then affected tests and broader validation
 proportional to risk. Record each command exactly once as `PASS`, `FAIL`, or
-`NOT_RUN`, classified as `TARGET`, `BASELINE`, `ENVIRONMENT`, or `EXTERNAL`.
+`NOT_RUN`, classified as `TARGET`, `BASELINE`, `ENVIRONMENT`, or `EXTERNAL`,
+exactly as its receipt states.
+
+Browser tests are the most flake-prone layer in the pack, so determinism is part
+of the proof:
+
+- **`TARGET` commands require `--repeat` of at least 2** (prefer 3). Differing
+  exit codes mark the command `FLAKY`, which blocks `COMPLETE`.
+- Never convert flake into green with runner retries, longer timeouts, or
+  `.skip`. Diagnose the race or report the residual risk.
+- Copy `commands[].command` from the receipt argv and set `commands[].receipt` to
+  the receipt path. Never edit a receipt or its captured log.
+
+Prove that each new spec actually runs. Capture the runner's own test list before
+and after adding the spec, then record `test_wiring` with both receipts and the
+exact new test titles; each title must be absent from the before-log and present
+in the after-log.
 
 Do not hide product failures by changing tests. Fix an in-scope product defect
 only at its owning boundary. Record unrelated defects as follow-up evidence.
@@ -235,11 +260,18 @@ python3 "$SAM_PLAYWRIGHT_DIR/scripts/validate_e2e_report.py" \
   --bundle "$WORK_TMP/bundle.json" "$WORK_TMP/report.json"
 ```
 
+The validator re-verifies every execution receipt through
+`scripts/verify_receipts.py`, so it fails when a status disagrees with its
+receipt, a log hash does not recompute, a `TARGET` command ran once, or a claimed
+new test is not discovered by the runner. Keep `$WORK_TMP/receipts` until the
+report validates, then clean it with the rest of the ledger.
+
 Do not weaken the report to force completion. Stop services, containers, and
 temporary overrides; remove temporary data and artifacts not explicitly retained.
 Update every `CL-###` entry, revalidate, then remove `WORK_TMP`.
 
 Return `COMPLETE` only when all required scenarios and validations pass, required
-counterfactual proof exists, behavior is proven, and cleanup succeeds. Return
+counterfactual proof exists, behavior is proven, no command is flaky, test wiring
+is proven, and cleanup succeeds. Return
 `PARTIAL` for honest residual gaps. Return `BLOCKED` for unsafe environment,
 scope, authorization, or execution conditions.

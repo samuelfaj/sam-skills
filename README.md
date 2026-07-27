@@ -11,6 +11,11 @@ and orchestration.
   states.
 - Deterministic validators and adversarial harnesses for every executable
   workflow.
+- Test results are execution receipts, not claims. Validation commands run
+  through `run_checked.py`, which captures argv, per-run exit codes, and output
+  hashes; report validators recompute those hashes, reject a status that
+  disagrees with its receipt, and refuse to close a gate on a flaky run or on a
+  test the runner never discovers.
 - Local artifacts by default. Publishing, comments, uploads, pushes, and other
   external writes require explicit user authorization.
 - No invented evidence, silent scope expansion, test weakening, or unsupported

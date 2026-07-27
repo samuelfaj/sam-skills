@@ -12,6 +12,7 @@ Required top-level fields:
 - `command_definitions`: `changed`, `inspected`, `evidence`
 - `criteria`, `risks`, `scenarios`, `tests`, `commands`, `artifacts`, `cleanup`
 - `test_diff_audit`: `status`, `evidence`
+- `test_wiring`: `status`, plus receipts and names when `PROVEN`
 - `behavior_proof`: `status`, `evidence`
 - `decision`: `COMPLETE`, `PARTIAL`, or `BLOCKED`
 
@@ -27,10 +28,27 @@ Each test must include a nonempty path and name plus `regression_proof.status`:
 artifact must include linked scenario IDs, local or remote status, safety
 review, and receipt when uploaded.
 
+## Execution receipts and wiring
+
+Every command with status `PASS` or `FAIL` requires `receipt`: the absolute path
+of the `scripts/run_checked.py` receipt. `commands[].command` must equal the
+receipt argv joined by spaces, and status plus classification must match the
+receipt. `NOT_RUN` carries a reason and no receipt. The validator recomputes
+`receipt_sha256` and every captured `log_sha256`; an edited receipt or log fails.
+A `PASS` whose receipt records a non-zero exit code fails. `TARGET` commands must
+record at least two runs, and differing exit codes mark the command `FLAKY`.
+
+`test_wiring.status` is `PROVEN`, `NOT_PROVEN`, or `NOT_APPLICABLE`; the last two
+require a `reason`. `PROVEN` requires `before_receipt`, `after_receipt`, and
+`discovered_tests`, where each name is absent from the before-log and present in
+the after-log.
+
 `COMPLETE` is invalid when a required scenario is uncovered, target validation
 fails, behavior is unproven, high-risk regression proof is `NOT_PROVEN`, changed
 commands were not inspected, publication lacks authorization or receipt, the
-test-diff audit fails, or cleanup is blocked. When publication is requested,
+test-diff audit fails, cleanup is blocked, any command is `FLAKY`, a `TARGET`
+command did not run repeatedly and stably, or test wiring is neither `PROVEN` nor
+`NOT_APPLICABLE`. When publication is requested,
 every uploaded video or image must use host player/image embed markup (never a
 hyperlink-only body or git-committed media) and pass remote readback.
 

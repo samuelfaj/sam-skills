@@ -1,5 +1,12 @@
 # Unified Review Output Contract
 
+## Contents
+
+1. Report shape
+2. Vocabularies and linking rules
+3. Execution receipts
+4. Target modes and publication
+
 Draft a JSON report and validate it before rendering or publishing.
 
 ```json
@@ -51,7 +58,7 @@ Draft a JSON report and validate it before rendering or publishing.
     {"behavior": "...", "level": "UNIT", "status": "COVERED", "paths": ["tests/example.test.ts"], "reason": "...", "finding_id": null}
   ],
   "validations": [
-    {"command": "...", "status": "PASS", "classification": "TARGET", "reason": "..."}
+    {"command": "...", "status": "PASS", "classification": "TARGET", "reason": "...", "receipt": "/abs/receipts/CMD-001.receipt.json"}
   ],
   "behavior_proof": {"status": "NOT_APPLICABLE", "evidence": []},
   "decision": {
@@ -83,6 +90,15 @@ For rejected findings, set `rejection_reason`. Link every
 `MISSING_REQUIRED` test to a blocker. Inline comments reference an accepted
 required finding, exact changed path, side, and line. Receipts contain `kind`,
 `id`, `url`, and `status` without credentials.
+
+Every validation with status `PASS` or `FAIL` requires `receipt`: the absolute
+path of the `scripts/run_checked.py` receipt. `command` must equal the receipt
+argv joined by spaces, and status plus classification must match the receipt.
+`NOT_RUN` carries a reason and no receipt. The validator recomputes
+`receipt_sha256` and every captured `log_sha256`, so an edited receipt or log
+fails, and a `PASS` with a non-zero recorded exit code fails. `TARGET` and
+`INTRODUCED` validations must record at least two runs; `APPROVE` is rejected
+when any validation is flaky or a target validation did not run stably.
 
 Use the same report schema for every target mode. For `local`, `branch`,
 `commit`, and `range`, publication must remain a clean `NOT_REQUESTED` state.

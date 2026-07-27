@@ -30,6 +30,8 @@ and decision contract. Publish only after explicit authorization.
 ## Resource Routing
 
 - Run `scripts/build_review_bundle.py` for every review target.
+- Run every validation command through `scripts/run_checked.py`; the report
+  validator re-verifies each receipt through `scripts/verify_receipts.py`.
 - Read [references/risk-lenses.md](references/risk-lenses.md) for bundle risk tags
   or architecture and maintainability findings.
 - Read [references/test-policy.md](references/test-policy.md) whenever runtime
@@ -172,8 +174,21 @@ merge. Record user-visible behavior as `PROVEN`, `NOT_PROVEN`, or
   and CI-equivalent commands only.
 - Inspect changed command definitions before execution.
 - Run narrow high-signal checks first, then broader checks proportional to risk.
+- Run every command through `scripts/run_checked.py` and report the result from
+  its receipt. A typed `PASS` is not a validation.
+
+```bash
+python3 "$SAM_REVIEW_DIR/scripts/run_checked.py" \
+  --id CMD-001 --receipts-dir "$REVIEW_TMP/receipts" \
+  --classification TARGET --repeat 2 -- <command and arguments>
+```
+
 - Record every command as `PASS`, `FAIL`, or `NOT_RUN` with target, introduced,
-  baseline, environment, or external classification.
+  baseline, environment, or external classification, exactly as the receipt
+  states, and set `validations[].receipt` to the receipt path.
+- `TARGET` and `INTRODUCED` validations require at least two runs. Differing exit
+  codes mark the command flaky, and `APPROVE` cannot rest on flaky validation.
+- Never edit a receipt or its captured log; the validator recomputes both hashes.
 - Continue static review when execution is blocked; never imply unrun proof passed.
 
 Draft `report.json` using [references/output-contract.md](references/output-contract.md).

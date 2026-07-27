@@ -334,7 +334,51 @@ def materialize(name: str, output: Path) -> Path:
     return output
 
 
-def report_for_clean_bundle(bundle: dict[str, Any], request: str) -> dict[str, Any]:
+RUN_CHECKED = Path(__file__).resolve().parent / "run_checked.py"
+
+
+def make_receipt(
+    receipts: Path,
+    command_id: str,
+    classification: str,
+    shell: str,
+    repeat: int = 2,
+) -> dict[str, Any]:
+    """Produce a real execution receipt so fixtures cannot fake a PASS."""
+    receipts.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            sys.executable,
+            str(RUN_CHECKED),
+            "--id",
+            command_id,
+            "--receipts-dir",
+            str(receipts),
+            "--classification",
+            classification,
+            "--repeat",
+            str(repeat),
+            "--",
+            "/bin/sh",
+            "-c",
+            shell,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    path = receipts / f"{command_id}.receipt.json"
+    receipt = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        "path": str(path),
+        "command": " ".join(receipt["argv"]),
+        "status": receipt["status"],
+    }
+
+
+def report_for_clean_bundle(
+    bundle: dict[str, Any], request: str, receipts: Path
+) -> dict[str, Any]:
     summary = bundle["summary"]
     coverage = []
     for item in bundle["files"]:
@@ -355,6 +399,9 @@ def report_for_clean_bundle(bundle: dict[str, Any], request: str) -> dict[str, A
                 "reason": "Fixture file accounted for",
             }
         )
+    validation = make_receipt(
+        receipts, "CMD-001", "TARGET", "echo 'harness contract validation passed'"
+    )
     return {
         "schema_version": 1,
         "target": {
@@ -395,10 +442,11 @@ def report_for_clean_bundle(bundle: dict[str, Any], request: str) -> dict[str, A
         ],
         "validations": [
             {
-                "command": "harness contract validation",
-                "status": "PASS",
+                "command": validation["command"],
+                "status": validation["status"],
                 "classification": "TARGET",
                 "reason": "Synthetic proof passed",
+                "receipt": validation["path"],
             }
         ],
         "behavior_proof": {"status": "NOT_APPLICABLE", "evidence": []},
@@ -597,7 +645,7 @@ def self_test() -> None:
             json.dumps(proposal_bundle), encoding="utf-8"
         )
         proposal_report = report_for_clean_bundle(
-            proposal_bundle, "Review the fixture proposal"
+            proposal_bundle, "Review the fixture proposal", temp / "receipts-proposal"
         )
         proposal_report_path.write_text(
             json.dumps(proposal_report), encoding="utf-8"
@@ -665,7 +713,9 @@ def self_test() -> None:
             raise RuntimeError("validator accepted an incompatible publication action")
 
         local_publication = report_for_clean_bundle(
-            bundles["test-only-clean"], FIXTURES["test-only-clean"]["request"]
+            bundles["test-only-clean"],
+            FIXTURES["test-only-clean"]["request"],
+            temp / "receipts-local",
         )
         local_publication["publication"].update(
             {"requested": True, "action": "APPROVE", "status": "PLANNED"}
@@ -882,13 +932,17 @@ def self_test() -> None:
             check=False,
             env=repository_git_env,
         )
-        if (
-            repository_git.returncode != 2
-            or repository_git_marker.exists()
-            or "refusing repository-controlled git executable"
-            not in repository_git.stderr
-        ):
-            raise RuntimeError("nested repository-controlled git was not rejected")
+        # Git is resolved from trusted system locations only, so a PATH-injected
+        # repository git is never executed and the build still succeeds.
+        if repository_git_marker.exists():
+            raise RuntimeError("repository-controlled git executable was executed")
+        if repository_git.returncode != 0:
+            raise RuntimeError(
+                "PATH-injected git must not break the build: "
+                f"exit {repository_git.returncode}: {repository_git.stderr[:200]}"
+            )
+        if not json.loads(repository_git.stdout).get("fingerprint"):
+            raise RuntimeError("trusted git fallback did not produce a bundle")
 
         fsmonitor_repo = temp / "fsmonitor"
         materialize("test-only-clean", fsmonitor_repo)
@@ -1077,7 +1131,7 @@ def self_test() -> None:
         report_path = temp / "report.json"
         bundle_path.write_text(json.dumps(clean_bundle), encoding="utf-8")
         report = report_for_clean_bundle(
-            clean_bundle, FIXTURES["test-only-clean"]["request"]
+            clean_bundle, FIXTURES["test-only-clean"]["request"], temp / "receipts-clean"
         )
         report_path.write_text(json.dumps(report), encoding="utf-8")
         valid = run(

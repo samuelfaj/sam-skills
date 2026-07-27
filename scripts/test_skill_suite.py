@@ -167,8 +167,38 @@ Return the recommendation and model used.
             encoding="utf-8",
         )
         expect_error(module, root, "broken relative link")
+        skill_md.write_text(original_skill, encoding="utf-8")
 
-    print("PASS: valid packages, provider-specific advisor, and seven adversarial regressions")
+        # Shared scripts are duplicated because skills install standalone; the
+        # only thing making that safe is that no copy may drift.
+        shared_name = module.SHARED_SCRIPTS[0]
+        for owner, body in ((skill, "print('one')\n"), (advisor, "print('two')\n")):
+            shared = owner / "scripts" / shared_name
+            shared.parent.mkdir(parents=True, exist_ok=True)
+            shared.write_text(f"#!/usr/bin/env python3\n{body}", encoding="utf-8")
+            shared.chmod(0o755)
+            routed = owner / "SKILL.md"
+            routed.write_text(
+                routed.read_text(encoding="utf-8")
+                + f"\nAlso run `scripts/{shared_name}`.\n",
+                encoding="utf-8",
+            )
+        expect_error(module, root, "has diverged between skills")
+
+        (advisor / "scripts" / shared_name).write_text(
+            "#!/usr/bin/env python3\nprint('one')\n", encoding="utf-8"
+        )
+        (advisor / "scripts" / shared_name).chmod(0o755)
+        identical_errors = module.validate_root(root)
+        if identical_errors:
+            raise RuntimeError(
+                f"byte-identical shared scripts rejected: {identical_errors}"
+            )
+
+    print(
+        "PASS: valid packages, provider-specific advisor, shared-script drift, "
+        "and eight adversarial regressions"
+    )
     return 0
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import hashlib
 import json
 import re
 import stat
@@ -32,6 +33,9 @@ FORBIDDEN_TEXT = (
 )
 ALLOWED_SKILL_FILES = {"SKILL.md"}
 ALLOWED_RESOURCE_DIRS = {"agents", "assets", "references", "scripts"}
+# Shared implementations that must stay byte-identical across every skill that
+# ships them. Skills install standalone and cannot import across packages.
+SHARED_SCRIPTS = ("run_checked.py", "verify_receipts.py", "audit_test_diff.py")
 PROVIDER_SPECIFIC_REPLACEMENTS = {
     "sam-codex-advisor": (
         (re.compile(r"\bcodex\b", re.IGNORECASE), "advisor-runtime"),
@@ -289,6 +293,30 @@ def validate_layout(skill: Skill, errors: list[str]) -> None:
             errors.append(f"{prefix}: extraneous resource directory: {child.name}")
 
 
+def validate_shared_scripts(root: Path, errors: list[str]) -> None:
+    """Skills install standalone, so shared logic is duplicated by design.
+
+    Duplication is only safe if it cannot drift: every copy must be byte-identical.
+    """
+    for name in SHARED_SCRIPTS:
+        copies = sorted(root.glob(f"sam-*/scripts/{name}"))
+        if len(copies) < 2:
+            continue
+        digests: dict[str, list[str]] = {}
+        for path in copies:
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            digests.setdefault(digest, []).append(
+                path.relative_to(root).as_posix()
+            )
+        if len(digests) > 1:
+            groups = " | ".join(
+                ", ".join(paths) for paths in sorted(digests.values())
+            )
+            errors.append(
+                f"shared script {name} has diverged between skills: {groups}"
+            )
+
+
 def validate_repository_docs(
     root: Path, skills: list[Skill], errors: list[str]
 ) -> None:
@@ -339,6 +367,7 @@ def validate_root(root: Path) -> list[str]:
         validate_scripts(skill, errors)
         validate_links(skill, errors)
         validate_portability(skill, errors)
+    validate_shared_scripts(root, errors)
     validate_repository_docs(root, skills, errors)
     return errors
 

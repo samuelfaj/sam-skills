@@ -25,6 +25,8 @@ Remain stack-, host-, provider-, tool-, and model-agnostic.
   commands, artifacts, reports, or returned evidence.
 - Reject `.only`, `.skip`, retries, broad timeouts, snapshot refreshes, assertion
   weakening, and mocks that remove the contract under test.
+- Never report a command result that did not come from `scripts/run_checked.py`.
+  A status without a verifiable receipt is not evidence.
 - Limit production changes to the in-scope correction or smallest test seam
   required by an accepted scenario.
 - Record and clean every process, container, port, record, override, and artifact.
@@ -115,9 +117,17 @@ Give every new or changed test one proof status:
 - `CONTRACT`: authoritative boundary plus targeted assertion proves discrimination.
 - `NOT_PROVEN`: proof was unsafe or unavailable, with reason and residual risk.
 
+**A test linked to a `HIGH` or `CRITICAL` risk requires `RED_GREEN` or
+`MUTATION`.** `CONTRACT` is assertable without running anything, so it cannot
+close high risk, and `NOT_PROVEN` never can.
+
+Risk level is not a free choice. When the builder tags the diff `security`,
+`data`, `contract`, or `concurrency`, at least one declared risk must be `HIGH`
+or `CRITICAL`; the validator rejects a report that downgrades a tagged diff.
+
 Never mutate the user's checkout solely to manufacture proof. Use an isolated
-temporary copy when safe. Do not claim full confidence with required high-risk
-proof marked `NOT_PROVEN`.
+temporary copy when safe. Do not claim full confidence with any proof marked
+`NOT_PROVEN`.
 
 ## 5. Implement Without Gaming Coverage
 
@@ -151,10 +161,39 @@ State the exact blocker and residual risk. Never label fallback proof as real E2
 
 ## 7. Run and Classify Validation
 
-Run new targeted tests, affected suites, relevant type/lint checks, broader suites
-proportional to risk, then required real-system proof. Record every command once
-as `PASS`, `FAIL`, or `NOT_RUN`, classified `TARGET`, `BASELINE`, `ENVIRONMENT`,
-or `EXTERNAL`.
+Every reported result must come from an execution receipt. A typed `PASS` is not
+a result. Run each command through the wrapper:
+
+```bash
+python3 "$SAM_COVERAGE_DIR/scripts/run_checked.py" \
+  --id CMD-001 --receipts-dir "$WORK_TMP/receipts" \
+  --classification TARGET --repeat 3 -- <command and arguments>
+```
+
+- Run new targeted tests, affected suites, relevant type/lint checks, broader
+  suites proportional to risk, then required real-system proof.
+- Classify each command `TARGET`, `BASELINE`, `ENVIRONMENT`, or `EXTERNAL`, and
+  record its status as `PASS`, `FAIL`, or `NOT_RUN` exactly as the receipt states.
+- **`TARGET` commands require `--repeat` of at least 2** (prefer 3). Differing
+  exit codes across runs mark the command `FLAKY`; a flaky green is not proof and
+  blocks `FULL`. Never "fix" flake by retrying until green—diagnose it or report
+  the residual risk.
+- Copy `commands[].command` from the receipt argv and set `commands[].receipt` to
+  the receipt path. `NOT_RUN` carries a reason and no receipt.
+- Never edit a receipt or its log. The validator recomputes both hashes.
+
+Prove that each new test actually runs. A test file that exists but is never
+collected proves nothing, so capture the runner's own discovery before and after
+adding the test:
+
+```bash
+python3 "$SAM_COVERAGE_DIR/scripts/run_checked.py" \
+  --id CMD-900 --receipts-dir "$WORK_TMP/receipts" \
+  --classification ENVIRONMENT -- <discovery command>   # before the new test
+```
+
+Record `test_wiring` with both receipts and the exact new test names. Each name
+must be absent from the before-log and present in the after-log.
 
 Do not hide a product defect by changing expectations. Fix only in-scope product
 behavior at its owning boundary. Record unrelated failures separately.
@@ -169,6 +208,12 @@ python3 "$SAM_COVERAGE_DIR/scripts/validate_coverage_report.py" \
   --baseline "$WORK_TMP/baseline-bundle.json" \
   --bundle "$WORK_TMP/bundle.json" "$WORK_TMP/report.json"
 ```
+
+The validator re-verifies every execution receipt through
+`scripts/verify_receipts.py`, so it fails when a status disagrees with its
+receipt, a log hash does not recompute, a `TARGET` command ran once, or a claimed
+new test is not discovered by the runner. Keep `$WORK_TMP/receipts` until the
+report validates; clean it afterwards with the rest of the ledger.
 
 Stop only resources created by this run. Remove temporary data, overrides, logs,
 and artifacts unless explicitly retained. Update the `CL-###` ledger, revalidate,

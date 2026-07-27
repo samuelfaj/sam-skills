@@ -205,10 +205,43 @@ def enclosing_worktree_hint(repo_hint: Path) -> Path | None:
     return None
 
 
+def trusted_git_search_path() -> str:
+    search_dirs = [
+        item
+        for item in os.defpath.split(os.pathsep)
+        if item and Path(item).is_absolute()
+    ]
+    search_dirs.extend(("/usr/local/bin", "/opt/homebrew/bin"))
+    return os.pathsep.join(dict.fromkeys(search_dirs))
+
+
+def verify_genuine_git(git_path: Path) -> None:
+    """Reject a PATH wrapper that is not a real git implementation."""
+    try:
+        probe = subprocess.run(
+            [str(git_path), "--version"],
+            env=isolated_git_environment(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    except OSError as exc:
+        raise BundleError(f"could not execute git executable {git_path}: {exc}") from exc
+    if probe.returncode != 0:
+        message = probe.stderr.decode("utf-8", errors="replace").strip()
+        raise BundleError(f"git executable {git_path} failed --version: {message}")
+    banner = probe.stdout.decode("utf-8", errors="replace").strip()
+    if not banner.startswith("git version "):
+        raise BundleError(
+            f"refusing non-git executable {git_path}: unexpected --version banner "
+            f"{banner[:120]!r}"
+        )
+
+
 def resolve_git(repo_hint: Path) -> Path:
-    resolved = shutil.which("git")
+    resolved = shutil.which("git", path=trusted_git_search_path())
     if not resolved:
-        raise BundleError("git is not available on PATH")
+        raise BundleError("git is not available in trusted system locations")
     git_path = Path(resolved).resolve()
     boundaries = [repo_hint.resolve()]
     worktree_hint = enclosing_worktree_hint(repo_hint)
@@ -216,6 +249,7 @@ def resolve_git(repo_hint: Path) -> Path:
         boundaries.append(worktree_hint)
     if any(is_within(git_path, boundary) for boundary in boundaries):
         raise BundleError(f"refusing repository-controlled git executable: {git_path}")
+    verify_genuine_git(git_path)
     return git_path
 
 

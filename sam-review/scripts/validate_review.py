@@ -12,6 +12,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# Import the shared verifier without leaving bytecode in the skill package.
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from verify_receipts import verify_commands  # noqa: E402
+
 COVERAGE_CLASSES = {"REVIEWED", "GENERATED", "TYPE_ONLY", "TEST", "CONFIG", "EXCLUDED"}
 SEVERITIES = {"BLOCKER", "IMPORTANT", "SUGGESTION"}
 FINDING_STATUSES = {"ACCEPTED", "REJECTED", "FOLLOW_UP", "STOP_AND_ESCALATE"}
@@ -593,7 +599,7 @@ def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
         require_keys(
             item,
             {"command", "status", "classification", "reason"},
-            {"command", "status", "classification", "reason"},
+            {"command", "status", "classification", "reason", "receipt"},
             label,
             errors,
         )
@@ -650,6 +656,9 @@ def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
         decision.get("remaining_corrections"), "decision.remaining_corrections", errors
     )
     expected_remaining = sorted(set(accepted_required))
+    # Execution receipts: re-verify every reported validation against run_checked.py
+    # output so a typed "PASS" cannot close the review gate.
+    receipts = verify_commands(report.get("validations"), errors)
     if result == "APPROVE":
         if expected_remaining or stop_findings or scope_blocked or cycle_blocked:
             errors.append(
@@ -657,6 +666,16 @@ def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
             )
         if target_failures:
             errors.append("APPROVE cannot retain a target validation failure")
+        if receipts["flaky"]:
+            errors.append(
+                "APPROVE cannot rest on flaky validation: "
+                + ", ".join(receipts["flaky"])
+            )
+        if receipts["unstable_target"]:
+            errors.append(
+                "APPROVE requires repeated stable target validation; unstable: "
+                + ", ".join(receipts["unstable_target"])
+            )
         if (
             intent.get("user_visible_change") is True
             and behavior.get("status") != "PROVEN"

@@ -10,6 +10,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# Import the shared verifier without leaving bytecode in the skill package.
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from verify_receipts import verify_commands, verify_wiring  # noqa: E402
+
 PREFIXES = {
     "criteria": "AC-",
     "risks": "R-",
@@ -290,6 +296,11 @@ def validate(
         and bool(behavior.get("evidence")),
         "behavior proof required",
     )
+    # Execution receipts: re-verify every reported command against run_checked.py
+    # output so a typed "PASS" cannot close a gate.
+    receipts = verify_commands(ledgers.get("commands", {}), errors)
+    wiring_status = verify_wiring(report.get("test_wiring"), errors)
+
     decision = report.get("decision")
     require(decision in {"COMPLETE", "PARTIAL", "BLOCKED"}, "invalid decision")
     if decision == "COMPLETE":
@@ -306,6 +317,19 @@ def validate(
         require(audit.get("status") == "PASS", "COMPLETE with failed test diff audit")
         require(behavior.get("status") == "PROVEN", "COMPLETE without proven behavior")
         require(not unsafe_real_data, "COMPLETE with unsafe real-data environment")
+        require(
+            not receipts["flaky"],
+            "COMPLETE with flaky command(s): " + ", ".join(receipts["flaky"]),
+        )
+        require(
+            not receipts["unstable_target"],
+            "COMPLETE requires repeated stable TARGET proof; unstable: "
+            + ", ".join(receipts["unstable_target"]),
+        )
+        require(
+            wiring_status in {"PROVEN", "NOT_APPLICABLE"},
+            "COMPLETE requires proven test wiring (runner must discover each new test)",
+        )
     return errors
 
 

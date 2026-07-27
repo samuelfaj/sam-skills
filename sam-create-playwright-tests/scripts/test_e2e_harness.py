@@ -16,6 +16,7 @@ from typing import Any
 HERE = pathlib.Path(__file__).resolve().parent
 BUILDER = HERE / "build_e2e_bundle.py"
 AUDITOR = HERE / "audit_test_diff.py"
+RUN_CHECKED = HERE / "run_checked.py"
 VALIDATOR = HERE / "validate_e2e_report.py"
 
 
@@ -258,7 +259,53 @@ def write_json(path: pathlib.Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True), encoding="utf-8")
 
 
-def valid_report(bundle: dict[str, Any]) -> dict[str, Any]:
+def make_receipt(
+    receipts: pathlib.Path,
+    command_id: str,
+    classification: str,
+    shell: str,
+    repeat: int = 2,
+) -> dict[str, Any]:
+    """Produce a real execution receipt so fixtures cannot fake a PASS."""
+    receipts.mkdir(parents=True, exist_ok=True)
+    run(
+        sys.executable,
+        str(RUN_CHECKED),
+        "--id",
+        command_id,
+        "--receipts-dir",
+        str(receipts),
+        "--classification",
+        classification,
+        "--repeat",
+        str(repeat),
+        "--",
+        "/bin/sh",
+        "-c",
+        shell,
+    )
+    receipt = json.loads(
+        (receipts / f"{command_id}.receipt.json").read_text(encoding="utf-8")
+    )
+    return {
+        "path": str(receipts / f"{command_id}.receipt.json"),
+        "command": " ".join(receipt["argv"]),
+        "status": receipt["status"],
+    }
+
+
+def valid_report(bundle: dict[str, Any], receipts: pathlib.Path) -> dict[str, Any]:
+    target = make_receipt(receipts, "CMD-001", "TARGET", "echo '1 passed'")
+    before = make_receipt(
+        receipts, "CMD-900", "ENVIRONMENT", "echo 'account.spec.js > loads'", repeat=1
+    )
+    after = make_receipt(
+        receipts,
+        "CMD-901",
+        "ENVIRONMENT",
+        "echo 'account.spec.js > loads > saved name remains visible'",
+        repeat=1,
+    )
     return {
         "baseline_fingerprint": bundle["fingerprint"],
         "bundle_fingerprint": bundle["fingerprint"],
@@ -319,10 +366,11 @@ def valid_report(bundle: dict[str, Any]) -> dict[str, Any]:
             {
                 "id": "CMD-001",
                 "test_ids": ["T-001"],
-                "command": "playwright test tests/account.spec.js",
-                "status": "PASS",
+                "command": target["command"],
+                "status": target["status"],
                 "classification": "TARGET",
                 "evidence": "1 passed",
+                "receipt": target["path"],
             }
         ],
         "artifacts": [
@@ -342,6 +390,13 @@ def valid_report(bundle: dict[str, Any]) -> dict[str, Any]:
             }
         ],
         "test_diff_audit": {"status": "PASS", "evidence": "audit script returned PASS"},
+        "test_wiring": {
+            "status": "PROVEN",
+            "before_receipt": before["path"],
+            "after_receipt": after["path"],
+            "discovered_tests": ["saved name remains visible"],
+            "evidence": ["runner test list before and after the new spec"],
+        },
         "behavior_proof": {
             "status": "PROVEN",
             "evidence": "browser assertion and trace",
@@ -351,10 +406,13 @@ def valid_report(bundle: dict[str, Any]) -> dict[str, Any]:
 
 
 def expect_invalid(
-    bundle_path: pathlib.Path, report_path: pathlib.Path, report: dict[str, Any]
+    bundle_path: pathlib.Path,
+    report_path: pathlib.Path,
+    report: dict[str, Any],
+    expect: str | None = None,
 ) -> None:
     write_json(report_path, report)
-    run(
+    result = run(
         sys.executable,
         str(VALIDATOR),
         "--baseline",
@@ -364,6 +422,10 @@ def expect_invalid(
         str(report_path),
         expected=1,
     )
+    if expect is not None and expect not in result.stderr:
+        raise AssertionError(
+            f"expected rejection reason {expect!r}, got:\n{result.stderr}"
+        )
 
 
 def main() -> int:
@@ -413,7 +475,8 @@ def main() -> int:
             raise AssertionError("safe test patch should pass audit")
 
         report_path = root / "report.json"
-        report = valid_report(bundle)
+        receipts = root / "receipts"
+        report = valid_report(bundle, receipts)
         write_json(report_path, report)
         run(
             sys.executable,
@@ -516,6 +579,69 @@ def main() -> int:
         missing_scenario_artifact_backlink = copy.deepcopy(report)
         missing_scenario_artifact_backlink["scenarios"][0]["artifact_ids"] = []
         expect_invalid(bundle_path, report_path, missing_scenario_artifact_backlink)
+
+        # A status typed without an execution receipt is not a result.
+        no_receipt = copy.deepcopy(report)
+        no_receipt["commands"][0].pop("receipt")
+        expect_invalid(bundle_path, report_path, no_receipt, "requires a receipt path")
+
+        # The report cannot disagree with the receipt it cites.
+        failing = make_receipt(
+            receipts / "failing", "CMD-001", "TARGET", "echo '1 failed'; exit 1"
+        )
+        lying_status = copy.deepcopy(report)
+        lying_status["commands"][0].update(
+            {"receipt": failing["path"], "command": failing["command"]}
+        )
+        expect_invalid(
+            bundle_path, report_path, lying_status, "its receipt records"
+        )
+
+        # Browser proof must be repeated; one green run does not show determinism.
+        single_run = make_receipt(
+            receipts / "single", "CMD-001", "TARGET", "echo '1 passed'", repeat=1
+        )
+        unrepeated = copy.deepcopy(report)
+        unrepeated["commands"][0].update(
+            {"receipt": single_run["path"], "command": single_run["command"]}
+        )
+        expect_invalid(bundle_path, report_path, unrepeated, "must run at least")
+
+        # A flaky browser test is the classic false green; it cannot pass.
+        flake_flag = receipts / "flake.flag"
+        flaky = make_receipt(
+            receipts / "flaky",
+            "CMD-001",
+            "TARGET",
+            f"test -f {shlex.quote(str(flake_flag))} && exit 1; "
+            f"touch {shlex.quote(str(flake_flag))}; exit 0",
+            repeat=3,
+        )
+        flaky_report = copy.deepcopy(report)
+        flaky_report["commands"][0].update(
+            {
+                "receipt": flaky["path"],
+                "command": flaky["command"],
+                "status": flaky["status"],
+            }
+        )
+        expect_invalid(bundle_path, report_path, flaky_report, "flaky command(s)")
+
+        # Editing a captured log breaks its recorded hash.
+        log = receipts / "CMD-001.run1.log"
+        original_log = log.read_bytes()
+        log.write_bytes(original_log + b"fabricated success\n")
+        expect_invalid(
+            bundle_path, report_path, copy.deepcopy(report), "log hash does not match"
+        )
+        log.write_bytes(original_log)
+
+        # A spec the runner never lists proves nothing.
+        unwired = copy.deepcopy(report)
+        unwired["test_wiring"]["discovered_tests"] = ["never listed by the runner"]
+        expect_invalid(
+            bundle_path, report_path, unwired, "not discovered by the runner"
+        )
 
     verify_git_isolation()
     verify_base_resolution()

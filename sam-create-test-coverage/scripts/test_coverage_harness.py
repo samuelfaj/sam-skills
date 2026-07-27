@@ -16,6 +16,7 @@ from typing import Any
 HERE = pathlib.Path(__file__).resolve().parent
 BUILDER = HERE / "build_test_impact.py"
 AUDITOR = HERE / "audit_test_diff.py"
+RUN_CHECKED = HERE / "run_checked.py"
 VALIDATOR = HERE / "validate_coverage_report.py"
 
 
@@ -258,7 +259,52 @@ def dump(path: pathlib.Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True), encoding="utf-8")
 
 
-def report_for(bundle: dict[str, Any]) -> dict[str, Any]:
+def make_receipt(
+    receipts: pathlib.Path,
+    command_id: str,
+    classification: str,
+    shell: str,
+    repeat: int = 2,
+) -> dict[str, Any]:
+    """Produce a real execution receipt so fixtures cannot fake a PASS."""
+    receipts.mkdir(parents=True, exist_ok=True)
+    run(
+        sys.executable,
+        str(RUN_CHECKED),
+        "--id",
+        command_id,
+        "--receipts-dir",
+        str(receipts),
+        "--classification",
+        classification,
+        "--repeat",
+        str(repeat),
+        "--",
+        "/bin/sh",
+        "-c",
+        shell,
+    )
+    path = receipts / f"{command_id}.receipt.json"
+    receipt = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        "path": str(path),
+        "command": " ".join(receipt["argv"]),
+        "status": receipt["status"],
+    }
+
+
+def report_for(bundle: dict[str, Any], receipts: pathlib.Path) -> dict[str, Any]:
+    target = make_receipt(receipts, "CMD-001", "TARGET", "echo '1 passed'")
+    before = make_receipt(
+        receipts, "CMD-900", "ENVIRONMENT", "echo 'collected: rejects_zero'", repeat=1
+    )
+    after = make_receipt(
+        receipts,
+        "CMD-901",
+        "ENVIRONMENT",
+        "echo 'collected: rejects_zero rejects_a_negative_amount'",
+        repeat=1,
+    )
     return {
         "baseline_fingerprint": bundle["fingerprint"],
         "bundle_fingerprint": bundle["fingerprint"],
@@ -322,8 +368,8 @@ def report_for(bundle: dict[str, Any]) -> dict[str, Any]:
                 "name": "rejects a negative amount",
                 "command_ids": ["CMD-001"],
                 "regression_proof": {
-                    "status": "CONTRACT",
-                    "evidence": "asserts the documented non-negative invariant",
+                    "status": "MUTATION",
+                    "evidence": "inverted the guard in an isolated copy; test failed",
                 },
             }
         ],
@@ -331,10 +377,11 @@ def report_for(bundle: dict[str, Any]) -> dict[str, Any]:
             {
                 "id": "CMD-001",
                 "test_ids": ["T-001"],
-                "command": "test-runner tests/transfer.test.js",
-                "status": "PASS",
+                "command": target["command"],
+                "status": target["status"],
                 "classification": "TARGET",
                 "evidence": "1 passed",
+                "receipt": target["path"],
             }
         ],
         "artifacts": [
@@ -350,6 +397,13 @@ def report_for(bundle: dict[str, Any]) -> dict[str, Any]:
             {"id": "CL-001", "resource": "temporary test database", "status": "CLEANED"}
         ],
         "test_diff_audit": {"status": "PASS", "evidence": "audit script returned PASS"},
+        "test_wiring": {
+            "status": "PROVEN",
+            "before_receipt": before["path"],
+            "after_receipt": after["path"],
+            "discovered_tests": ["rejects_a_negative_amount"],
+            "evidence": ["runner discovery before and after the new test"],
+        },
         "real_system_proof": {
             "status": "NOT_APPLICABLE",
             "evidence": "scenario is a pure validator contract",
@@ -359,10 +413,13 @@ def report_for(bundle: dict[str, Any]) -> dict[str, Any]:
 
 
 def invalid(
-    bundle_path: pathlib.Path, report_path: pathlib.Path, report: dict[str, Any]
+    bundle_path: pathlib.Path,
+    report_path: pathlib.Path,
+    report: dict[str, Any],
+    expect: str | None = None,
 ) -> None:
     dump(report_path, report)
-    run(
+    result = run(
         sys.executable,
         str(VALIDATOR),
         "--baseline",
@@ -372,6 +429,10 @@ def invalid(
         str(report_path),
         expected=1,
     )
+    if expect is not None and expect not in result.stderr:
+        raise AssertionError(
+            f"expected rejection reason {expect!r}, got:\n{result.stderr}"
+        )
 
 
 def main() -> int:
@@ -416,7 +477,8 @@ def main() -> int:
         run(sys.executable, str(AUDITOR), str(bundle_path))
 
         report_path = root / "report.json"
-        valid = report_for(bundle)
+        receipts = root / "receipts"
+        valid = report_for(bundle, receipts)
         dump(report_path, valid)
         run(
             sys.executable,
@@ -493,6 +555,181 @@ def main() -> int:
         non_string_reference = copy.deepcopy(valid)
         non_string_reference["risks"][0]["criterion_ids"].append(7)
         invalid(bundle_path, report_path, non_string_reference)
+
+        # A status typed without an execution receipt is not a result.
+        no_receipt = copy.deepcopy(valid)
+        no_receipt["commands"][0].pop("receipt")
+        invalid(bundle_path, report_path, no_receipt, "requires a receipt path")
+
+        # The report cannot disagree with the receipt it cites.
+        failing = make_receipt(
+            receipts / "failing", "CMD-001", "TARGET", "echo '1 failed'; exit 1"
+        )
+        lying_status = copy.deepcopy(valid)
+        lying_status["commands"][0].update(
+            {"receipt": failing["path"], "command": failing["command"]}
+        )
+        invalid(bundle_path, report_path, lying_status, "its receipt records")
+
+        # The command text must match the argv that actually ran.
+        wrong_command = copy.deepcopy(valid)
+        wrong_command["commands"][0]["command"] = "npm test -- --some-other-suite"
+        invalid(bundle_path, report_path, wrong_command, "does not match the executed argv")
+
+        # TARGET proof must be repeated; a single run cannot show determinism.
+        single_run = make_receipt(
+            receipts / "single", "CMD-001", "TARGET", "echo '1 passed'", repeat=1
+        )
+        unrepeated = copy.deepcopy(valid)
+        unrepeated["commands"][0].update(
+            {"receipt": single_run["path"], "command": single_run["command"]}
+        )
+        invalid(bundle_path, report_path, unrepeated, "must run at least")
+
+        # A flaky green is not proof.
+        flake_flag = receipts / "flake.flag"
+        flaky = make_receipt(
+            receipts / "flaky",
+            "CMD-001",
+            "TARGET",
+            f"test -f {shlex.quote(str(flake_flag))} && exit 1; "
+            f"touch {shlex.quote(str(flake_flag))}; exit 0",
+            repeat=3,
+        )
+        flaky_report = copy.deepcopy(valid)
+        flaky_report["commands"][0].update(
+            {
+                "receipt": flaky["path"],
+                "command": flaky["command"],
+                "status": flaky["status"],
+            }
+        )
+        invalid(bundle_path, report_path, flaky_report, "flaky command(s)")
+
+        # Editing a captured log breaks its recorded hash.
+        tampered = copy.deepcopy(valid)
+        log = receipts / "CMD-001.run1.log"
+        original_log = log.read_bytes()
+        log.write_bytes(original_log + b"fabricated success\n")
+        invalid(bundle_path, report_path, tampered, "log hash does not match")
+        log.write_bytes(original_log)
+
+        # A test that the runner never discovers proves nothing.
+        unwired = copy.deepcopy(valid)
+        unwired["test_wiring"]["discovered_tests"] = ["never_collected_anywhere"]
+        invalid(bundle_path, report_path, unwired, "not discovered by the runner")
+
+        # A test already present before the change is not proof of new wiring.
+        preexisting = copy.deepcopy(valid)
+        preexisting["test_wiring"]["discovered_tests"] = ["rejects_zero"]
+        invalid(bundle_path, report_path, preexisting, "already discovered before the change")
+
+        # HIGH risk needs discriminating proof; CONTRACT is assertable.
+        weak_high_risk = copy.deepcopy(valid)
+        weak_high_risk["tests"][0]["regression_proof"] = {
+            "status": "CONTRACT",
+            "evidence": "asserts the documented invariant",
+        }
+        invalid(bundle_path, report_path, weak_high_risk, "RED_GREEN or MUTATION proof for HIGH/CRITICAL")
+
+        # An elevated machine risk tag cannot be downgraded away.
+        if {"security", "data", "contract", "concurrency"} & set(
+            bundle.get("risk_tags") or []
+        ):
+            downgraded = copy.deepcopy(valid)
+            downgraded["risks"][0]["level"] = "LOW"
+            downgraded["tests"][0]["regression_proof"] = {
+                "status": "MUTATION",
+                "evidence": "mutation still recorded",
+            }
+            invalid(bundle_path, report_path, downgraded, "no HIGH or CRITICAL risk is declared")
+
+        # The language-aware audit must not pass a weakened non-JavaScript suite.
+        python_bundle = copy.deepcopy(bundle)
+        python_bundle["files"].append(
+            {
+                "path": "tests/test_transfer.py",
+                "previous_path": None,
+                "status": "M",
+                "is_test": True,
+                "command_definition": False,
+            }
+        )
+        python_bundle["patch"] += (
+            "\ndiff --git a/tests/test_transfer.py b/tests/test_transfer.py\n"
+            "--- a/tests/test_transfer.py\n"
+            "+++ b/tests/test_transfer.py\n"
+            "@@ -1,2 +1,3 @@\n"
+            "-    assert transfer(-1) is None\n"
+            "+@pytest.mark.skip(reason='flaky')\n"
+            "+def test_transfer():\n"
+            "+    assert True\n"
+        )
+        python_path = root / "python-weakened.json"
+        dump(python_path, python_bundle)
+        python_audit = json.loads(
+            run(sys.executable, str(AUDITOR), str(python_path), expected=1).stdout
+        )
+        python_kinds = {item["kind"] for item in python_audit["issues"]}
+        if not {"SKIPPED_TEST", "WEAK_ASSERTION", "ASSERTION_REMOVED"}.issubset(
+            python_kinds
+        ):
+            raise AssertionError(
+                f"Python test weakening was not detected: {sorted(python_kinds)}"
+            )
+
+        # An unknown test language must be reported, never assumed clean.
+        unknown_bundle = copy.deepcopy(bundle)
+        unknown_bundle["files"].append(
+            {
+                "path": "test/billing_SUITE.erl",
+                "previous_path": None,
+                "status": "M",
+                "is_test": True,
+                "command_definition": False,
+            }
+        )
+        unknown_path = root / "unknown-language.json"
+        dump(unknown_path, unknown_bundle)
+        unknown_audit = json.loads(
+            run(sys.executable, str(AUDITOR), str(unknown_path), expected=1).stdout
+        )
+        if not any(
+            item["kind"] == "AUDIT_LANGUAGE_UNSUPPORTED"
+            for item in unknown_audit["issues"]
+        ):
+            raise AssertionError("unsupported test language passed the audit silently")
+
+        # Suppressing the runner's exit code in CI is not a green suite.
+        neutered_bundle = copy.deepcopy(bundle)
+        neutered_bundle["files"].append(
+            {
+                "path": "Makefile",
+                "previous_path": None,
+                "status": "M",
+                "is_test": False,
+                "command_definition": True,
+            }
+        )
+        neutered_bundle["patch"] += (
+            "\ndiff --git a/Makefile b/Makefile\n"
+            "--- a/Makefile\n"
+            "+++ b/Makefile\n"
+            "@@ -1,2 +1,3 @@\n"
+            "+\tnpm test --passWithNoTests || true\n"
+        )
+        neutered_path = root / "neutered-ci.json"
+        dump(neutered_path, neutered_bundle)
+        neutered_audit = json.loads(
+            run(sys.executable, str(AUDITOR), str(neutered_path), expected=1).stdout
+        )
+        neutered_kinds = {item["kind"] for item in neutered_audit["issues"]}
+        if not {"CI_FAILURE_SUPPRESSED", "EMPTY_SUITE_TOLERATED"}.issubset(
+            neutered_kinds
+        ):
+            raise AssertionError(
+                f"CI failure suppression was not detected: {sorted(neutered_kinds)}"
+            )
 
         missing_criterion_text = copy.deepcopy(valid)
         missing_criterion_text["criteria"][0]["text"] = ""

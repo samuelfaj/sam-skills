@@ -191,12 +191,17 @@ def exercise_git_isolation(root: Path, repo: Path, base: str, head: str) -> None
         repo,
         env=repository_git_env,
     )
-    if (
-        repository_git.returncode != 1
-        or repository_git_marker.exists()
-        or "refusing repository-controlled git executable" not in repository_git.stderr
-    ):
-        raise AssertionError("nested repository-controlled git was not rejected")
+    # Git is resolved from trusted system locations only, so a PATH-injected
+    # repository git is never executed and the build still succeeds.
+    if repository_git_marker.exists():
+        raise AssertionError("repository-controlled git executable was executed")
+    if repository_git.returncode != 0:
+        raise AssertionError(
+            "PATH-injected git must not break the build: "
+            f"exit {repository_git.returncode}: {repository_git.stderr[:200]}"
+        )
+    if not json.loads(repository_git.stdout).get("context_fingerprint"):
+        raise AssertionError("trusted git fallback did not produce a context")
 
     redirect_root = root / "redirect"
     redirect_root.mkdir()

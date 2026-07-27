@@ -10,6 +10,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# Import the shared verifier without leaving bytecode in the skill package.
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from verify_receipts import verify_commands, verify_wiring  # noqa: E402
+
 PREFIXES = {
     "criteria": "AC-",
     "behaviors": "B-",
@@ -215,6 +221,8 @@ def validate(
         need(
             bool(proof.get("evidence")), f"{test_id} regression proof missing evidence"
         )
+        # Any unproven test blocks FULL. "required" is self-assigned, so it cannot
+        # be the thing that decides whether missing proof matters.
         proof_gap = proof_gap or status == "NOT_PROVEN"
 
     target_failure = False
@@ -320,6 +328,47 @@ def validate(
         "invalid real-system proof",
     )
     need(bool(real_system.get("evidence")), "real-system proof needs evidence")
+    # Execution receipts: re-verify every reported command against run_checked.py
+    # output so a typed "PASS" cannot close a gate.
+    receipts = verify_commands(tables.get("commands", {}), errors)
+    wiring_status = verify_wiring(report.get("test_wiring"), errors)
+
+    # Machine-derived risk floor: the builder tags the diff, so the report cannot
+    # silently call a security/data/contract change low risk to dodge hard proof.
+    elevated_tags = {"security", "data", "contract", "concurrency"} & set(
+        bundle.get("risk_tags") or []
+    )
+    declared_levels = {
+        str(risk.get("level")) for risk in tables.get("risks", {}).values()
+    }
+    if elevated_tags:
+        need(
+            bool(declared_levels & {"HIGH", "CRITICAL"}),
+            "changed diff carries elevated risk tags "
+            f"({', '.join(sorted(elevated_tags))}) but no HIGH or CRITICAL risk is declared",
+        )
+
+    # High risk demands discriminating proof: CONTRACT alone is assertable, so it
+    # does not close a HIGH or CRITICAL risk.
+    risk_levels = {
+        risk_id: str(risk.get("level"))
+        for risk_id, risk in tables.get("risks", {}).items()
+    }
+    scenarios_table = tables.get("scenarios", {})
+    weak_high_risk_proof: list[str] = []
+    for test_id, test in tables.get("tests", {}).items():
+        linked_levels: set[str] = set()
+        for scenario_id in test.get("scenario_ids") or []:
+            scenario = scenarios_table.get(str(scenario_id), {})
+            if not isinstance(scenario, dict):
+                continue
+            for risk_id in scenario.get("risk_ids") or []:
+                linked_levels.add(risk_levels.get(str(risk_id), ""))
+        if linked_levels & {"HIGH", "CRITICAL"}:
+            proof_status = (test.get("regression_proof") or {}).get("status")
+            if proof_status not in {"RED_GREEN", "MUTATION"}:
+                weak_high_risk_proof.append(str(test_id))
+
     decision = report.get("decision")
     need(decision in {"FULL", "PARTIAL", "BLOCKED"}, "invalid decision")
 
@@ -330,6 +379,24 @@ def validate(
         need(not cleanup_blocked, "FULL with blocked cleanup")
         need(audit.get("status") == "PASS", "FULL with failed test diff audit")
         need(not unsafe_real_data, "FULL with unsafe real-data environment")
+        need(
+            not receipts["flaky"],
+            "FULL with flaky command(s): " + ", ".join(receipts["flaky"]),
+        )
+        need(
+            not receipts["unstable_target"],
+            "FULL requires repeated stable TARGET proof; unstable: "
+            + ", ".join(receipts["unstable_target"]),
+        )
+        need(
+            wiring_status in {"PROVEN", "NOT_APPLICABLE"},
+            "FULL requires proven test wiring (runner must discover each new test)",
+        )
+        need(
+            not weak_high_risk_proof,
+            "FULL requires RED_GREEN or MUTATION proof for HIGH/CRITICAL risk: "
+            + ", ".join(sorted(weak_high_risk_proof)),
+        )
         if e2e_required:
             need(
                 real_system.get("status") == "PROVEN",

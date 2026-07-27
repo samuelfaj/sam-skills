@@ -69,10 +69,43 @@ def enclosing_worktree_hint(repo_hint: Path) -> Path | None:
     return None
 
 
+def trusted_git_search_path() -> str:
+    search_dirs = [
+        item
+        for item in os.defpath.split(os.pathsep)
+        if item and Path(item).is_absolute()
+    ]
+    search_dirs.extend(("/usr/local/bin", "/opt/homebrew/bin"))
+    return os.pathsep.join(dict.fromkeys(search_dirs))
+
+
+def verify_genuine_git(git: Path) -> None:
+    """Reject a PATH wrapper that is not a real git implementation."""
+    try:
+        probe = subprocess.run(
+            [str(git), "--version"],
+            env=git_env(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    except OSError as exc:
+        raise ValueError(f"could not execute git executable {git}: {exc}") from exc
+    if probe.returncode != 0:
+        stderr = probe.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError(f"git executable {git} failed --version: {stderr}")
+    banner = probe.stdout.decode("utf-8", errors="replace").strip()
+    if not banner.startswith("git version "):
+        raise ValueError(
+            f"refusing non-git executable {git}: unexpected --version banner "
+            f"{banner[:120]!r}"
+        )
+
+
 def resolve_git(repo_hint: Path) -> Path:
-    resolved = shutil.which("git")
+    resolved = shutil.which("git", path=trusted_git_search_path())
     if not resolved:
-        raise ValueError("git is not available on PATH")
+        raise ValueError("git is not available in trusted system locations")
     git = Path(resolved).resolve()
     boundaries = [repo_hint.resolve()]
     worktree_hint = enclosing_worktree_hint(repo_hint)
@@ -80,6 +113,7 @@ def resolve_git(repo_hint: Path) -> Path:
         boundaries.append(worktree_hint)
     if any(is_within(git, boundary) for boundary in boundaries):
         raise ValueError(f"refusing repository-controlled git executable: {git}")
+    verify_genuine_git(git)
     return git
 
 
