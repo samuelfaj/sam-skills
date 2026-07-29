@@ -103,6 +103,19 @@ Record every consult in `advisor_consults` per the output contract.
 
 ## Canonical phases
 
+Every delegated phase inherits the host Token Saver decision through
+`RC_TOKEN_SAVER_EXECUTION_RECEIPT_V1` when present. Phase workers preserve the
+receipt and provider-neutral capability/lane environment across nested spawns,
+retries, resumes, and recovery; they never reconstruct or widen admission.
+Skills and exact-output evidence remain lossless.
+
+Before each controlled child spawn, record a provider-neutral Subagents row
+with `${REMOTE_CODE_SUBAGENT_TELEMETRY_COMMAND:-distill} subagent begin --node
+<stable-id>` and close that exact run id with the matching `subagent end
+--status <completed|failed|cancelled>`. This bridge is telemetry only: it must
+inherit the host Token Saver receipt and must not invent capabilities,
+summarize exact output, or call an unobserved child done.
+
 ### 1. Plan — `sam-plan`
 
 Run against the frozen user prompt. Honor complexity routing (`simple` plans

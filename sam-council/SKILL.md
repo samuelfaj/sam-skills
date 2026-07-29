@@ -25,6 +25,31 @@ machine report validates. Never invent an unavailable worker or provider.
 `TRIAGE_PASS`, `ESCALATE_TO_FULL`, or `BLOCKED`. Only `full` may return
 `APPROVED`, `APPROVED_WITH_CONDITIONS`, `REVISE`, or `BLOCKED`.
 
+**Token Saver inheritance:** when the host provides
+`RC_TOKEN_SAVER_EXECUTION_RECEIPT_V1`, every controlled seat and verifier must
+inherit that content-free receipt and its authorized capability/lane
+environment unchanged. Never reconstruct or widen admission. A missing,
+malformed, denied, cross-user, or provider-mismatched receipt is raw fail-open
+input. Never put Skills, exact-output commands, prompts, transcripts, secrets,
+or full reviewer responses into the receipt. Skills and exact-output evidence
+remain lossless. Do not claim billing or quota savings.
+
+Every controlled seat/verifier lifetime must be bracketed by the
+provider-neutral telemetry bridge:
+
+```bash
+telemetry_command="${REMOTE_CODE_SUBAGENT_TELEMETRY_COMMAND:-distill}"
+child_run="$("$telemetry_command" subagent begin --node '<stable-seat-id>')"
+# run the seat or verifier
+"$telemetry_command" subagent end --run-id "$child_run" --status completed
+```
+
+Use `failed` or `cancelled` on the corresponding terminal path. Preserve the
+host receipt and returned child run id through retries. Bridge unavailability
+means raw execution plus an explicit Subagents proof gap — never invent a Done
+row. Do not require Distill to process Skill bodies or exact output; the bridge
+is lifetime telemetry only.
+
 ## Required resources
 
 Read these files completely before running the council:

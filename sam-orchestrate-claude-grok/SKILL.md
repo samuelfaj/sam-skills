@@ -20,6 +20,16 @@ proof re-runs, conflict reconciliation, and final reporting.
 proof, selective review. Spend tokens on artifact verification — not on pasting
 this skill into every worker.
 
+**Token Saver inheritance:** when the host provides
+`RC_TOKEN_SAVER_EXECUTION_RECEIPT_V1`, every nested worker and advisor must
+inherit that content-free receipt and its authorized capability/lane
+environment unchanged. The host owns admission; workers must not reconstruct,
+widen, or replace those decisions. A missing, malformed, denied, cross-user,
+or provider-mismatched receipt is raw fail-open input. Never put Skills,
+exact-output commands, prompts, transcripts, secrets, or full advisor
+responses into the receipt. Skills and exact-output evidence remain lossless.
+Do not claim billing or quota savings.
+
 ## Non-Negotiable Contract
 
 - Keep the main agent controller-only. Delegate production code, tests, docs,
@@ -149,6 +159,22 @@ controller already authorized those writes. Record runtime receipt before spawn.
 ### Advisor spawn
 
 Optional read-only second opinion: `opus` / `max`. Never owns production nodes.
+
+Every controlled worker or advisor lifetime must be bracketed by the
+provider-neutral telemetry bridge:
+
+```bash
+telemetry_command="${REMOTE_CODE_SUBAGENT_TELEMETRY_COMMAND:-distill}"
+child_run="$("$telemetry_command" subagent begin --node '<stable-id>')"
+# run the delegated worker or advisor
+"$telemetry_command" subagent end --run-id "$child_run" --status completed
+```
+
+Use `failed` or `cancelled` on the corresponding terminal path. Preserve the
+host Token Saver receipt and the returned child run id through retries and
+recovery. Bridge unavailability means raw execution plus an explicit Subagents
+proof gap — never invent a Done row. Do not require Distill to process Skill
+bodies or exact output; the bridge is lifetime telemetry only.
 
 ## 4. Track, Reconcile, Escalate
 

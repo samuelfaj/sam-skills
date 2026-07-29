@@ -25,6 +25,28 @@ the final decision, implementation, and proof.
 - Pass only the minimum context required and exclude secrets or credentials.
 - Do not silently fall back when the CLI, model, effort, or authentication is unavailable.
 - Treat the advisor response as analysis, not proof. Verify material claims before acting.
+- **Token Saver inheritance:** when the host provides
+  `RC_TOKEN_SAVER_EXECUTION_RECEIPT_V1`, preserve it and the authorized
+  capability/lane environment in every child process. Never reconstruct or
+  widen admission. A missing, malformed, denied, cross-user, or
+  provider-mismatched receipt is raw fail-open input. Skills, exact-output
+  commands, prompts, transcripts, secrets, and the full advisor response stay
+  lossless and out of the receipt. Do not claim billing or quota savings.
+- **Subagents telemetry:** when this advisor is a controlled nested lifetime,
+  bracket the real invocation with the provider-neutral bridge, preserving the
+  returned run id:
+
+```bash
+telemetry_command="${REMOTE_CODE_SUBAGENT_TELEMETRY_COMMAND:-distill}"
+child_run="$("$telemetry_command" subagent begin --node '<stable-advisor-node-id>')"
+# run the bounded advisor
+"$telemetry_command" subagent end --run-id "$child_run" --status completed
+```
+
+  Use `failed` or `cancelled` on the corresponding terminal path. Bridge
+  unavailability means raw execution plus an explicit Subagents proof gap —
+  never invent a Done row. Do not require Distill to process Skill bodies or
+  exact output.
 
 ## Subordinate mode (parent workflow active)
 

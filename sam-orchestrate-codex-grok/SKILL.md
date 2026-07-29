@@ -19,6 +19,15 @@ proof re-runs, conflict reconciliation, and final reporting.
 proof, selective review. Spend tokens on artifact verification — not on pasting
 this skill into every worker.
 
+**Token Saver inheritance:** when the host provides
+`RC_TOKEN_SAVER_EXECUTION_RECEIPT_V1`, every nested worker must inherit that
+content-free receipt and its lane/capability environment unchanged. The host
+owns admission, Graphify, Distill, managed-wrapper PATH, recovery scope, and
+provider attribution; workers must not reconstruct, widen, or replace those
+decisions. A missing, malformed, denied, cross-user, or provider-mismatched
+receipt is raw fail-open input. Never put prompts, transcripts, tool output, or
+secrets into the receipt. Exact-output commands and Skills remain lossless.
+
 ## Non-Negotiable Contract
 
 - Keep the main agent controller-only. Delegate production code, tests, docs,
@@ -143,6 +152,13 @@ absolute `--prompt-file`. Pass only the slice; no full skill paste.
 
 Use Codex read-only for REVIEWER; writable only for genius when the controller
 already authorized those writes. Record runtime receipt before spawn.
+
+Every real delegated node must be bracketed by the provider-neutral telemetry
+bridge (`${REMOTE_CODE_SUBAGENT_TELEMETRY_COMMAND:-distill} subagent begin
+--node <stable-id>` / matching `subagent end --run-id <id> --status
+<completed|failed|cancelled>`). Preserve the host receipt and returned child id
+through retries and recovery; if the bridge is unavailable, keep the worker raw
+and record the Subagents proof gap.
 
 ## 4. Track, Reconcile, Escalate
 

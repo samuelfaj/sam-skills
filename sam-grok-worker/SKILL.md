@@ -27,6 +27,30 @@ final decision, publication, and proof.
 - Treat worker output as candidate work, not proof. Verify material claims and
   diffs before accepting or publishing.
 
+## Token Saver inheritance
+
+If `RC_TOKEN_SAVER_EXECUTION_RECEIPT_V1` is present, preserve it and the
+host-provided `RC_TOKEN_SAVER_*` capability/lane variables in every child
+process you start. Do not derive a new admission decision, enable a disabled
+lane, prepend an unmanaged wrapper path, or copy content into the receipt.
+Malformed/denied/cross-user/provider-mismatched receipts remain raw. Skills,
+exact-output commands, and provider responses must stay complete; Token Saver
+is an optimization seam, not permission to truncate output.
+
+When this worker is a controlled nested task, bracket the real worker lifetime
+with the provider-neutral telemetry bridge, preserving the returned run id:
+
+```bash
+telemetry_command="${REMOTE_CODE_SUBAGENT_TELEMETRY_COMMAND:-distill}"
+child_run="$("$telemetry_command" subagent begin --node '<stable-worker-node-id>')"
+# run the bounded worker
+"$telemetry_command" subagent end --run-id "$child_run" --status completed
+```
+
+Use `failed` or `cancelled` on the corresponding terminal path. If the bridge
+is unavailable, continue the task raw and report the missing Subagents proof;
+never fabricate a receipt or mark an unobserved child done.
+
 ## 1. Freeze the Worker Request
 
 Record:

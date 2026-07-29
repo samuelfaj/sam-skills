@@ -14,6 +14,16 @@ matrix.
 proof, selective review. Spend tokens on verification of artifacts — not on
 re-reading this skill or re-prompting full history into every worker.
 
+**Token Saver inheritance:** when the host provides
+`RC_TOKEN_SAVER_EXECUTION_RECEIPT_V1`, every nested worker and advisor must
+inherit that content-free receipt and its authorized capability/lane
+environment unchanged. The host owns admission; workers must not reconstruct,
+widen, or replace those decisions. A missing, malformed, denied, cross-user,
+or provider-mismatched receipt is raw fail-open input. Never put Skills,
+exact-output commands, prompts, transcripts, secrets, or full advisor
+responses into the receipt. Skills and exact-output evidence remain lossless.
+Do not claim billing or quota savings.
+
 ## Non-Negotiable Contract
 
 - Keep the main agent controller-only. Delegate production code, tests,
@@ -137,6 +147,22 @@ Detect host once (`codex`, `claude-code`, `grok`). Bind matrix rows from
 
 Worker prompts: [prompt-contract.md](references/prompt-contract.md) — **slice-only**,
 no full skill paste, no other workers’ conclusions into independent review.
+
+Every controlled worker or advisor lifetime must be bracketed by the
+provider-neutral telemetry bridge:
+
+```bash
+telemetry_command="${REMOTE_CODE_SUBAGENT_TELEMETRY_COMMAND:-distill}"
+child_run="$("$telemetry_command" subagent begin --node '<stable-id>')"
+# run the delegated worker or advisor
+"$telemetry_command" subagent end --run-id "$child_run" --status completed
+```
+
+Use `failed` or `cancelled` on the corresponding terminal path. Preserve the
+host Token Saver receipt and the returned child run id through retries and
+recovery. Bridge unavailability means raw execution plus an explicit Subagents
+proof gap — never invent a Done row. Do not require Distill to process Skill
+bodies or exact output; the bridge is lifetime telemetry only.
 
 ## 4. Track and Reconcile (cheap skepticism)
 
