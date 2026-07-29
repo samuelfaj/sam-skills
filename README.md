@@ -34,6 +34,10 @@ and orchestration.
   evidence-backed refinement cycles.
 - `sam-simplify-task`: remove proven unnecessary complexity while preserving
   observable behavior.
+- `sam-perceived-performance`: make a requested interaction feel instantaneous
+  while the real work continues, under measured feedback and dead-time budgets,
+  proven rollback for every optimistic outcome, and a hard ban on faked progress,
+  success, or freshness.
 - `sam-create-playwright-tests`: build risk-based browser coverage with linked
   UI/backend, route, permission, persistence, and cleanup proof.
 - `sam-create-test-coverage`: select and implement the smallest reliable mix of

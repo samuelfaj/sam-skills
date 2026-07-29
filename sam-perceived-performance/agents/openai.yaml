@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Perceived Performance"
+  short_description: "Measured, honest instant-feel interactions"
+  default_prompt: "Use $sam-perceived-performance to make this interaction feel instantaneous, measure first feedback and dead time before and after, and prove every optimistic path can roll back."
