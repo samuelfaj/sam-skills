@@ -137,8 +137,13 @@ def base_simple_report(plan_dir: str, *, repo_root: str | None = None) -> JsonOb
                 "id": "S-001",
                 "title": "Add null-safe total rendering",
                 "why": "Removes the crash without schema churn.",
+                "how": [
+                    "Guard total before format/render in InvoiceDetail",
+                    "Show an em dash when total is null; keep existing path when present",
+                ],
                 "depends_on": [],
                 "surfaces": [surface],
+                "preconditions": ["E-001"],
                 "dod": ["No throw on null total", "Draft invoices still open"],
                 "proof_ids": ["V-001"],
                 "simpler_rejected": None,
@@ -361,6 +366,24 @@ def main() -> int:
             raise AssertionError("rendered HTML missing light color-scheme meta")
         if "color-scheme: light" not in html:
             raise AssertionError("rendered HTML missing light theme CSS")
+        for required_heading in (
+            "Status",
+            "Goal &amp; scope",
+            "Steps (what / how / where / done)",
+            "Acceptance map",
+        ):
+            if required_heading not in html:
+                raise AssertionError(
+                    f"compact HTML missing required section {required_heading!r}"
+                )
+        if "Guard total before format/render" not in html:
+            raise AssertionError("compact HTML missing step how content")
+        compact_surface = simple["steps"][0]["surfaces"][0]
+        compact_criterion = simple["frozen"]["success_criteria"][0]
+        if compact_surface not in html:
+            raise AssertionError("compact HTML missing step surface path")
+        if compact_criterion not in html:
+            raise AssertionError("compact HTML missing success criterion in acceptance")
 
         # Standard without forced council
         standard_dir = root / "plan-standard"
@@ -534,6 +557,7 @@ def main() -> int:
                 "id": "S-001",
                 "title": "A",
                 "why": "a",
+                "how": ["Do step A work on the invoice view path"],
                 "depends_on": ["S-002"],
                 "surfaces": [surface],
                 "dod": ["done"],
@@ -543,6 +567,7 @@ def main() -> int:
                 "id": "S-002",
                 "title": "B",
                 "why": "b",
+                "how": ["Do step B work on the invoice view path"],
                 "depends_on": ["S-001"],
                 "surfaces": [surface],
                 "dod": ["done"],
@@ -597,6 +622,7 @@ def main() -> int:
                 "id": "S-002",
                 "title": "Unrelated cleanup",
                 "why": "should be linked or marked",
+                "how": ["Remove dead imports only if already touched in S-001"],
                 "depends_on": [],
                 "surfaces": [surface],
                 "dod": ["cleanup done"],
@@ -606,6 +632,29 @@ def main() -> int:
         orphan_step_path = root / "orphan-step.json"
         write_report(orphan_step_path, orphan_step)
         assert_invalid(orphan_step_path, "reachable from acceptance_trace")
+
+        # P0: READY without how[]
+        no_how = deepcopy(simple)
+        no_how["steps"][0].pop("how", None)
+        no_how_path = root / "no-how.json"
+        write_report(no_how_path, no_how)
+        assert_invalid(no_how_path, "requires non-empty how[]")
+
+        # P0: how that only restates the title
+        title_only_how = deepcopy(simple)
+        title_only_how["steps"][0]["how"] = [
+            title_only_how["steps"][0]["title"]
+        ]
+        title_how_path = root / "title-only-how.json"
+        write_report(title_how_path, title_only_how)
+        assert_invalid(title_how_path, "not only restating the title")
+
+        # P0: READY step without surfaces (non-SPIKE)
+        no_step_surfaces = deepcopy(simple)
+        no_step_surfaces["steps"][0]["surfaces"] = []
+        no_step_surfaces_path = root / "no-step-surfaces.json"
+        write_report(no_step_surfaces_path, no_step_surfaces)
+        assert_invalid(no_step_surfaces_path, "requires non-empty surfaces")
 
         print("sam-plan harness passed")
 

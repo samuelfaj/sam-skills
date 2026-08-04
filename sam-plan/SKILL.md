@@ -5,6 +5,18 @@ description: "Conduct task study and emit a machine freeze plan (goal, thesis, s
 
 # Sam Plan
 
+## Agent quickstart
+
+1. Scaffold `$PLAN_DIR` → study repo (tools + surfaces) → ledger FACT/ASSUMPTION/UNKNOWN.
+2. Draft freeze: goal/scope, thesis + rejected alternatives, ordered steps with
+   **why / how[] / surfaces / dod / proof_ids**, acceptance_trace, risks, council policy.
+3. `validate_plan_report.py` with `--repo-root` when possible.
+4. `render_plan_html.py` then `validate_plan_report.py --require-html`.
+5. Return status, paths, thesis one-liner, step count, residuals/blockers, council, VALID.
+
+READY fails closed without executable `how[]` and non-empty step `surfaces`
+(except SPIKE). Compact HTML must show status, scope, rich steps, and acceptance—not titles only.
+
 ## Purpose
 
 Turn one planning prompt into a **conducted inquiry + decision freeze**, not a
@@ -95,7 +107,9 @@ unknown blocks planning; otherwise investigate with tools first.
 4. **Ledger** — material FACT / ASSUMPTION / UNKNOWN with stable IDs; FACT needs a
    locator that exists in the repo (`path` or `path:line`) or `user decision: …`.
 5. **Thesis** — falsifiable approach plus at least one simpler path rejected with reason.
-6. **Steps** — ordered work with why, surfaces, DoD, and proof method IDs.
+6. **Steps** — ordered work with why, **how[]** (imperative procedure), surfaces,
+   DoD, and proof method IDs. Each READY step must be implementable without
+   re-deriving the procedure from thesis alone.
 7. **Gates** — risks, risk flags (do not under-flag migration/auth/etc.),
    `acceptance_trace`, residuals; what must be true for `READY_TO_EXECUTE`.
 
@@ -186,4 +200,8 @@ HTML under `$PLAN_DIR`. Remove scratch outside the plan directory when done.
 - Parent workflows may set `PLAN_DIR`. Default is `$PWD/plan`.
 - `sam-task` advances on validated freeze core (`plan-report.json`); HTML is the
   required human artifact of this skill, not the parent machine gate.
+- Step anti-pattern: `title` only or `how` that restates the title. Prefer 2–7
+  concrete bullets naming files/behaviors and what not to touch when relevant.
+- Chat return (short): status · thesis (1 line) · N steps · primary HTML path ·
+  freeze path · blockers/residuals · council skip/result · VALID.
 - Run `scripts/test_plan_harness.py` only when changing this skill.

@@ -37,8 +37,9 @@ Write `plan-report.json` (UTF-8 object) with:
   `claim`, `locator` (required when classification is `FACT`)
 - `assumptions[]`, `unknowns[]` (`material` bool on unknowns)
 - `thesis`: `id`, `summary`, `approach`, `rejected_alternatives`
-- `steps[]`: `id`, `title`, `why`, `depends_on`, `surfaces`, `dod`,
-  `proof_ids`, optional `simpler_rejected`
+- `steps[]`: `id`, `title`, `why`, `how` (imperative procedure bullets),
+  `depends_on`, `surfaces`, `dod`, `proof_ids`, optional `preconditions`
+  (evidence/assumption IDs), optional `simpler_rejected`
 - `risks[]`, `verifications[]` (`PASS|PLANNED|NOT_RUN|BLOCKED|NOT_APPLICABLE`)
 - `acceptance_trace[]`: map success criteria to steps/proofs
 - `council`: `required`, `skip_reason`, `runs[]`
@@ -91,6 +92,11 @@ Each `frozen.success_criteria` entry must appear as `criterion` with
 | Humans | Light-theme HTML pack via `render_plan_html.py` | Always on terminal plan |
 | Chat | Short projection of status/thesis | Optional summary |
 
+When `chapters` is empty, the compact HTML page must still project status, goal
+and scope (success/non-goals/invariants/no-go), thesis, rich steps
+(why/how/surfaces/deps/DoD/proofs), acceptance map, risks/open items, and
+evidence/study receipts—not title+DoD only.
+
 Parents (`sam-task`, etc.) advance on the freeze file. Humans open HTML under
 `$PLAN_DIR` (e.g. `00-plano.html`). Never treat HTML alone as proof that study
 happened; never skip HTML on a finished plan.
@@ -107,16 +113,34 @@ happened; never skip HTML on a finished plan.
 6. Empty `thesis.rejected_alternatives`
 7. No FACT evidence with a non-empty locator
 8. A step with empty `dod`
-9. `council.required` true without at least one run, or runs in
+9. A step with empty `how[]`, or `how` that only restates the step title
+10. A step with empty `surfaces` (except `case_type=SPIKE`)
+11. `council.required` true without at least one run, or runs in
    `BLOCKED` / `REVISE` / `ESCALATE_TO_FULL`
-10. Non-empty `risk_flags` while `council.required` is false
-11. Missing freeze core fields (goal, thesis approach, ≥1 step)
-12. Missing `study` / empty `surfaces_mapped` or `tools_used` (except SPIKE)
-13. Success criteria without matching `acceptance_trace`
-14. Heuristic risk flags present in goal/steps but absent from `risk_flags`
-15. With `--repo-root`: no FACT locator that resolves under the repo
+12. Non-empty `risk_flags` while `council.required` is false
+13. Missing freeze core fields (goal, thesis approach, ≥1 step)
+14. Missing `study` / empty `surfaces_mapped` or `tools_used` (except SPIKE)
+15. Success criteria without matching `acceptance_trace`
+16. Heuristic risk flags present in goal/steps but absent from `risk_flags`
+17. With `--repo-root`: no FACT locator that resolves under the repo
 
 `PLANNED` proofs are allowed when `reason` states the exact post-implement method.
+
+### Step quality (for humans and implementer agents)
+
+Each READY step must answer:
+
+| Field | Question |
+| --- | --- |
+| `title` | What work unit is this? |
+| `why` | Why does this step exist for the goal? |
+| `how[]` | Imperative bullets: what to change (enough to implement without re-study) |
+| `surfaces` | Where in the repo (paths) |
+| `dod` | When is the step done? |
+| `proof_ids` | How is done proven? |
+
+Bad: `title: "Fix auth"`, `how: ["Fix auth"]`, empty surfaces.  
+Good: concrete files, concrete procedure, observable DoD, mapped proof.
 
 ## Validation
 

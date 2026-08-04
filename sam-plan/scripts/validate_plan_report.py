@@ -565,7 +565,32 @@ def validate_report(
         for dep in depends:
             if dep not in step_ids:
                 errors.append(f"steps[{index}].depends_on unknown id {dep}")
-        string_list(item.get("surfaces", []), f"steps[{index}].surfaces", errors)
+        surfaces_list = string_list(
+            item.get("surfaces", []), f"steps[{index}].surfaces", errors
+        )
+        # how[] is optional structurally; READY requires non-empty executable how
+        if "how" in item and item["how"] is not None and not isinstance(item["how"], list):
+            errors.append(f"steps[{index}].how must be a list of strings when present")
+            how_list: list[str] = []
+        else:
+            how_list = string_list(
+                item.get("how", []),
+                f"steps[{index}].how",
+                errors,
+                allow_empty=True,
+            )
+        if "preconditions" in item and item["preconditions"] is not None:
+            if not isinstance(item["preconditions"], list):
+                errors.append(
+                    f"steps[{index}].preconditions must be a list of strings when present"
+                )
+            else:
+                string_list(
+                    item.get("preconditions", []),
+                    f"steps[{index}].preconditions",
+                    errors,
+                    allow_empty=True,
+                )
         dod_list = string_list(
             item.get("dod", []), f"steps[{index}].dod", errors, allow_empty=False
         )
@@ -575,6 +600,9 @@ def validate_report(
         item["_dod"] = dod_list
         item["_proof_ids"] = proof_list
         item["_depends_on"] = depends
+        item["_surfaces"] = surfaces_list
+        item["_how"] = how_list
+        item["_title"] = str(item.get("title") or "").strip()
         if "simpler_rejected" in item and item["simpler_rejected"] is not None:
             if not isinstance(item["simpler_rejected"], str):
                 errors.append(f"steps[{index}].simpler_rejected must be text or null")
@@ -889,7 +917,7 @@ def validate_report(
                     f"READY_TO_EXECUTE step {sid} must be reachable from acceptance_trace "
                     "or set out_of_acceptance reason"
                 )
-        # Steps with DoD need proof_ids
+        # Steps with DoD need proof_ids; READY needs how + surfaces (except SPIKE)
         for index, item in enumerate(step_items):
             dod = item.get("_dod") or item.get("dod") or []
             proofs = item.get("_proof_ids") if "_proof_ids" in item else item.get("proof_ids") or []
@@ -897,6 +925,41 @@ def validate_report(
                 errors.append(
                     f"READY_TO_EXECUTE steps[{index}] with dod requires ≥1 proof_ids"
                 )
+            how = item.get("_how") if "_how" in item else item.get("how") or []
+            how_clean = [
+                str(h).strip()
+                for h in how
+                if isinstance(h, str) and str(h).strip()
+            ]
+            title = item.get("_title") or str(item.get("title") or "").strip()
+            if not how_clean:
+                errors.append(
+                    f"READY_TO_EXECUTE steps[{index}] requires non-empty how[] "
+                    "(imperative procedure bullets for implementers)"
+                )
+            else:
+                # Reject how that only restates the title
+                nontrivial = [
+                    h
+                    for h in how_clean
+                    if h.casefold() != title.casefold() and len(h) >= 8
+                ]
+                if not nontrivial:
+                    errors.append(
+                        f"READY_TO_EXECUTE steps[{index}].how must be executable "
+                        "(not empty, not only restating the title)"
+                    )
+            if case_type != "SPIKE":
+                surfaces = (
+                    item.get("_surfaces")
+                    if "_surfaces" in item
+                    else item.get("surfaces") or []
+                )
+                if not surfaces:
+                    errors.append(
+                        f"READY_TO_EXECUTE steps[{index}] requires non-empty surfaces "
+                        "(except case_type=SPIKE)"
+                    )
         # UNKNOWN probes (depth simple skips non-material probe/why rules)
         for index, item in enumerate(unknown_items):
             material = item.get("material") is True

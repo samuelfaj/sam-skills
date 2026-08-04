@@ -18,7 +18,9 @@ The freeze (`plan-report.json`) remains the machine source of truth for parents
 and validators. Chat/Markdown may summarize; they do not replace the pack.
 
 If `chapters` is empty, still render: the renderer synthesizes a single compact
-page from the freeze.
+page from the freeze. That compact page must include status, goal/scope,
+thesis, rich steps (why/how/surfaces/deps/DoD/proofs), acceptance map,
+risks/open items when present, and evidence/study—not a title-only step list.
 
 ## Visual contract (light theme)
 

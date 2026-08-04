@@ -270,39 +270,200 @@ def render_chapter_body(chapter: JsonObject) -> str:
     return "\n".join(parts)
 
 
+def _as_str_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item).strip()]
+
+
+def _join_bullets(items: list[str], *, empty: str = "—") -> str:
+    cleaned = [item.strip() for item in items if item and str(item).strip()]
+    if not cleaned:
+        return empty
+    return " • ".join(cleaned)
+
+
 def synthesize_compact_chapter(report: JsonObject) -> JsonObject:
-    """Build a single pack page from freeze fields when chapters are omitted."""
+    """Build a single pack page from freeze fields when chapters are omitted.
+
+    Rich default projection for humans: status, scope, thesis, executable steps
+    (why/how/surfaces/deps/DoD/proofs), acceptance map, risks, residuals,
+    evidence, and simplicity cuts — not just goal + titles.
+    """
     frozen = report.get("frozen") if isinstance(report.get("frozen"), dict) else {}
     thesis = report.get("thesis") if isinstance(report.get("thesis"), dict) else {}
+    study = report.get("study") if isinstance(report.get("study"), dict) else {}
+    council = report.get("council") if isinstance(report.get("council"), dict) else {}
+    simplicity = (
+        report.get("simplicity") if isinstance(report.get("simplicity"), dict) else {}
+    )
     steps = report.get("steps") if isinstance(report.get("steps"), list) else []
     evidence = report.get("evidence") if isinstance(report.get("evidence"), list) else []
+    risks = report.get("risks") if isinstance(report.get("risks"), list) else []
+    residuals = _as_str_list(report.get("residuals"))
+    blockers = _as_str_list(report.get("blockers"))
+    risk_flags = _as_str_list(report.get("risk_flags"))
+    acceptance = (
+        report.get("acceptance_trace")
+        if isinstance(report.get("acceptance_trace"), list)
+        else []
+    )
+    verifications = (
+        report.get("verifications")
+        if isinstance(report.get("verifications"), list)
+        else []
+    )
+    proof_by_id = {
+        str(item.get("id")): item
+        for item in verifications
+        if isinstance(item, dict) and item.get("id")
+    }
+
+    status = str(report.get("status") or "")
+    depth = str(report.get("depth") or "")
+    case_type = str(report.get("case_type") or "")
+    status_tone = "ok"
+    if status in {"BLOCKED", "NOT_CONFIDENT"}:
+        status_tone = "danger" if status == "BLOCKED" else "warn"
+    elif status != "READY_TO_EXECUTE":
+        status_tone = "warn"
+
+    status_bits = [
+        f"Status: {status or 'unknown'}",
+        f"Depth: {depth or '—'}",
+        f"Case: {case_type or '—'}",
+    ]
+    if risk_flags:
+        status_bits.append("Risk flags: " + ", ".join(risk_flags))
+    if council.get("required") is True:
+        runs = council.get("runs") if isinstance(council.get("runs"), list) else []
+        run_statuses = [
+            str(run.get("status"))
+            for run in runs
+            if isinstance(run, dict) and run.get("status")
+        ]
+        status_bits.append(
+            "Council: required"
+            + (f" ({', '.join(run_statuses)})" if run_statuses else "")
+        )
+    elif council.get("skip_reason"):
+        status_bits.append(f"Council skipped: {council.get('skip_reason')}")
+    if blockers:
+        status_bits.append("Blockers: " + "; ".join(blockers))
+    if residuals:
+        status_bits.append("Residuals: " + "; ".join(residuals))
+
+    success = _as_str_list(frozen.get("success_criteria"))
+    non_goals = _as_str_list(frozen.get("non_goals"))
+    invariants = _as_str_list(frozen.get("invariants"))
+    constraints = _as_str_list(frozen.get("constraints"))
+    no_go = _as_str_list(frozen.get("no_go"))
+
     step_rows: list[list[str]] = []
     for step in steps:
         if not isinstance(step, dict):
             continue
-        dod = step.get("dod") if isinstance(step.get("dod"), list) else []
+        how = _as_str_list(step.get("how"))
+        dod = _as_str_list(step.get("dod"))
+        surfaces = _as_str_list(step.get("surfaces"))
+        depends = _as_str_list(step.get("depends_on"))
+        proofs = _as_str_list(step.get("proof_ids"))
+        preconditions = _as_str_list(step.get("preconditions"))
+        how_text = _join_bullets(how, empty="(how not recorded)")
+        if preconditions:
+            how_text = f"Pre: {_join_bullets(preconditions)} | How: {how_text}"
         step_rows.append(
             [
                 str(step.get("id", "")),
                 str(step.get("title", "")),
-                "; ".join(str(item) for item in dod),
+                str(step.get("why", "")),
+                how_text,
+                _join_bullets(surfaces),
+                _join_bullets(depends, empty="—"),
+                _join_bullets(dod),
+                _join_bullets(proofs),
             ]
         )
+
+    acceptance_rows: list[list[str]] = []
+    for item in acceptance:
+        if not isinstance(item, dict):
+            continue
+        proof_ids = _as_str_list(item.get("proof_ids"))
+        proof_labels = []
+        for pid in proof_ids:
+            proof = proof_by_id.get(pid)
+            if isinstance(proof, dict):
+                proof_labels.append(
+                    f"{pid}: {proof.get('proof', '')} [{proof.get('status', '')}]"
+                )
+            else:
+                proof_labels.append(pid)
+        acceptance_rows.append(
+            [
+                str(item.get("criterion", "")),
+                _join_bullets(_as_str_list(item.get("step_ids"))),
+                _join_bullets(proof_labels),
+            ]
+        )
+
+    risk_rows: list[list[str]] = []
+    for item in risks:
+        if not isinstance(item, dict):
+            continue
+        risk_rows.append(
+            [
+                str(item.get("id", "")),
+                str(item.get("severity", "")),
+                str(item.get("status", "")),
+                str(item.get("claim", "")),
+                str(item.get("mitigation", "")),
+            ]
+        )
+
     evidence_items = []
     for item in evidence:
         if isinstance(item, dict):
             evidence_items.append(
-                f"{item.get('id', '')}: {item.get('claim', '')} "
-                f"({item.get('locator', '')})"
+                f"{item.get('id', '')} [{item.get('classification', '')}]: "
+                f"{item.get('claim', '')} ({item.get('locator', '')})"
             )
+
     rejected = thesis.get("rejected_alternatives") or []
     if not isinstance(rejected, list):
         rejected = []
+
+    surfaces_mapped = _as_str_list(study.get("surfaces_mapped"))
+    tools_used = _as_str_list(study.get("tools_used"))
+    cuts = _as_str_list(simplicity.get("cuts"))
+    retained = _as_str_list(simplicity.get("retained_complexity_justifications"))
+
     sections: list[JsonObject] = [
         {
-            "heading": "Goal",
+            "heading": "Status",
+            "blocks": [
+                {
+                    "type": "callout",
+                    "tone": status_tone,
+                    "text": " | ".join(status_bits),
+                }
+            ],
+        },
+        {
+            "heading": "Goal & scope",
             "blocks": [
                 {"type": "paragraph", "text": str(frozen.get("goal", ""))},
+                {
+                    "type": "table",
+                    "headers": ["Lens", "Items"],
+                    "rows": [
+                        ["Success criteria", _join_bullets(success, empty="(none)")],
+                        ["Non-goals", _join_bullets(non_goals, empty="(none)")],
+                        ["Invariants", _join_bullets(invariants, empty="(none)")],
+                        ["Constraints", _join_bullets(constraints, empty="(none)")],
+                        ["No-go", _join_bullets(no_go, empty="(none)")],
+                    ],
+                },
             ],
         },
         {
@@ -314,23 +475,81 @@ def synthesize_compact_chapter(report: JsonObject) -> JsonObject:
                 },
                 {
                     "type": "list",
-                    "items": [str(item) for item in rejected]
+                    "items": [f"Rejected: {item}" for item in rejected]
                     or ["(no rejected alternatives recorded)"],
                 },
             ],
         },
         {
-            "heading": "Steps",
+            "heading": "Steps (what / how / where / done)",
             "blocks": [
                 {
                     "type": "table",
-                    "headers": ["ID", "Step", "DoD"],
-                    "rows": step_rows
-                    or [["", "No steps", ""]],
+                    "headers": [
+                        "ID",
+                        "Step",
+                        "Why",
+                        "How",
+                        "Surfaces",
+                        "Deps",
+                        "DoD",
+                        "Proofs",
+                    ],
+                    "rows": step_rows or [["", "No steps", "", "", "", "", "", ""]],
+                }
+            ],
+        },
+        {
+            "heading": "Acceptance map",
+            "blocks": [
+                {
+                    "type": "table",
+                    "headers": ["Success criterion", "Steps", "Proofs"],
+                    "rows": acceptance_rows
+                    or [["(no acceptance_trace)", "", ""]],
                 }
             ],
         },
     ]
+
+    if risk_rows or risk_flags:
+        risk_blocks: list[JsonObject] = []
+        if risk_flags:
+            risk_blocks.append(
+                {
+                    "type": "callout",
+                    "tone": "warn",
+                    "text": "Risk flags: " + ", ".join(risk_flags),
+                }
+            )
+        risk_blocks.append(
+            {
+                "type": "table",
+                "headers": ["ID", "Severity", "Status", "Claim", "Mitigation"],
+                "rows": risk_rows or [["", "", "", "(no structured risks)", ""]],
+            }
+        )
+        sections.append({"heading": "Risks", "blocks": risk_blocks})
+
+    if blockers or residuals:
+        open_items = []
+        if blockers:
+            open_items.extend([f"BLOCKER: {item}" for item in blockers])
+        if residuals:
+            open_items.extend([f"Residual: {item}" for item in residuals])
+        sections.append(
+            {
+                "heading": "Open items",
+                "blocks": [
+                    {
+                        "type": "callout",
+                        "tone": "danger" if blockers else "warn",
+                        "text": " | ".join(open_items),
+                    }
+                ],
+            }
+        )
+
     if evidence_items:
         sections.append(
             {
@@ -338,6 +557,39 @@ def synthesize_compact_chapter(report: JsonObject) -> JsonObject:
                 "blocks": [{"type": "list", "items": evidence_items}],
             }
         )
+
+    study_items = []
+    if surfaces_mapped:
+        study_items.append("Surfaces: " + ", ".join(surfaces_mapped))
+    if tools_used:
+        study_items.append("Tools: " + ", ".join(tools_used))
+    if study_items:
+        sections.append(
+            {
+                "heading": "Study receipts",
+                "blocks": [{"type": "list", "items": study_items}],
+            }
+        )
+
+    if cuts or retained:
+        simple_blocks: list[JsonObject] = []
+        if cuts:
+            simple_blocks.append(
+                {
+                    "type": "list",
+                    "items": [f"Cut: {item}" for item in cuts],
+                }
+            )
+        if retained:
+            simple_blocks.append(
+                {
+                    "type": "callout",
+                    "tone": "warn",
+                    "text": "Retained complexity: " + " | ".join(retained),
+                }
+            )
+        sections.append({"heading": "Simplicity", "blocks": simple_blocks})
+
     return {
         "id": "00",
         "slug": "plano",
