@@ -51,6 +51,11 @@ and orchestration.
   the real base, commits, diff, and validation evidence.
 - `sam-orchestrate`: coordinate complex work through capability- and risk-based
   delegation, skeptical verification, and an independent review gate.
+- `sam-gauntlet-loop`: turn a goal into a named, fetchable quality bar, then
+  loop isolated builder and critic pairs until a blind critic picks the work.
+  Detects the active host from process environment, compiles a host-safe
+  prompt, and runs only when asked. Use for `/sam-gauntlet-loop`, "gauntlet
+  this", or "loop until it beats a real reference".
 - `sam-orchestrate-codex-grok`: hybrid controller/worker orchestration profile —
   Grok 4.5 producers (medium LIGHT / high STANDARD+DEEP), Sol medium
   independent review, and Sol high only for stall or multi-round unstick.

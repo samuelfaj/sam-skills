@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Gauntlet Loop"
+  short_description: "Loop a goal until it beats a real bar"
+  default_prompt: "Use $sam-gauntlet-loop to raise this goal to a named fetchable quality bar, then loop isolated builder and critic pairs until the critic picks ours."
