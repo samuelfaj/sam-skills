@@ -39,8 +39,8 @@ Create a temporary JSON report with this shape:
       "runtime": {
         "host": "grok",
         "role": "routine_worker",
-        "model": "grok-4.5",
-        "effort": "medium",
+        "model": "grok-4.6",
+        "effort": "high",
         "fallback_reason": null
       },
       "depends_on": [],
@@ -62,8 +62,8 @@ Create a temporary JSON report with this shape:
       "runtime": {
         "host": "grok",
         "role": "routine_worker",
-        "model": "grok-4.5",
-        "effort": "medium",
+        "model": "grok-4.6",
+        "effort": "high",
         "fallback_reason": null
       },
       "depends_on": [],
@@ -85,7 +85,7 @@ Create a temporary JSON report with this shape:
       "runtime": {
         "host": "grok",
         "role": "reviewer",
-        "model": "grok-4.5",
+        "model": "grok-4.6",
         "effort": "high",
         "fallback_reason": null
       },

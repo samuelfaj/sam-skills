@@ -51,16 +51,15 @@ and orchestration.
   the real base, commits, diff, and validation evidence.
 - `sam-orchestrate`: coordinate complex work through capability- and risk-based
   delegation, skeptical verification, and an independent review gate.
-- `sam-gauntlet-loop`: turn a goal into a named, fetchable quality bar, then
-  loop isolated builder and critic pairs until a blind critic picks the work.
-  Detects the active host from process environment, compiles a host-safe
-  prompt, and runs only when asked. Use for `/sam-gauntlet-loop`, "gauntlet
-  this", or "loop until it beats a real reference".
+- `sam-gauntlet-loop`: compile a named, fetchable quality-bar prompt with
+  host-detected orchestration tokens and return it for the user to copy,
+  edit, and paste. Never starts the loop. Use for `/sam-gauntlet-loop`,
+  "gauntlet this", or "loop until it beats a real reference".
 - `sam-orchestrate-codex-grok`: hybrid controller/worker orchestration profile —
-  Grok 4.5 producers (medium LIGHT / high STANDARD+DEEP), Sol medium
+  Grok 4.6 producers (medium LIGHT / high STANDARD / xhigh DEEP), Sol medium
   independent review, and Sol high only for stall or multi-round unstick.
 - `sam-orchestrate-claude-grok`: hybrid controller/worker orchestration profile —
-  Grok 4.5 producers (medium LIGHT / high STANDARD+DEEP), high independent
+  Grok 4.6 producers (medium LIGHT / high STANDARD / xhigh DEEP), high independent
   review, xhigh only for stall or multi-round unstick, max-effort advisor.
 - `sam-plan`: conduct task study and emit a machine freeze plan (goal, thesis,
   steps, evidence, status) plus a required light-theme HTML pack for humans;

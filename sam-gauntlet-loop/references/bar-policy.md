@@ -6,7 +6,7 @@ side-by-side pick against something that already exists.
 
 ## Three tests
 
-Every bar must pass all three before compile or run:
+Every bar must pass all three before compile:
 
 - **Named.** A specific artifact, not a category. "Stripe pricing page" works.
   "Award-winning SaaS sites" does not.

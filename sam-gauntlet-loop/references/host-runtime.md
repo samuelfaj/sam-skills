@@ -9,7 +9,8 @@
 - [grok](#grok)
 
 Detect the host from **process environment**, never from which clients exist on
-disk. Bind exactly one row. Do not mix primitives.
+disk. Bind exactly one row. Do not mix primitives. This file is the compile-time
+token table. Do not start the loop from it.
 
 ## Detection
 

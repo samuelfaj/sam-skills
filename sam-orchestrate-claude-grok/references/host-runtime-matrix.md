@@ -6,7 +6,7 @@
 - [Capability ladder](#capability-ladder)
 - [Controller host](#controller-host)
 - [Profile bindings](#profile-bindings)
-- [Effort policy (Grok medium vs high)](#effort-policy-grok-medium-vs-high)
+- [Effort policy (Grok medium / high / xhigh)](#effort-policy-grok-medium--high--xhigh)
 - [Stall escalation to Opus xhigh](#stall-escalation-to-opus-xhigh)
 - [Spawn notes](#spawn-notes)
 - [Controller rules](#controller-rules)
@@ -18,16 +18,16 @@ capability. Never ask the user which model to use. If a preferred model or
 effort is unavailable, stop with a blocker or record `runtime.fallback_reason`
 only for an in-matrix nearest supported row — do not invent out-of-profile hosts.
 
-**Equivalence policy:** `grok-4.5` / `high` ≈ `opus` / `medium`. Work at or
-below that bar binds to Grok. Opus `high` / `xhigh` / `max` is review, genius
-unstick, and advisor only.
+**Equivalence policy:** `grok-4.6` / `high` ≈ `opus` / `medium`. Work at or
+below that bar binds to Grok. Grok `xhigh` is the DEEP producer bar. Opus
+`high` / `xhigh` / `max` is review, genius unstick, and advisor only.
 
 ## Capability ladder
 
 1. Controller (Claude main thread, no worker)
 2. `LIGHT` / `fast_scan` — Grok medium
 3. `STANDARD` / `routine_worker` — Grok high
-4. `DEEP` / `deep_worker` — Grok high
+4. `DEEP` / `deep_worker` — Grok xhigh
 5. `genius_worker` — Claude opus xhigh (rare; stall / multi-round only)
 6. Independent `REVIEWER` — Claude opus high when the review gate triggers
 7. Advisor (optional) — Claude opus max, read-only
@@ -49,26 +49,31 @@ opus xhigh only for genius escalation. REVIEWER is always Claude opus high.
 
 | Capability / role | Host | Model | Effort | Notes |
 | --- | --- | --- | --- | --- |
-| `LIGHT` / `fast_scan` | `grok` | `grok-4.5` | `medium` | Mechanical / read-only / T0 micro |
-| `STANDARD` / `routine_worker` | `grok` | `grok-4.5` | `high` | Bounded implementation and ordinary tests |
-| `DEEP` / `deep_worker` | `grok` | `grok-4.5` | `high` | T3 / risk slice first attempt |
+| `LIGHT` / `fast_scan` | `grok` | `grok-4.6` | `medium` | Mechanical / read-only / T0 micro |
+| `STANDARD` / `routine_worker` | `grok` | `grok-4.6` | `high` | Bounded implementation and ordinary tests |
+| `DEEP` / `deep_worker` | `grok` | `grok-4.6` | `xhigh` | T3 / risk slice first attempt |
 | `REVIEWER` | `claude-code` | `opus` | `high` | Read-only independent review; host ≠ Grok producers |
 | `genius_worker` (rare) | `claude-code` | `opus` | `xhigh` | Unstick only; requires escalation trigger + `fallback_reason` |
 | advisor (optional) | `claude-code` | `opus` | `max` | Read-only; never owns production nodes |
 
-## Effort policy (Grok medium vs high)
+## Effort policy (Grok medium / high / xhigh)
 
 ### Use `medium`
 
 - `LIGHT` capability only
 - T0 micro mechanical edits, inventory, narrow read-only scans
-- Purely mechanical one-line fixes without design branching (prefer LIGHT, not STANDARD medium)
+- Purely mechanical one-line fixes without design branching (prefer LIGHT)
 
 ### Use `high`
 
-- All `STANDARD` and `DEEP` Grok producers
-- Any Grok re-prompt after capability failure (still Grok high until Opus-xhigh trigger)
+- All `STANDARD` Grok producers
+- Any STANDARD re-prompt after capability failure (still Grok high until Opus-xhigh)
 - Never lower effort for urgency, cost, or latency
+
+### Use `xhigh`
+
+- All `DEEP` Grok producers
+- Any DEEP re-prompt after capability failure (still Grok xhigh until Opus-xhigh)
 
 ## Stall escalation to Opus xhigh
 
@@ -79,7 +84,7 @@ Escalate a producer to `genius_worker` only when a trigger is met. Record
 | --- | --- |
 | `multi_round_fail` | ≥2 Grok attempts on the same objective; TARGET FAIL or capability blocker |
 | `stall` | 2× no material progress (empty useful diff or same root-cause loop) |
-| `deep_insufficient` | Already DEEP Grok-high; slice still unclosed |
+| `deep_insufficient` | Already DEEP Grok-xhigh; slice still unclosed |
 | `contradiction` | Worker claims vs controller re-checked proof disagree |
 
 Caps:

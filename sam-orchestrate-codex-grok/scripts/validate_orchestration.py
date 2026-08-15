@@ -45,9 +45,9 @@ OWNER_ROUTING = re.compile(
 PACKAGE_DIR = Path(__file__).resolve().parent.parent
 # capability -> (host, role, model, effort)
 PROFILE_MATRIX: dict[str, tuple[str, str, str, str]] = {
-    "LIGHT": ("grok", "fast_scan", "grok-4.5", "medium"),
-    "STANDARD": ("grok", "routine_worker", "grok-4.5", "high"),
-    "DEEP": ("grok", "deep_worker", "grok-4.5", "high"),
+    "LIGHT": ("grok", "fast_scan", "grok-4.6", "medium"),
+    "STANDARD": ("grok", "routine_worker", "grok-4.6", "high"),
+    "DEEP": ("grok", "deep_worker", "grok-4.6", "xhigh"),
     "REVIEWER": ("codex", "reviewer", "gpt-5.6-sol", "medium"),
     "GENIUS": ("codex", "genius_worker", "gpt-5.6-sol", "high"),
 }

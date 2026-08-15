@@ -1,6 +1,6 @@
 ---
 name: sam-grok-worker
-description: "Delegate a bounded implementation task to the fixed Grok worker (grok-4.5) under workspace sandbox and headless execution. Use when a host agent or user needs Grok to implement, fix, or verify a scoped coding task; default effort high unless explicitly supplied."
+description: "Delegate a bounded implementation task to the fixed Grok worker (grok-4.6) under workspace sandbox and headless execution. Use when a host agent or user needs Grok to implement, fix, or verify a scoped coding task; default effort high unless explicitly supplied."
 ---
 
 # Sam Grok Worker
@@ -10,7 +10,7 @@ final decision, publication, and proof.
 
 ## Non-Negotiable Contract
 
-- Use model `grok-4.5` exactly. Do not substitute another model.
+- Use model `grok-4.6` exactly. Do not substitute another model.
 - Use effort `high` unless the user explicitly supplies `low`, `medium`, `high`,
   `xhigh`, or `max`; use the supplied value exactly.
 - Do not infer a lower effort from urgency, simplicity, cost, or latency.
@@ -91,7 +91,7 @@ python3 "$SAM_GROK_WORKER_DIR/scripts/resolve_worker.py" --prompt-file /abs/path
 
 Use the first form when effort is absent. Use the second form with the user's
 exact effort when supplied. The resolver returns an argv array fixed to Grok,
-`grok-4.5`, the selected effort, workspace sandbox, always-approve, no-memory,
+`grok-4.6`, the selected effort, workspace sandbox, always-approve, no-memory,
 no-subagents, JSON output, and the absolute prompt file.
 
 ## 4. Invoke Safely
@@ -116,7 +116,7 @@ to the user; do not defer blindly.
 
 Return:
 
-- `Worker`: Grok `grok-4.5`.
+- `Worker`: Grok `grok-4.6`.
 - `Effort`: selected effort and whether it was defaulted or user-specified.
 - `Summary`: concise report of work performed.
 - `Changes`: files or behaviors touched, if any.

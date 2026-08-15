@@ -35,8 +35,8 @@ SIGNAL_ENV: dict[str, tuple[str, ...]] = {
 }
 FETCH_METHODS = ("screenshot", "read", "run", "open")
 KINDS = ("visual", "writing", "code", "research", "other")
-MODES = ("PROMPT_ONLY", "RUN")
-DECISIONS = ("PROMPT_READY", "WON", "STOPPED", "BLOCKED", "STALLED")
+MODES = ("PROMPT_ONLY",)
+DECISIONS = ("PROMPT_READY", "BLOCKED")
 HOST_STATUSES = ("DETECTED", "OVERRIDE")
 DETECT_STATUSES = ("DETECTED", "OVERRIDE", "UNKNOWN", "CONFLICT", "INVALID")
 PICKS = ("ours", "bar", "unfetched")
@@ -400,57 +400,12 @@ def validate_report(report: dict[str, Any]) -> list[str]:
         ):
             errors.append("decision.remaining must be a list of non-empty strings")
             remaining = []
-        if mode == "PROMPT_ONLY" and result not in {"PROMPT_READY", "BLOCKED"}:
-            errors.append("PROMPT_ONLY may only return PROMPT_READY or BLOCKED")
-        if mode == "RUN" and result not in {"WON", "STOPPED", "BLOCKED", "STALLED"}:
-            errors.append("RUN may only return WON, STOPPED, BLOCKED, or STALLED")
-        if mode == "PROMPT_ONLY" and (pieces or rounds):
+        if pieces or rounds:
             errors.append("PROMPT_ONLY must keep pieces and rounds empty")
-        if result == "WON":
-            if pick != "ours":
-                errors.append("WON requires critic_pick=ours")
-            if remaining:
-                errors.append("WON requires empty remaining")
-        if result == "STALLED":
-            fingerprints = [
-                item.get("gap_fingerprint")
-                for item in rounds
-                if isinstance(item, dict)
-            ]
-            if (
-                len(fingerprints) < 2
-                or not fingerprints[-1]
-                or fingerprints[-1] != fingerprints[-2]
-            ):
-                errors.append(
-                    "STALLED requires two consecutive identical gap fingerprints"
-                )
         if result == "BLOCKED" and not remaining:
             errors.append("BLOCKED requires a concrete remaining item")
         if pick == "unfetched" and result != "BLOCKED":
             errors.append("unfetched bar must be BLOCKED")
-
-    if mode == "RUN":
-        if not pieces:
-            errors.append("RUN requires at least one piece")
-        for index, piece in enumerate(pieces):
-            require_keys(
-                piece,
-                {"id", "name", "critic_pick"},
-                {"id", "name", "critic_pick"},
-                f"pieces[{index}]",
-                errors,
-            )
-            if piece.get("critic_pick") not in PICKS:
-                errors.append(f"pieces[{index}].critic_pick must be a valid pick")
-        for index, round_row in enumerate(rounds):
-            require_keys(
-                round_row,
-                {"index", "piece_id", "critic_pick", "gap", "gap_fingerprint"},
-                {"index", "piece_id", "critic_pick", "gap", "gap_fingerprint"},
-                f"rounds[{index}]",
-                errors,
-            )
     return errors
 
 

@@ -76,7 +76,7 @@ Escalate to `genius_worker` (`claude-code` / `opus` / `xhigh`) only after:
 | --- | --- |
 | `multi_round_fail` | ≥2 Grok attempts on same objective with FAIL/capability blocker |
 | `stall` | 2× no material progress |
-| `deep_insufficient` | Already DEEP Grok-high, still unclosed |
+| `deep_insufficient` | Already DEEP Grok-xhigh, still unclosed |
 | `contradiction` | Claims vs controller proof disagree |
 
 Caps: 2 Grok attempts/objective → at most 1 Opus-xhigh → then BLOCKED/user

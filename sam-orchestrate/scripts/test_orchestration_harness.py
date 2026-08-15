@@ -47,28 +47,28 @@ RUNTIME_BY_CAPABILITY = {
     "LIGHT": {
         "host": DEFAULT_HOST,
         "role": "fast_scan",
-        "model": "grok-4.5",
+        "model": "grok-4.6",
         "effort": "medium",
         "fallback_reason": None,
     },
     "STANDARD": {
         "host": DEFAULT_HOST,
         "role": "routine_worker",
-        "model": "grok-4.5",
-        "effort": "medium",
+        "model": "grok-4.6",
+        "effort": "high",
         "fallback_reason": None,
     },
     "DEEP": {
         "host": DEFAULT_HOST,
         "role": "deep_worker",
-        "model": "grok-4.5",
-        "effort": "medium",
+        "model": "grok-4.6",
+        "effort": "xhigh",
         "fallback_reason": None,
     },
     "REVIEWER": {
         "host": DEFAULT_HOST,
         "role": "reviewer",
-        "model": "grok-4.5",
+        "model": "grok-4.6",
         "effort": "high",
         "fallback_reason": None,
     },
@@ -573,8 +573,8 @@ def main() -> int:
         report["dag"][0]["runtime"] = {
             "host": DEFAULT_HOST,
             "role": "deep_worker",
-            "model": "grok-4.5",
-            "effort": "medium",
+            "model": "grok-4.6",
+            "effort": "xhigh",
             "fallback_reason": None,
         }
 

@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
-MODEL = "grok-4.5"
+MODEL = "grok-4.6"
 SANDBOX = "workspace"
 
 

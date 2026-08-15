@@ -1,8 +1,9 @@
 # Prompt Contract
 
-The compiled prompt is the only instruction the lead (or a fresh session)
-follows. Keep it short. The compiler fills brackets. The agent does not add
-architecture, file layout, stack, or a round cap unless the user demanded it.
+The compiled prompt is the only instruction a later session follows after the
+user pastes it. This skill compiles it and stops. Keep it short. The compiler
+fills brackets. The agent does not add architecture, file layout, stack, or a
+round cap unless the user demanded it.
 
 ## Shape
 

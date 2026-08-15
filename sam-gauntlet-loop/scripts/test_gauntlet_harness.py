@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import copy
 import json
 import os
 import subprocess
@@ -223,20 +222,15 @@ def test_compile_cli_rejects_vague_bar() -> None:
         raise AssertionError(f"vague-bar failure was unclear: {result.stderr}")
 
 
-def test_report_validator_accepts_valid_and_rejects_false_win() -> None:
+def test_report_validator_accepts_prompt_only_and_rejects_run() -> None:
+    """Why: this skill returns a paste-ready prompt; a RUN report means it started."""
     for host in ("grok", "codex", "claude-code"):
         errors = validate_report(prompt_only_report(host))
         if errors:
             raise AssertionError(f"{host} prompt report invalid: {errors}")
         errors = validate_report(run_report(host))
-        if errors:
-            raise AssertionError(f"{host} run report invalid: {errors}")
-
-    false_win = run_report("grok")
-    false_win["decision"]["critic_pick"] = "bar"
-    errors = validate_report(false_win)
-    if not any("critic_pick=ours" in item for item in errors):
-        raise AssertionError(f"self-win without critic pick leaked through: {errors}")
+        if not any("mode must be" in item for item in errors):
+            raise AssertionError(f"{host} RUN report was accepted: {errors}")
 
     grok_with_loop = prompt_only_report("grok")
     grok_with_loop["prompt"] = grok_with_loop["prompt"] + " /loop until perfect ultracode"
@@ -245,37 +239,23 @@ def test_report_validator_accepts_valid_and_rejects_false_win() -> None:
         raise AssertionError(f"foreign /loop on grok was accepted: {errors}")
 
 
-def test_stalled_requires_repeated_gap() -> None:
-    report = run_report("codex")
-    report["decision"] = {
-        "result": "STALLED",
-        "critic_pick": "bar",
-        "remaining": ["motion is dead"],
-    }
-    report["rounds"][-1] = {
-        "index": 2,
-        "piece_id": "hero",
-        "critic_pick": "bar",
-        "gap": "motion is dead",
-        "gap_fingerprint": "motion-dead",
-    }
-    errors = validate_report(report)
-    if errors:
-        raise AssertionError(f"true stall rejected: {errors}")
-
-    fake = copy.deepcopy(report)
-    fake["rounds"][-1]["gap_fingerprint"] = "other"
-    errors = validate_report(fake)
-    if not any("identical gap fingerprints" in item for item in errors):
-        raise AssertionError(f"fake stall accepted: {errors}")
-
-
-def test_unfetched_bar_cannot_win() -> None:
-    report = run_report("claude-code")
+def test_unfetched_bar_cannot_be_ready() -> None:
+    report = prompt_only_report("claude-code")
     report["decision"]["critic_pick"] = "unfetched"
     errors = validate_report(report)
     if not any("unfetched" in item for item in errors):
-        raise AssertionError(f"unfetched bar treated as success: {errors}")
+        raise AssertionError(f"unfetched bar treated as ready: {errors}")
+
+
+def test_skill_returns_prompt_and_does_not_start() -> None:
+    """Why: the user copies, edits, and pastes; starting here skips that."""
+    text = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+    if "I can run this here" in text or "Run only when asked" in text:
+        raise AssertionError("skill must not offer or start a run")
+    if "never start the loop" not in text.lower():
+        raise AssertionError("skill must forbid starting the loop")
+    if "copy, edit, and paste" not in text.lower():
+        raise AssertionError("skill must return a paste-ready prompt")
 
 
 def test_cli_validate_and_suite_accept_package() -> None:
@@ -301,9 +281,9 @@ def main() -> int:
         test_home_directory_presence_is_ignored,
         test_compile_binds_host_safe_tokens,
         test_compile_cli_rejects_vague_bar,
-        test_report_validator_accepts_valid_and_rejects_false_win,
-        test_stalled_requires_repeated_gap,
-        test_unfetched_bar_cannot_win,
+        test_report_validator_accepts_prompt_only_and_rejects_run,
+        test_unfetched_bar_cannot_be_ready,
+        test_skill_returns_prompt_and_does_not_start,
         test_cli_validate_and_suite_accept_package,
     ]
     for test in tests:

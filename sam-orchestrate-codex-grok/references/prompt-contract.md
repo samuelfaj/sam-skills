@@ -32,7 +32,7 @@ Coordination: other agents may share the workspace; never revert their work
 
 ## Grok workers
 
-- Effort must match the matrix (`medium` for LIGHT, `high` for STANDARD/DEEP).
+- Effort must match the matrix (`medium` LIGHT, `high` STANDARD, `xhigh` DEEP).
 - Invoke through the Grok worker path with absolute prompt file.
 - On capability failure, return evidence to the controller; do not self-escalate
   to Sol.

@@ -39,7 +39,7 @@ Create a temporary JSON report with this shape:
       "runtime": {
         "host": "grok",
         "role": "routine_worker",
-        "model": "grok-4.5",
+        "model": "grok-4.6",
         "effort": "high",
         "fallback_reason": null
       },
@@ -62,7 +62,7 @@ Create a temporary JSON report with this shape:
       "runtime": {
         "host": "grok",
         "role": "routine_worker",
-        "model": "grok-4.5",
+        "model": "grok-4.6",
         "effort": "high",
         "fallback_reason": null
       },
@@ -181,7 +181,7 @@ Standard Grok producer:
 {
   "host": "grok",
   "role": "routine_worker",
-  "model": "grok-4.5",
+  "model": "grok-4.6",
   "effort": "high",
   "fallback_reason": null
 }

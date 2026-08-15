@@ -73,7 +73,8 @@ Escalate from `LIGHT` → `STANDARD`, or `STANDARD` → `DEEP`, only when:
 Prefer: re-prompt the same tier with a tighter slice before escalating.
 
 Escalate to rare `genius_worker` only after `DEEP` is insufficient. On Grok the
-model stays `grok-4.5`; escalate proof depth, not a different model family.
+model stays `grok-4.6` at `xhigh`; escalate proof depth, not a different model
+family.
 
 Do not escalate because a task is merely large.
 

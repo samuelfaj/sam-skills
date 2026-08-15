@@ -57,11 +57,11 @@ RUNTIME_MATRIX: dict[str, dict[str, tuple[str, str, str]]] = {
         "GENIUS": ("genius_worker", "opus", "xhigh"),
     },
     "grok": {
-        "LIGHT": ("fast_scan", "grok-4.5", "medium"),
-        "STANDARD": ("routine_worker", "grok-4.5", "medium"),
-        "DEEP": ("deep_worker", "grok-4.5", "medium"),
-        "REVIEWER": ("reviewer", "grok-4.5", "high"),
-        "GENIUS": ("genius_worker", "grok-4.5", "high"),
+        "LIGHT": ("fast_scan", "grok-4.6", "medium"),
+        "STANDARD": ("routine_worker", "grok-4.6", "high"),
+        "DEEP": ("deep_worker", "grok-4.6", "xhigh"),
+        "REVIEWER": ("reviewer", "grok-4.6", "high"),
+        "GENIUS": ("genius_worker", "grok-4.6", "xhigh"),
     },
 }
 MATRIX_MODELS = {

@@ -1,6 +1,6 @@
 ---
 name: sam-orchestrate-claude-grok
-description: "Claude-controller hybrid orchestration: Grok 4.5 workers for routine and deep slices, Claude opus high independent review, opus xhigh only for stall/multi-round capability escalation, and opus max for optional advisor. Use when the user runs /sam-orchestrate-claude-grok, wants Claude as orchestrator with Grok producers, or cross-host cost-aware multi-agent delivery under this profile."
+description: "Claude-controller hybrid orchestration: Grok 4.6 workers for routine and deep slices (medium LIGHT / high STANDARD / xhigh DEEP), Claude opus high independent review, opus xhigh only for stall/multi-round capability escalation, and opus max for optional advisor. Use when the user runs /sam-orchestrate-claude-grok, wants Claude as orchestrator with Grok producers, or cross-host cost-aware multi-agent delivery under this profile."
 ---
 
 # Sam Orchestrate Claude–Grok
@@ -8,7 +8,7 @@ description: "Claude-controller hybrid orchestration: Grok 4.5 workers for routi
 Controller-only orchestration with a **fixed hybrid runtime profile**:
 
 - **Controller host:** Claude Code (long tasks, test re-runs, integration, proof).
-- **Default producers:** Grok `grok-4.5` (`medium` for LIGHT, `high` for STANDARD/DEEP).
+- **Default producers:** Grok `grok-4.6` (`medium` LIGHT, `high` STANDARD, `xhigh` DEEP).
 - **Independent REVIEWER:** Claude `opus` / `high`.
 - **Unstick / genius:** Claude `opus` / `xhigh` only after multi-round Grok failure or stall.
 - **Advisor (optional):** Claude `opus` / `max` (read-only).
@@ -48,12 +48,12 @@ Do not claim billing or quota savings.
 - **Cheap-first:** never open on `DEEP` or `genius_worker`. Escalate only after
   concrete capability failure, stall, or new risk evidence — never because a
   task is large.
-- **Equivalence policy:** `grok-4.5` / `high` ≈ `opus` / `medium`. Work at or
-  below that quality bar uses Grok. Opus `high`/`xhigh`/`max` is reserved for
-  review, genius unstick, and advisor.
+- **Equivalence policy:** `grok-4.6` / `high` ≈ `opus` / `medium`. Work at or
+  below that quality bar uses Grok. Grok `xhigh` is the DEEP producer bar.
+  Opus `high`/`xhigh`/`max` is reserved for review, genius unstick, and advisor.
 - Spawn Grok EXECUTION nodes via `sam-grok-worker` with the matrix effort
-  (`--effort medium|high`). Do not rely on the worker’s default when LIGHT needs
-  `medium`.
+  (`--effort medium|high|xhigh`). Do not rely on the worker’s default when LIGHT
+  needs `medium` or DEEP needs `xhigh`.
 - Spawn Claude REVIEWER / genius via Claude Code with the matrix model and
   effort. REVIEWER is read-only.
 - If Claude or Grok CLI / auth is unavailable, stop with an evidence-backed
@@ -114,7 +114,7 @@ Classify `T0`–`T3` per [routing-policy.md](references/routing-policy.md).
 ### Micro path
 
 1. Controller-only only for pure integration; otherwise one short `LIGHT` Grok
-   worker (`grok-4.5` / `medium`) with a slice-only prompt.
+   worker (`grok-4.6` / `medium`) with a slice-only prompt.
 2. Proof: scope diff + at most one focused command.
 3. Skip REVIEWER when absolute/high certainty skip rules hold.
 4. Report: one table row or minimal validated JSON.
@@ -137,9 +137,9 @@ Bind from [host-runtime-matrix.md](references/host-runtime-matrix.md) only:
 
 | Capability | Host | Model | Effort |
 | --- | --- | --- | --- |
-| `LIGHT` | `grok` | `grok-4.5` | `medium` |
-| `STANDARD` | `grok` | `grok-4.5` | `high` |
-| `DEEP` | `grok` | `grok-4.5` | `high` |
+| `LIGHT` | `grok` | `grok-4.6` | `medium` |
+| `STANDARD` | `grok` | `grok-4.6` | `high` |
+| `DEEP` | `grok` | `grok-4.6` | `xhigh` |
 | `REVIEWER` | `claude-code` | `opus` | `high` |
 | `genius_worker` (rare) | `claude-code` | `opus` | `xhigh` |
 | advisor (optional) | `claude-code` | `opus` | `max` |
@@ -196,7 +196,7 @@ Escalate a STANDARD/DEEP producer to `genius_worker` (`claude-code` /
 | --- | --- |
 | `multi_round_fail` | ≥2 Grok attempts on the same objective with TARGET `FAIL` or capability blocker |
 | `stall` | 2× no material progress (no useful diff / same root cause loop) |
-| `deep_insufficient` | Node already `DEEP` Grok-high and still unclosed |
+| `deep_insufficient` | Node already `DEEP` Grok-xhigh and still unclosed |
 | `contradiction` | Worker claims contradict controller re-checked proof |
 
 **Caps:** max **2** Grok attempts per objective before Opus-xhigh; max **1**

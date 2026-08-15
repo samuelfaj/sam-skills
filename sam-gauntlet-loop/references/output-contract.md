@@ -36,25 +36,22 @@ Write a temporary JSON report, then validate it with
 - `host.status`: `DETECTED` | `OVERRIDE`
 - `bar.fetch_method`: `screenshot` | `read` | `run` | `open`
 - `bar.kind`: `visual` | `writing` | `code` | `research` | `other`
-- `mode`: `PROMPT_ONLY` | `RUN`
-- `decision.result`: `PROMPT_READY` | `WON` | `STOPPED` | `BLOCKED` | `STALLED`
+- `mode`: `PROMPT_ONLY`
+- `decision.result`: `PROMPT_READY` | `BLOCKED`
 - `decision.critic_pick`: `ours` | `bar` | `unfetched` | `null`
 
 ## Invariants
 
+- This skill only returns `PROMPT_ONLY`. Never emit a `RUN` report.
 - `PROMPT_ONLY` may only return `PROMPT_READY` or `BLOCKED`.
-- `RUN` may only return `WON`, `STOPPED`, `BLOCKED`, or `STALLED`.
-- `WON` requires `critic_pick=ours`, a fetched bar, and no remaining gaps.
-- `STALLED` requires two consecutive rounds with the same gap fingerprint.
+- `pieces` and `rounds` stay empty.
 - `BLOCKED` requires a concrete remaining item (`host_unknown`,
-  `host_conflict`, `bar_unfetched`, `vague_bar`, or a named gap).
+  `host_conflict`, `vague_bar`, or a named gap).
 - The stored `prompt` must pass the host token rules in
   [prompt-contract.md](prompt-contract.md).
-- `pieces` and `rounds` stay empty on `PROMPT_ONLY`. On `RUN`, every piece has
-  a latest critic pick.
 
 ## Rendered return
 
-- Prompt-only: the compiled prompt, the bound host, and the offer to run.
-- After a run: result, bar, host, piece picks, remaining gap, and whether the
-  bar was actually fetched.
+The compiled prompt as one fenced block the user can copy, edit, and paste.
+Name the bound host and the bar on one line under the block. Do not offer to
+run it. Do not start it.

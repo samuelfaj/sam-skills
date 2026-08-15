@@ -14,7 +14,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 RESOLVER = SCRIPT_DIR / "resolve_worker.py"
 SKILL = SCRIPT_DIR.parent / "SKILL.md"
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
-MODEL = "grok-4.5"
+MODEL = "grok-4.6"
 
 
 def resolve(*args: str) -> subprocess.CompletedProcess[str]:
@@ -92,7 +92,7 @@ def main() -> int:
 
         text = SKILL.read_text(encoding="utf-8")
         for fragment in (
-            "grok-4.5",
+            "grok-4.6",
             "unless the user explicitly supplies",
             "--prompt-file",
             "Do not silently fall back",

@@ -1,6 +1,6 @@
 ---
 name: sam-orchestrate-codex-grok
-description: "Codex-controller hybrid orchestration: Grok 4.5 workers for routine and deep slices, Codex gpt-5.6-sol medium independent review, and Sol high only for stall/multi-round capability escalation. Use when the user runs /sam-orchestrate-codex-grok, wants Codex as orchestrator with Grok producers, or cross-host cost-aware multi-agent delivery under this profile."
+description: "Codex-controller hybrid orchestration: Grok 4.6 workers for routine and deep slices (medium LIGHT / high STANDARD / xhigh DEEP), Codex gpt-5.6-sol medium independent review, and Sol high only for stall/multi-round capability escalation. Use when the user runs /sam-orchestrate-codex-grok, wants Codex as orchestrator with Grok producers, or cross-host cost-aware multi-agent delivery under this profile."
 ---
 
 # Sam Orchestrate Codex–Grok
@@ -8,7 +8,7 @@ description: "Codex-controller hybrid orchestration: Grok 4.5 workers for routin
 Controller-only orchestration with a **fixed hybrid runtime profile**:
 
 - **Controller host:** Codex (long tasks, test re-runs, integration, proof).
-- **Default producers:** Grok `grok-4.5` (`medium` for LIGHT, `high` for STANDARD/DEEP).
+- **Default producers:** Grok `grok-4.6` (`medium` LIGHT, `high` STANDARD, `xhigh` DEEP).
 - **Independent REVIEWER:** Codex `gpt-5.6-sol` / `medium`.
 - **Unstick / genius:** Codex `gpt-5.6-sol` / `high` only after multi-round Grok failure or stall.
 
@@ -46,12 +46,12 @@ secrets into the receipt. Exact-output commands and Skills remain lossless.
 - **Cheap-first:** never open on `DEEP` or `genius_worker`. Escalate only after
   concrete capability failure, stall, or new risk evidence — never because a
   task is large.
-- **Equivalence policy:** `grok-4.5` / `high` ≈ `gpt-5.6-sol` / `medium`. Work
-  at or below that quality bar uses Grok. Sol `high` is reserved for genius
-  unstick after Grok is exhausted.
+- **Equivalence policy:** `grok-4.6` / `high` ≈ `gpt-5.6-sol` / `medium`. Work
+  at or below that quality bar uses Grok. Grok `xhigh` is the DEEP producer
+  bar. Sol `high` is reserved for genius unstick after Grok is exhausted.
 - Spawn Grok EXECUTION nodes via `sam-grok-worker` with the matrix effort
-  (`--effort medium|high`). Do not rely on the worker’s default when LIGHT needs
-  `medium`.
+  (`--effort medium|high|xhigh`). Do not rely on the worker’s default when LIGHT
+  needs `medium` or DEEP needs `xhigh`.
 - Spawn Codex REVIEWER / genius via Codex agent/`codex exec` with the matrix
   model and effort. REVIEWER is read-only.
 - If Codex or Grok CLI / auth is unavailable, stop with an evidence-backed
@@ -112,7 +112,7 @@ Classify `T0`–`T3` per [routing-policy.md](references/routing-policy.md).
 ### Micro path
 
 1. Controller-only only for pure integration; otherwise one short `LIGHT` Grok
-   worker (`grok-4.5` / `medium`) with a slice-only prompt.
+   worker (`grok-4.6` / `medium`) with a slice-only prompt.
 2. Proof: scope diff + at most one focused command.
 3. Skip REVIEWER when absolute/high certainty skip rules hold.
 4. Report: one table row or minimal validated JSON.
@@ -135,9 +135,9 @@ Bind from [host-runtime-matrix.md](references/host-runtime-matrix.md) only:
 
 | Capability | Host | Model | Effort |
 | --- | --- | --- | --- |
-| `LIGHT` | `grok` | `grok-4.5` | `medium` |
-| `STANDARD` | `grok` | `grok-4.5` | `high` |
-| `DEEP` | `grok` | `grok-4.5` | `high` |
+| `LIGHT` | `grok` | `grok-4.6` | `medium` |
+| `STANDARD` | `grok` | `grok-4.6` | `high` |
+| `DEEP` | `grok` | `grok-4.6` | `xhigh` |
 | `REVIEWER` | `codex` | `gpt-5.6-sol` | `medium` |
 | `genius_worker` (rare) | `codex` | `gpt-5.6-sol` | `high` |
 
@@ -180,7 +180,7 @@ Escalate a STANDARD/DEEP producer to `genius_worker` (`codex` /
 | --- | --- |
 | `multi_round_fail` | ≥2 Grok attempts on the same objective with TARGET `FAIL` or capability blocker |
 | `stall` | 2× no material progress (no useful diff / same root cause loop) |
-| `deep_insufficient` | Node already `DEEP` Grok-high and still unclosed |
+| `deep_insufficient` | Node already `DEEP` Grok-xhigh and still unclosed |
 | `contradiction` | Worker claims contradict controller re-checked proof |
 
 **Caps:** max **2** Grok attempts per objective before Sol-high; max **1**
