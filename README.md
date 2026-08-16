@@ -26,6 +26,11 @@ and orchestration.
 - `sam-work`: deliver a bug or feature through mandatory implementation,
   refinement, review, simplification, coverage, proposal, browser-proof, and
   published demo-video gates with fresh-head receipts.
+- `sam-goal`: finish a software goal completely with the smallest correct
+  change. Write checkable gates first, split independent units onto workers
+  when the unit gate opens, verify every unit yourself, and add no new
+  dependency. Stdlib-only checkers, host-detected spawn, no other skill.
+  Invoke as `/sam-goal`, `$sam-goal`, or `@sam-goal`.
 - `sam-create-feature`: deliver a new capability from frozen requirements to
   validated behavior proof.
 - `sam-fix-bug`: reproduce, diagnose, minimally repair, and regression-test
@@ -103,7 +108,13 @@ skill revisions; unavailable host metrics remain `null`.
 
 Install each complete `sam-*` directory through the target agent host's normal
 skill-installation mechanism. Preserve the directory name and all bundled
-`agents/`, `references/`, and `scripts/` resources.
+`agents/`, `references/`, and `scripts/` resources. A host-specific subset of
+the tree will fail closed: the checkers and report validator live in
+`scripts/` and are part of the contract.
+
+`sam-goal` uses the host's skill dialect (`/sam-goal`, `$sam-goal`, or
+`@sam-goal`). Override the bound host with `SAM_GOAL_HOST` or
+`SAM_ACTIVE_HOST` when process detection is `UNKNOWN` or `CONFLICT`.
 
 After installation, restart or reload the host so it discovers the updated
 skills.

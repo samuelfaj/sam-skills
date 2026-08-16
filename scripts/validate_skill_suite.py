@@ -84,6 +84,11 @@ PROVIDER_SPECIFIC_REPLACEMENTS = {
         (re.compile(r"\bgrok-4\.6\b", re.IGNORECASE), "approved-model"),
         (re.compile(r"\b(?:haiku|sonnet|opus|fable)\b", re.IGNORECASE), "approved-model"),
     ),
+    "sam-goal": (
+        (re.compile(r"\bcodex\b", re.IGNORECASE), "host-runtime"),
+        (re.compile(r"\bclaude(?:-code)?\b", re.IGNORECASE), "host-runtime"),
+        (re.compile(r"\bgrok\b", re.IGNORECASE), "host-runtime"),
+    ),
 }
 
 

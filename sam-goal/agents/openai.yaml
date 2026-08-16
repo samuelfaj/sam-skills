@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Goal"
+  short_description: "Finish a goal with gates, workers, no deps"
+  default_prompt: "Use $sam-goal to finish this goal completely: write gates first, split independent units when required, verify every unit, and add no dependencies."
