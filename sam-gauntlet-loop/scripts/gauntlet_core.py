@@ -46,12 +46,12 @@ MAX_WORDS = 220
 FORBIDDEN_IN_PROMPT: dict[str, tuple[str, ...]] = {
     "claude-code": (),
     "codex": (r"/loop\b", r"\bultracode\b"),
-    "grok": (r"/loop\b", r"\bultracode\b"),
+    "grok": (r"/loop\b", r"\bultracode\b", r"top-level subagents"),
 }
 REQUIRED_IN_PROMPT: dict[str, tuple[str, ...]] = {
     "claude-code": (r"/loop\b", r"\bultracode\b"),
     "codex": (r"lead owns the loop", r"fresh context"),
-    "grok": (r"workflow", r"/workflows"),
+    "grok": (r"workflow", r"/workflows", r"owns the loop", r"Children do not spawn children"),
 }
 VAGUE_BAR = re.compile(
     r"\b(?:award[ -]?winning|best[ -]?in[ -]?class|world[ -]?class|"
@@ -64,6 +64,8 @@ CATEGORY_LOCATOR = re.compile(
     r"the market leader|a competitor)\Z",
     re.IGNORECASE,
 )
+URL_SCHEME = re.compile(r"https?://", re.IGNORECASE)
+COMPOUND_JOIN = re.compile(r"\splus\s|\band\s+https?://", re.IGNORECASE)
 
 HOST_CLOSE = {
     "claude-code": (
@@ -79,9 +81,9 @@ HOST_CLOSE = {
     ),
     "grok": (
         "Keep looping until the critic picks ours blind, or I stop the run. "
-        "Orchestrate with a workflow using agent and parallel, or with "
-        "top-level subagents. Never resume the critic from the builder. Watch "
-        "/workflows."
+        "Launch a workflow that owns the loop with agent and parallel. "
+        "Children do not spawn children. Never resume the critic from the "
+        "builder. Watch /workflows."
     ),
 }
 
@@ -157,6 +159,14 @@ def detect_host(
     }
 
 
+def is_compound_bar(name: str, locator: str) -> bool:
+    """True when name/locator joins two artifacts a critic cannot A/B as one."""
+    if len(URL_SCHEME.findall(locator)) >= 2:
+        return True
+    blob = f"{name} {locator}"
+    return bool(COMPOUND_JOIN.search(blob))
+
+
 def bar_errors(
     name: str,
     locator: str,
@@ -172,6 +182,10 @@ def bar_errors(
         errors.append("bar locator must be non-empty")
     if CATEGORY_LOCATOR.match(locator.strip()):
         errors.append("bar locator is a category, not a fetchable artifact")
+    if is_compound_bar(name, locator):
+        errors.append(
+            "bar is a union of artifacts; name one comparable locator"
+        )
     if fetch_method not in FETCH_METHODS:
         errors.append(f"fetch_method must be one of {', '.join(FETCH_METHODS)}")
     if kind not in KINDS:

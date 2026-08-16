@@ -58,12 +58,16 @@ Forbidden in the compiled prompt: `/loop`, `ultracode`.
 
 ## grok
 
-Forbidden in the compiled prompt: `/loop`, `ultracode`.
+Forbidden in the compiled prompt: `/loop`, `ultracode`, and an equal-choice
+"or top-level subagents" close.
 
-- Orchestrate with the host `workflow` tool (`agent`, `parallel`, `phase`) or
-  with top-level `spawn_subagent`. Children cannot spawn children.
+- The compiled prompt must make a workflow the lead (`agent`, `parallel`).
+  Children cannot spawn children. A builder that fans out its critic dies
+  silently on this host.
 - Slash `/loop` is a recurring scheduler, not a quality retry. Never emit it.
 - There is no `ultracode` setting. The workflow tool is the orchestration.
-- Watch `/workflows`. Scratch progress is enough; do not require an HTML page.
+- Watch `/workflows` (live runs, not saved definitions). Scratch progress is
+  enough; do not require an HTML page.
+- Critic is a new agent. Never resume it from the builder.
 - `/goal` is a weaker fallback (independent review, no bar A/B). Prefer the
   workflow loop when the run is requested.

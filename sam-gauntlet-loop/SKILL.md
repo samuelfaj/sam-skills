@@ -15,12 +15,15 @@ Technique by Matt Shumer. Original skill pack by Jay E / RoboNuggets (CC BY 4.0)
 - Detect the active host with `scripts/detect_host.py` before compiling. Never
   guess on `UNKNOWN` or `CONFLICT`. Never infer the host from files in a home
   directory — this machine may have every client installed.
-- A bar must be named, fetchable, and comparable. Reject a vague bar.
+- A bar must be named, fetchable, and comparable. Reject a vague or compound
+  bar.
 - Emit only the orchestration tokens allowed for the detected host. A token
   that is valid on one host is harmful on another.
 - Return the compiled prompt as a single paste-ready block, then stop. Never
-  become the lead, never spawn a builder or critic, never fetch the bar, and
-  never start the loop — even if the user asks to run it here.
+  become the lead, never spawn a builder or critic, and never start the loop
+  — even if the user asks to run it here. Identifying a locator (live
+  window, bundle, path) is allowed so the bar is the real artifact, not a
+  brochure. Do not improve the work while identifying it.
 - Preserve unrelated workspace state. Never expose secrets.
 - Under a parent workflow, do not ask; return `BLOCKED` with the exact gap.
 
@@ -55,10 +58,13 @@ workflow: `BLOCKED`.
 Restate the goal internally. If the user already named a bar that passes
 [references/bar-policy.md](references/bar-policy.md), use it. Otherwise offer
 two or three candidate bars, one line each, and stop. Do not compile yet.
+A union of artifacts is not one bar: offer one locator per comparable
+surface.
 
-Prefer the hardest bar the critic can actually fetch. If the goal has a
-measurable half (benchmark, pass rate, load time, length), name it beside the
-reference.
+Prefer the hardest bar the critic can actually fetch. Freeze the locator to
+that surface. If the user has a live window open, name that window. If the
+goal has a measurable half (benchmark, pass rate, load time, length), name
+it beside the reference.
 
 ## 3. Compile the prompt
 
@@ -74,8 +80,9 @@ python3 "$SAM_GAUNTLET_DIR/scripts/compile_prompt.py" \
 
 Add `--budget "<ceiling>"` only when the user named one. Print only the
 compiled `prompt` string as one fenced block the user can copy, edit, and
-paste. One flat line under it names the bound host and the bar. Do not offer
-to run it. Do not start it.
+paste. One flat line under it names the bound host and the bar, and says
+pasting does not launch a run or save a workflow. Do not offer to run it.
+Do not start it.
 
 ## 4. Validate and return
 

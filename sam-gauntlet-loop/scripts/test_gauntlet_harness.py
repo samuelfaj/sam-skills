@@ -18,7 +18,7 @@ COMPILE = SCRIPT_DIR / "compile_prompt.py"
 VALIDATE = SCRIPT_DIR / "validate_gauntlet.py"
 SUITE = REPO_ROOT / "scripts" / "validate_skill_suite.py"
 
-from gauntlet_core import compile_prompt, detect_host, validate_report
+from gauntlet_core import compile_prompt, detect_host, is_compound_bar, validate_report
 
 CLEAR_KEYS = (
     "CLAUDECODE",
@@ -182,6 +182,12 @@ def test_compile_binds_host_safe_tokens() -> None:
         raise AssertionError("grok prompt must not carry foreign orchestration tokens")
     if "/workflows" not in grok["prompt"] or "workflow" not in grok["prompt"]:
         raise AssertionError("grok prompt must name the host workflow path")
+    if "owns the loop" not in grok["prompt"]:
+        raise AssertionError("grok prompt must make a workflow the lead")
+    if "Children do not spawn children" not in grok["prompt"]:
+        raise AssertionError("grok prompt must keep children as leaves")
+    if "top-level subagents" in grok["prompt"]:
+        raise AssertionError("grok prompt must not offer subagents as an equal path")
 
     claude = compiled_prompt("claude-code")
     if "/loop" not in claude["prompt"] or "ultracode" not in claude["prompt"]:
@@ -222,6 +228,55 @@ def test_compile_cli_rejects_vague_bar() -> None:
         raise AssertionError(f"vague-bar failure was unclear: {result.stderr}")
 
 
+def test_compile_rejects_compound_bar() -> None:
+    """Why: a critic cannot A/B two products as one pick."""
+    if not is_compound_bar(
+        "live desktop app plus a second product",
+        "https://example.com/app",
+    ):
+        raise AssertionError("name joined with plus must be compound")
+    if not is_compound_bar(
+        "live desktop app",
+        "window com.example.app and https://github.com/example/mode",
+    ):
+        raise AssertionError("locator joining a window and a URL must be compound")
+    if not is_compound_bar(
+        "two sites",
+        "https://example.com/a and https://example.com/b",
+    ):
+        raise AssertionError("two URLs must be compound")
+    if is_compound_bar(
+        "Nike current running campaign page",
+        "https://www.nike.com/running",
+    ):
+        raise AssertionError("single named page must not be compound")
+    env = clean_env()
+    result = run(
+        [
+            sys.executable,
+            "-B",
+            str(COMPILE),
+            "--host",
+            "grok",
+            "--goal",
+            "bots with a configurable settings surface",
+            "--bar-name",
+            "live desktop app plus a second product",
+            "--bar-locator",
+            "app window com.example.app and https://github.com/example/mode",
+            "--fetch-method",
+            "screenshot",
+            "--kind",
+            "visual",
+        ],
+        env,
+    )
+    if result.returncode == 0:
+        raise AssertionError("compound bar must not compile")
+    if "union" not in result.stderr.lower() and "compound" not in result.stderr.lower():
+        raise AssertionError(f"compound-bar failure was unclear: {result.stderr}")
+
+
 def test_report_validator_accepts_prompt_only_and_rejects_run() -> None:
     """Why: this skill returns a paste-ready prompt; a RUN report means it started."""
     for host in ("grok", "codex", "claude-code"):
@@ -256,9 +311,14 @@ def test_skill_returns_prompt_and_does_not_start() -> None:
         raise AssertionError("skill must forbid starting the loop")
     if "copy, edit, and paste" not in text.lower():
         raise AssertionError("skill must return a paste-ready prompt")
+    if "does not launch a run or save a workflow" not in text.lower():
+        raise AssertionError("skill must say paste does not launch or save a workflow")
+    if "compound" not in text.lower():
+        raise AssertionError("skill must reject a compound bar")
 
 
 def test_cli_validate_and_suite_accept_package() -> None:
+    """Why: this package must stay valid even if a sibling skill is dirty."""
     report = prompt_only_report("grok")
     path = SCRIPT_DIR / "_tmp_report.json"
     try:
@@ -269,9 +329,20 @@ def test_cli_validate_and_suite_accept_package() -> None:
     finally:
         if path.exists():
             path.unlink()
-    suite = run([sys.executable, "-B", str(SUITE), str(REPO_ROOT)], clean_env())
-    if suite.returncode != 0:
-        raise AssertionError(f"skill suite rejected package: {suite.stderr}")
+    sys.path.insert(0, str(SUITE.parent))
+    import validate_skill_suite as suite_mod
+
+    skill = suite_mod.load_skill(SKILL_DIR)
+    errors: list[str] = []
+    suite_mod.validate_frontmatter(skill, errors)
+    suite_mod.validate_layout(skill, errors)
+    suite_mod.validate_agent_metadata(skill, errors)
+    suite_mod.validate_references(skill, errors)
+    suite_mod.validate_scripts(skill, errors)
+    suite_mod.validate_links(skill, errors)
+    suite_mod.validate_portability(skill, errors)
+    if errors:
+        raise AssertionError(f"skill suite rejected package: {errors}")
 
 
 def main() -> int:
@@ -281,6 +352,7 @@ def main() -> int:
         test_home_directory_presence_is_ignored,
         test_compile_binds_host_safe_tokens,
         test_compile_cli_rejects_vague_bar,
+        test_compile_rejects_compound_bar,
         test_report_validator_accepts_prompt_only_and_rejects_run,
         test_unfetched_bar_cannot_be_ready,
         test_skill_returns_prompt_and_does_not_start,

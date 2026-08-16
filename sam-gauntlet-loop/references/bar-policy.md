@@ -13,10 +13,18 @@ Every bar must pass all three before compile:
 - **Fetchable.** The critic can screenshot it, read it, run it, or open it. If
   the agent cannot obtain the reference, it will hallucinate the comparison.
 - **Comparable.** Both artifacts can sit side by side and a judge can pick one.
-  If you cannot imagine the A/B, it is not a bar.
+  If you cannot imagine the A/B, it is not a bar. One bar is one artifact of
+  one kind. Two products, a live app plus a repo, or a brochure URL plus a
+  desktop window are two bars. Offer them separately. Do not compile a union.
 
 Reject a bar that fails any test. Offer two or three replacements instead of
 compiling.
+
+The locator must be the surface the later critic will open. A marketing page,
+launch post, or README is not the live app, checkout, or running product. If
+the user has that window or path open, name it (bundle, title, file). Do not
+swap in a brochure URL. A benchmark or test suite named beside a repo is the
+measurable half of that same artifact, not a second product.
 
 ## Bars by goal type
 

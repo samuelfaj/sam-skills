@@ -46,12 +46,14 @@ Write a temporary JSON report, then validate it with
 - `PROMPT_ONLY` may only return `PROMPT_READY` or `BLOCKED`.
 - `pieces` and `rounds` stay empty.
 - `BLOCKED` requires a concrete remaining item (`host_unknown`,
-  `host_conflict`, `vague_bar`, or a named gap).
+  `host_conflict`, `vague_bar`, `compound_bar`, or a named gap).
 - The stored `prompt` must pass the host token rules in
   [prompt-contract.md](prompt-contract.md).
 
 ## Rendered return
 
 The compiled prompt as one fenced block the user can copy, edit, and paste.
-Name the bound host and the bar on one line under the block. Do not offer to
-run it. Do not start it.
+Name the bound host and the bar on one line under the block. That line must
+say pasting does not launch a run or save a workflow. Do not claim the later
+session will run until the work is perfect. Do not offer to run it. Do not
+start it.

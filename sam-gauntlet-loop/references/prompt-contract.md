@@ -32,14 +32,15 @@ Required semantic fields:
 - `codex`: keep looping in the lead until the critic picks ours. Spawn
   builders and critics as distinct agents with fresh context. The lead owns
   the loop. Do not emit foreign orchestration tokens.
-- `grok`: keep looping until the critic picks ours. Orchestrate with a
-  workflow (`agent` + `parallel`) or top-level subagents. Never resume the
-  critic from the builder. Watch `/workflows`. Do not emit foreign
-  orchestration tokens.
+- `grok`: keep looping until the critic picks ours. Launch a workflow that
+  owns the loop with `agent` and `parallel`. Children do not spawn children.
+  Never resume the critic from the builder. Watch `/workflows`. Do not emit
+  foreign orchestration tokens.
 
 ## What stays out
 
 No decomposition of files, no stack choice, no "stop after N rounds", no
 default cost cap, no tool names unless the goal needs a specific generator or
 browser. Extra instructions steal decisions the lead should make while looking
-at the work.
+at the work. Do not promise the later session will run until the work is
+perfect: the stop is the critic pick, the user, or the budget.
