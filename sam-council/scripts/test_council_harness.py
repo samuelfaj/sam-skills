@@ -1109,6 +1109,20 @@ def main() -> int:
         ),
     ]
 
+    skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+    if "author" not in skill.lower() or "not authorization" not in skill:
+        print(
+            "FAIL: council SKILL must treat author-revised theses as not authorization",
+            file=sys.stderr,
+        )
+        return 1
+    if "continuation_authorized" not in skill:
+        print(
+            "FAIL: council SKILL must bind extra rounds to continuation_authorized",
+            file=sys.stderr,
+        )
+        return 1
+
     failures: list[str] = []
     for name, report, should_pass in cases:
         result = run_validator(report)

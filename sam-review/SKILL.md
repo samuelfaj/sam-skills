@@ -116,6 +116,8 @@ Classify every concern before recommending work:
 
 - `IN_SCOPE`: introduced by this diff, same owner boundary, same contract.
 - `FOLLOW_UP`: real but adjacent, pre-existing, or broader than the task.
+  Parent workflows park these; they must not treat `FOLLOW_UP` as
+  `CHANGES_REQUIRED` fuel.
 - `STOP_AND_ESCALATE`: requires a new public contract, protocol, storage model,
   migration strategy, owner boundary, release process, or user decision.
 

@@ -20,6 +20,10 @@ and orchestration.
   external writes require explicit user authorization.
 - No invented evidence, silent scope expansion, test weakening, or unsupported
   completion claims.
+- One top delivery method per turn. If several of `sam-goal`, `sam-task`,
+  `sam-work`, and `sam-orchestrate` are named, run only the highest-precedence
+  winner (`sam-goal` > `sam-task` > `sam-work` > `sam-orchestrate`). Failures
+  fix forward on the same branch; they do not restart from a moving base.
 
 ## Skills
 

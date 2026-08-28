@@ -70,14 +70,18 @@ the duration of the parent run, exactly as in `sam-work`.
 
 ## Freshness
 
-Any repository mutation after a proof invalidates later head-tied evidence.
-After a closure correction:
+A mutation **on the task branch** after a proof invalidates later head-tied
+evidence for that branch. After a closure correction:
 
 1. Re-validate implementation proof for the new head.
 2. Re-run every stale `sam-work` gate required for that head (at minimum the
    gates the child marks stale; never skip proposal remote-head equality when a
    proposal exists).
 3. Only then start the next review+council pair on the new frozen head.
+
+Do not interpret freshness as a hard restart: keep the task branch, keep
+prior receipts for unchanged files, and do not rebuild from a moved
+integration ref.
 
 Planning artifacts live under the plan directory and do not substitute for
 implementation receipts.

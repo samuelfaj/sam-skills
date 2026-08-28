@@ -13,6 +13,10 @@ child as done because it was invoked—capture and validate its terminal result.
 
 ## Non-Negotiable Contract
 
+- Exclusive top pipeline: if this turn also named `sam-goal`, do not run
+  this pipeline; `sam-goal` owns the turn. Precedence: `sam-goal` > `sam-task` > `sam-work` > `sam-orchestrate`.
+  Children this winner requires (`sam-plan`, `sam-refine-task`, `sam-work`,
+  `sam-review`, `sam-council`) remain allowed.
 - Run phases in order: `plan` → `refine` → `work` → `closure` → `learn`.
   Never skip.
 - Never report `COMPLETE` while any phase is missing, stale, unvalidated, or
@@ -188,9 +192,14 @@ Each iteration on one frozen head:
 2. `sam-council` on delivered thesis + current diff/receipts (`fast` default;
    escalate per council triggers).
 3. If both clean → closure `CLEAN`.
-4. If material findings → smallest in-scope fix, refresh stale `sam-work`
-   gates for the new head, then next iteration.
-5. Stop at max 5 iterations without cleanliness → `BLOCKED`.
+4. If material **in-scope** findings (`BLOCKER`/`IMPORTANT` on the frozen
+   goal) → smallest in-scope fix, refresh stale `sam-work` gates for the
+   new head, then next iteration. `FOLLOW_UP`, suggestions, and newly
+   discovered items outside frozen acceptance are parked; they do not
+   start another iteration.
+5. Stop at max 5 iterations without cleanliness → `BLOCKED`. Fix forward
+   on the task branch. Do not replace the branch or worktree because a
+   gate failed or the integration base moved.
 
 Both gates must pass on the **same** final head. Review `APPROVE` alone is
 insufficient without an accepted council terminal; council pass alone is

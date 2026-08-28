@@ -319,6 +319,14 @@ def main() -> int:
             "cannot have blockers",
         ),
     ]
+    skill = (SCRIPT_DIR.parent / "SKILL.md").read_text(encoding="utf-8")
+    if "Exclusive top pipeline" not in skill:
+        raise AssertionError("sam-work must declare Exclusive top pipeline")
+    if "same branch" not in skill:
+        raise AssertionError("sam-work must fix forward on the same branch")
+    if "FOLLOW_UP" not in skill or "parked" not in skill:
+        raise AssertionError("sam-work must park FOLLOW_UP findings")
+
     for name, report, fragment in cases:
         expect_invalid(name, report, fragment)
 

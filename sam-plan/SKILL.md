@@ -42,6 +42,7 @@ Honesty and scope only—presentation form for humans is HTML light pack.
   light-theme HTML pack (`scripts/render_plan_html.py` + `--require-html`).
 - Fail closed: `NOT_CONFIDENT` or `BLOCKED` beats a false `READY_TO_EXECUTE`.
 - Council only on risk triggers or explicit user request—not on depth labels.
+  One council run per freeze; an author-revised thesis is not another round.
 - Redact secrets and private data from all plan artifacts.
 - Prefer the smallest plan that still makes implementation decisions explicit
   ([references/simplicity-rules.md](references/simplicity-rules.md)).

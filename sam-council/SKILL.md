@@ -169,8 +169,11 @@ Deduplicate by failure mechanism while preserving all
 9. Run the fresh verification panel at maximum safe concurrency.
 10. Stop after round one by default. Return a terminal result instead of
     automatically starting another round. Continue to round two or three only
-    when the user explicitly asks to validate a revised thesis. Never exceed
-    three rounds; stop after two rounds without material progress.
+    when the user, in this turn, explicitly asks to validate a revised thesis.
+    Set `continuation_authorized` true only for that user ask. An author
+    bumping `T-001` to `T-00N`, a `REVISE` result, or a verifier `REJECT` is
+    not authorization. Never exceed three rounds; stop after two rounds
+    without material progress.
 11. Validate the scratch report with
     `python3 -B scripts/validate_council_report.py council-report.json`.
 

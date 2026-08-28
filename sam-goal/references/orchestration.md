@@ -29,7 +29,7 @@ discipline, no dispatch tax.
 
 ## Isolation
 
-Prefer a worktree per worker:
+Prefer a worktree per worker when two units must write at the same time:
 
 ```bash
 git worktree add -b agent/<slug> ../wt-<slug> main
@@ -40,6 +40,10 @@ writer per tree. The coordinator is the only merger.
 
 If two workers need the same file, fix the plan. Do not coordinate
 through hope.
+
+Worker worktrees isolate concurrent writers. They are not a restart
+mechanism. Do not create a new worktree from a moving integration branch
+because a gate, review, or test failed.
 
 ## Verification layers
 
@@ -52,11 +56,16 @@ Do not skip layer 2 or 3 because the worker sounded sure.
 
 ## Failure
 
-- Acceptance fails: re-run, then fix or spawn a follow-up with the
-  failure output as context. Never silently accept.
+- Acceptance fails: re-run, then fix forward on the same branch/tree, or
+  spawn a follow-up with the failure output as context. Never silently
+  accept. Never discard the unit's receipts and start from a fresh base
+  SHA.
 - Worker cannot finish: it returns what was done and why. Reassign,
   re-scope, or take the unit yourself and name yourself in the ledger.
 - Scope trespass: revert the extra files, re-run the owner's checks.
+- Integration ref moved (`main`/`production` advanced): keep the task
+  branch. Rebase or retarget only if the user asked. Overlap-free drift
+  does not invalidate verified rows.
 
 ## Cost
 

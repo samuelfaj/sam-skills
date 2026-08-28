@@ -206,8 +206,22 @@ def assert_invalid(path: Path, snippet: str) -> None:
         raise AssertionError(f"missing {snippet!r} in:\n{result.stdout}")
 
 
+def assert_anti_loop_contract() -> None:
+    skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+    closure = (ROOT / "references/closure-loop.md").read_text(encoding="utf-8")
+    if "Exclusive top pipeline" not in skill:
+        raise AssertionError("sam-task must declare Exclusive top pipeline")
+    if "sam-goal` > `sam-task`" not in skill:
+        raise AssertionError("sam-task must yield to sam-goal when co-named")
+    if "parked" not in closure:
+        raise AssertionError("closure loop must park out-of-scope findings")
+    if "Fix forward" not in closure:
+        raise AssertionError("closure loop must fix forward on the same branch")
+
+
 def main() -> int:
     global WORK_PATH
+    assert_anti_loop_contract()
     with tempfile.TemporaryDirectory(prefix="sam-task-harness-") as raw:
         root = Path(raw)
         WORK_PATH = str(root / "work-report.json")

@@ -64,6 +64,7 @@ State the complete workflow, the bug/feature classification, the target reposito
 
 ## Operating rules
 
+- Exclusive top pipeline: if this turn also named `sam-goal` or `sam-task` as a user request, do not start this pipeline as the top method; that named parent owns the turn. `sam-task` may still invoke this skill as a child. Precedence: `sam-goal` > `sam-task` > `sam-work` > `sam-orchestrate`.
 - Preserve unrelated user work. Never reset, overwrite, or include it in the task bundle.
 - Freeze the original prompt hash, repository root, base, branch, acceptance criteria, invariants, no-go surfaces, and initial change fingerprint.
 - Classify `BUG` only when expected existing behavior is broken or regressed. Otherwise classify `FEATURE`. Record concrete evidence; do not infer from issue labels alone.
@@ -72,7 +73,7 @@ State the complete workflow, the bug/feature classification, the target reposito
 - For every child skill, run its deterministic validator and store the receipt. A narrative claim is not a receipt.
 - A loop ends only on its accepted terminal state with zero open required items. An iteration that finds issues must have correction receipts before the next iteration.
 - Child-skill retry limits remain active. If a child contract requires stopping after repeated cycles without new evidence, mark the workflow `BLOCKED`; never translate exhaustion into confidence.
-- Any repository change invalidates every later proof tied to the old head. Repeat affected gates until implementation, refinement, review, simplification, coverage, proposal, browser proof when applicable, and demo proof are current for one final head.
+- A later correction **on the task branch** invalidates proofs tied to the previous head. Repeat affected later gates on the new commit of that same branch until implementation, refinement, review, simplification, coverage, proposal, browser proof when applicable, and demo proof are current for one final head. Do not reset, rebase, or replace the task branch/worktree because a gate failed or the integration base moved.
 - Use verified development data only for browser tests and recordings. Never use production, customer, or ambiguous targets. Record environment identity before authentication or mutation.
 - Keep dedicated test/demo identities, a mutation ledger, cleanup receipts, redaction proof, and artifact hashes.
 - Do not declare “all tests,” “simplest possible,” or “no issues” without the terminal child result plus current-head evidence.
@@ -96,8 +97,9 @@ Run `sam-refine-task` on the implemented strategy and current diff.
 
 Run `sam-review` on an immutable bundle for the current head **local-only**: do not publish review decisions, do not offer publication choices, and do not ask which review action to take.
 
-- `APPROVE` with no actionable finding closes the gate.
-- `CHANGES_REQUIRED` requires corrections, validation, bundle rebuild, and another review.
+- `APPROVE` with no actionable in-scope finding closes the gate.
+- `CHANGES_REQUIRED` requires corrections only for accepted in-scope `BLOCKER`/`IMPORTANT` items, then validation, bundle rebuild, and another review.
+- `FOLLOW_UP` and `SUGGESTION` items are parked. They do not reopen this loop.
 - `BLOCKED` blocks the workflow.
 - `COMMENT_ONLY` is not a passing code-review result.
 

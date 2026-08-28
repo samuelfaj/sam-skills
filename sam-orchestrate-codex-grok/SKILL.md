@@ -30,6 +30,10 @@ secrets into the receipt. Exact-output commands and Skills remain lossless.
 
 ## Non-Negotiable Contract
 
+- Exclusive top pipeline: if this turn also named `sam-goal`, `sam-task`,
+  or `sam-work` as the user request, do not run this controller pipeline;
+  that named method owns the turn. Precedence: `sam-goal` > `sam-task` >
+  `sam-work` > `sam-orchestrate`.
 - Keep the main agent controller-only. Delegate production code, tests, docs,
   migrations, and other task artifacts.
 - **Profile is fixed:** `task.active_host` must be `codex` (controller). Worker

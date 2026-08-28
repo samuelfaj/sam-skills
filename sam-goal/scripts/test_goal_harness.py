@@ -541,9 +541,23 @@ def test_host(root: Path) -> None:
     expect("detect cli unknown", none.returncode == 2, none.stderr)
 
 
+def test_anti_loop_contract() -> None:
+    skill = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+    orchestration = (SKILL_DIR / "references/orchestration.md").read_text(
+        encoding="utf-8"
+    )
+    method = (SKILL_DIR / "references/method.md").read_text(encoding="utf-8")
+    expect("exclusive pipeline", "Exclusive top pipeline" in skill)
+    expect("goal precedence", "sam-goal` > `sam-task` > `sam-work`" in skill)
+    expect("fix forward", "Fix forward" in skill)
+    expect("worktrees not restart", "not a restart" in orchestration)
+    expect("park extra defects", "parked" in method)
+
+
 def main() -> int:
     try:
         test_no_third_party_imports()
+        test_anti_loop_contract()
         with tempfile.TemporaryDirectory(prefix="sam-goal-") as temporary:
             root = Path(temporary)
             test_scaffold(root)

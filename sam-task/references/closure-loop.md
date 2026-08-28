@@ -54,8 +54,16 @@ When either gate fails:
 4. Refresh stale `sam-work` gates for the new head (see phase-contract).
 5. Start a new closure iteration with a new review bundle and new council run.
 
-Never “approve away” a supported finding to force exit. Suggestions alone do
-not force another iteration; blockers and importants do.
+Only accepted in-scope `BLOCKER`/`IMPORTANT` items (or council supported
+blockers/highs that break frozen acceptance) force a fix iteration.
+`FOLLOW_UP`, suggestions, and newly discovered adjacent issues are parked
+on the findings ledger; they do not start another iteration.
+
+Fix forward on the same task branch. Do not create a new worktree or discard
+the delivered head because a gate failed or the integration base moved.
+
+Never “approve away” a supported in-scope finding to force exit. Suggestions
+alone do not force another iteration; blockers and importants do.
 
 ## Stop conditions
 

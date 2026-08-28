@@ -66,9 +66,16 @@ For each material objection:
 3. Map to step, risk, verification, or residual IDs.
 4. Store the validated council report path under `council.runs`.
 
+One council run per plan freeze. After that run, apply the smallest accepted
+corrections in the freeze. Do not mint a new thesis id and re-dispatch council
+unless the user asked in this turn. `REVISE` after the authorized round becomes
+plan `NOT_CONFIDENT` (residuals listed) or `BLOCKED` — not a self-authorized
+T-00N loop.
+
 Never report `READY_TO_EXECUTE` while a supported blocker remains, a high risk
 is unmitigated without explicit owner acceptance, or the council result is
-`BLOCKED` / `REVISE` / `ESCALATE_TO_FULL` without a completed correction pass.
+`BLOCKED` / `REVISE` / `ESCALATE_TO_FULL` without a completed correction pass
+**inside the same authorized round**.
 
 `TRIAGE_PASS` is not implementation approval; it only means the bounded triage
 found no reason to escalate. Still require a coherent freeze and verification map.

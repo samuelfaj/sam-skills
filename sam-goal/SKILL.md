@@ -22,7 +22,9 @@ Completeness applies to the asked outcomes. Minimality applies to the implementa
 - Count independent units before any deliverable. If the split gate is open, write `DELEGATION.md` first, give each unit a written brief, and do not report done on a partial ledger.
 - A worker or self-report is a claim. Re-run that unit's checks yourself and record what you ran.
 - Never add a project dependency, plugin, hook, or package. Use the standard library, a native platform feature, or something already in the tree. A named package in the user request is the only exception, and it must be listed in `authorized_dependencies`.
-- Do not invoke another skill. This package is the whole method.
+- Do not invoke another skill. This package is the whole method. If this turn also named `sam-task`, `sam-work`, `sam-orchestrate`, or a `sam-orchestrate-*` profile, those bodies are context only — execute this skill alone. Exclusive top pipeline precedence: `sam-goal` > `sam-task` > `sam-work` > `sam-orchestrate`.
+- Fix forward on the current branch/tree. A failed gate, missing test, review finding, or moved integration ref (`main`/`production`) is a new commit or a parked note. It is not a new worktree, reset, rebase, or discarded receipt chain.
+- Findings outside frozen gates are parked. They do not become new units in this run.
 - Re-measure every number at report time. A number from memory is unverified.
 - Trust-boundary validation, data-loss handling, security, accessibility, hardware calibration, and anything explicitly requested are never optional.
 - Bug fix means the shared root cause, not a patch on the one path named in the report.

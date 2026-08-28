@@ -26,6 +26,10 @@ Do not claim billing or quota savings.
 
 ## Non-Negotiable Contract
 
+- Exclusive top pipeline: if this turn also named `sam-goal`, `sam-task`,
+  or `sam-work` as the user request, do not run this controller pipeline;
+  that named method owns the turn. Precedence: `sam-goal` > `sam-task` >
+  `sam-work` > `sam-orchestrate`.
 - Keep the main agent controller-only. Delegate production code, tests,
   documentation, migrations, and other task artifacts.
 - Permit direct main-agent work only for task decomposition, agent coordination,
@@ -174,6 +178,9 @@ bodies or exact output; the bridge is lifetime telemetry only.
 5. Reject unrelated changes and unsupported completion claims.
 6. Escalate capability only after capability failure or new risk evidence.
 7. Stop for required user decisions that expand scope.
+8. Fix forward on the existing DAG and task branch. A failed proof, review
+   finding, or moved integration ref does not authorize a new worktree or
+   discarded producer receipts. Park out-of-scope findings.
 
 ## 5. Review Gate
 

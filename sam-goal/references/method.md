@@ -46,7 +46,8 @@ Workers receive a brief, not the parent transcript. Fresh context per
 unit is the point; attention is the scarce resource.
 
 Each leaf is finished when its gates are met with evidence **and** a full
-improvement pass finds nothing, whichever is later.
+improvement pass finds nothing **inside those gates**, whichever is later.
+Extra defects outside the gates are parked; they do not reopen the leaf.
 
 ## Finish line
 

@@ -326,7 +326,19 @@ def write_report(path: Path, report: JsonObject) -> None:
     path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 
+def assert_anti_loop_contract() -> None:
+    skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+    council = (ROOT / "references/council-integration.md").read_text(encoding="utf-8")
+    if "One council run per freeze" not in skill:
+        raise AssertionError("sam-plan must cap council to one run per freeze")
+    if "One council run per plan freeze" not in council:
+        raise AssertionError("council integration must forbid T-00N auto-redispatch")
+    if "author-revised thesis" not in skill and "T-00N" not in council:
+        raise AssertionError("sam-plan must not treat author thesis bumps as new rounds")
+
+
 def main() -> int:
+    assert_anti_loop_contract()
     with tempfile.TemporaryDirectory(prefix="sam-plan-harness-") as raw:
         root = Path(raw)
         plan_dir = root / "plan"

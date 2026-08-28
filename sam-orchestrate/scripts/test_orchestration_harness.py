@@ -780,6 +780,12 @@ def main() -> int:
         "review_gate.required must be true for recorded triggers",
     )
 
+    skill = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+    if "Exclusive top pipeline" not in skill:
+        raise AssertionError("sam-orchestrate must declare Exclusive top pipeline")
+    if "Fix forward" not in skill:
+        raise AssertionError("sam-orchestrate must fix forward instead of restarting")
+
     validate_neutrality_adversaries()
     print("PASS: orchestration contract, adversarial fixtures, and neutrality conformance")
     return 0
