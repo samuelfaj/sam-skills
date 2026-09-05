@@ -554,9 +554,7 @@ def validate(report: JsonObject, baseline: JsonObject, current: JsonObject) -> l
     }
     if modified_protected:
         blockers.append(f"pre-existing dirty work changed: {sorted(modified_protected)}")
-    approved = boolean(scope.get("scope_expansion_approved"), "scope.scope_expansion_approved", errors)
-    if len(owned) > 2 * max(1, len(initial_owned)) and not approved:
-        blockers.append("owned scope expanded beyond two times the frozen baseline")
+    boolean(scope.get("scope_expansion_approved"), "scope.scope_expansion_approved", errors)
     cycle = scope.get("cycle")
     if not isinstance(cycle, int) or isinstance(cycle, bool) or cycle < 1:
         errors.append("scope.cycle must be a positive integer")

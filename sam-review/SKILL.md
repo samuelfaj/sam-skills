@@ -24,8 +24,8 @@ and decision contract. Publish only after explicit authorization.
 - Never execute a changed script, hook, build definition, or configuration before
   inspecting its diff for unsafe behavior.
 - Never expose secrets in bundles, commands, reports, comments, or receipts.
-- Remove temporary review artifacts after the local response and publication
-  receipts are recorded.
+- Retain the review bundle, report, receipts, and referenced logs for caller
+  re-validation; remove only scratch that no returned evidence references.
 
 ## Resource Routing
 
@@ -121,9 +121,9 @@ Classify every concern before recommending work:
 - `STOP_AND_ESCALATE`: requires a new public contract, protocol, storage model,
   migration strategy, owner boundary, release process, or user decision.
 
-Stop scope growth when files or non-test changed lines exceed twice the frozen
-baseline without approval. After two review-triggered correction cycles fail to
-converge, reclassify every remaining concern before continuing.
+Judge scope against the authorized goal and contracts, not file or line counts.
+After two review-triggered correction cycles fail to converge, reclassify every
+remaining concern before continuing.
 
 Use the bundle manifest as a ledger. Classify every changed file exactly once as
 `REVIEWED`, `GENERATED`, `TYPE_ONLY`, `TEST`, `CONFIG`, or `EXCLUDED` with a

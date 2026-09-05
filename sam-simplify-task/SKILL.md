@@ -98,10 +98,10 @@ After each meaningful change:
 3. Run targeted proof proportional to risk.
 4. Undo only that exact patch if behavior changes or complexity merely moves.
 
-If owned scope exceeds twice the frozen initial set or the work crosses an
-owner, protocol, storage, migration, or release boundary: under a parent
-workflow return `BLOCKED` with the exact breach (do not wait for approval);
-when standalone, stop and request approval.
+If a necessary change exceeds the authorized goal, contract, or owner boundary,
+return the exact gap to the parent, or ask the user when standalone. More files
+alone do not imply broader scope; justify each added path against acceptance
+criteria and preserve unrelated work.
 
 Run a second cycle only when the first exposes new objective simplification.
 Stop when remaining opportunities are subjective polish.
@@ -123,5 +123,5 @@ passing behavior proof and mandatory gates.
 Return `SIMPLEST_DEFENSIBLE` only when an applied simplification is proven and
 no required candidate remains. Return `NO_CHANGE` when no edit is justified.
 Return `BLOCKED` when safe simplification requires missing proof, access,
-authorization, or scope expansion. Do not weaken the validator. Remove
-temporary artifacts before returning.
+authorization, or scope expansion. Do not weaken the validator. Retain the report and referenced evidence for caller re-validation; remove only
+unused scratch.

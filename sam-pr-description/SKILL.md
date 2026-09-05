@@ -85,8 +85,9 @@ must cite one or more evidence IDs in the temporary report.
 
 ## 4. Draft the Body
 
-Follow [references/template.md](references/template.md). Keep sections concise
-and adapt their content to the actual change:
+Follow [references/template.md](references/template.md) and the repository
+template when present. Start with Description and Validation; add sections only
+when they help explain the actual change:
 
 - Write for a reader who did not implement the change.
 - Lead with the problem, outcome, and observable behavior.
@@ -134,5 +135,5 @@ A local drafting request must remain `NOT_REQUESTED` with no receipts.
 
 Return only the validated description body when drafting locally. When a remote
 update was explicitly requested, return the body plus the confirmed update
-status or exact blocker. Remove temporary artifacts after capturing required
-receipts.
+status or exact blocker. Retain the report, context, and referenced evidence for caller re-validation;
+remove only unused scratch.

@@ -41,35 +41,35 @@ def evidence(
     }
 
 
-DEFAULT_HOST = "grok"
+CONTROLLER_HOST = "codex"
 
 RUNTIME_BY_CAPABILITY = {
     "LIGHT": {
-        "host": DEFAULT_HOST,
+        "host": "codex",
         "role": "fast_scan",
-        "model": "grok-4.6",
-        "effort": "medium",
+        "model": "glm-5.3-flash",
+        "effort": "max",
         "fallback_reason": None,
     },
     "STANDARD": {
-        "host": DEFAULT_HOST,
+        "host": "codex",
         "role": "routine_worker",
-        "model": "grok-4.6",
-        "effort": "high",
+        "model": "glm-5.3-flash",
+        "effort": "max",
         "fallback_reason": None,
     },
     "DEEP": {
-        "host": DEFAULT_HOST,
+        "host": "codex",
         "role": "deep_worker",
-        "model": "grok-4.6",
-        "effort": "xhigh",
+        "model": "glm-5.3-flash",
+        "effort": "max",
         "fallback_reason": None,
     },
     "REVIEWER": {
-        "host": DEFAULT_HOST,
+        "host": "codex",
         "role": "reviewer",
-        "model": "grok-4.6",
-        "effort": "high",
+        "model": "gpt-5.6-sol",
+        "effort": "medium",
         "fallback_reason": None,
     },
 }
@@ -129,7 +129,7 @@ def valid_t0() -> dict[str, Any]:
             "constraints": ["Preserve unrelated content"],
             "no_go": ["Do not edit other files"],
             "risk_flags": [],
-            "active_host": DEFAULT_HOST,
+            "active_host": CONTROLLER_HOST,
             "changed_artifacts": ["DOCS"],
             "changed_files": [
                 {
@@ -176,7 +176,7 @@ def valid_t0_code_absolute_certainty() -> dict[str, Any]:
             "constraints": ["Touch only the constant line"],
             "no_go": ["Do not refactor"],
             "risk_flags": [],
-            "active_host": DEFAULT_HOST,
+            "active_host": CONTROLLER_HOST,
             "changed_artifacts": ["CODE"],
             "changed_files": [
                 {
@@ -224,7 +224,7 @@ def valid_t1_code_high_certainty() -> dict[str, Any]:
             "constraints": ["Single file only"],
             "no_go": ["Do not expand API surface"],
             "risk_flags": [],
-            "active_host": DEFAULT_HOST,
+            "active_host": CONTROLLER_HOST,
             "changed_artifacts": ["CODE"],
             "changed_files": [
                 {
@@ -273,7 +273,7 @@ def valid_t2() -> dict[str, Any]:
             "constraints": [],
             "no_go": ["Do not change unrelated files"],
             "risk_flags": [],
-            "active_host": DEFAULT_HOST,
+            "active_host": CONTROLLER_HOST,
             "changed_artifacts": ["CODE", "TEST"],
             "changed_files": [
                 {
@@ -455,7 +455,7 @@ def run_validator(
     expected_success: bool,
     expected_error: str | None = None,
 ) -> None:
-    with tempfile.TemporaryDirectory(prefix="sam-orchestrate-test-") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="sam-orchestrate-cg-test-") as temp_dir:
         report_path = Path(temp_dir) / "report.json"
         report_path.write_text(json.dumps(report), encoding="utf-8")
         result = subprocess.run(
@@ -495,11 +495,11 @@ def validate_neutrality_adversaries() -> None:
     # Use a provider name still forbidden after sam-orchestrate replacements.
     forbidden_identity = "Gem" + "ini"
     relative_targets = (
-        Path("sam-orchestrate/SKILL.md"),
-        Path("sam-orchestrate/references/routing-policy.md"),
-        Path("sam-orchestrate/agents/openai.yaml"),
+        Path("sam-orchestrate-codex-glmflash/SKILL.md"),
+        Path("sam-orchestrate-codex-glmflash/references/routing-policy.md"),
+        Path("sam-orchestrate-codex-glmflash/agents/openai.yaml"),
     )
-    with tempfile.TemporaryDirectory(prefix="sam-orchestrate-neutrality-") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="sam-orchestrate-cg-neutrality-") as temp_dir:
         baseline_root = Path(temp_dir) / "baseline"
         shutil.copytree(SKILL_DIR, baseline_root / SKILL_DIR.name)
         baseline = subprocess.run(
@@ -548,32 +548,63 @@ def expect_failure(
     run_validator(report, False, expected_error)
 
 
-def main() -> int:
-    # Codex keeps every producer on Luna and accepts independent Astra review.
-    codex_report = valid_t2()
-    codex_report["task"]["active_host"] = "codex"
-    for entry in codex_report["dag"]:
-        review = entry["kind"] == "REVIEW"
-        entry["runtime"] = {
-            "host": "codex",
-            "role": "reviewer" if review else "routine_worker",
-            "model": "gpt-6-astra" if review else "gpt-5.6-luna",
-            "effort": "medium" if review else "xhigh",
-            "fallback_reason": None,
-        }
-    run_validator(codex_report, True)
-    codex_report["dag"][0]["runtime"].update(
-        role="genius_worker", model="gpt-5.6-luna", effort="max"
-    )
-    run_validator(codex_report, True)
-    wrong_worker = copy.deepcopy(codex_report)
-    wrong_worker["dag"][0]["runtime"].update(
-        model="gpt-6-astra", fallback_reason="Luna unavailable"
-    )
-    run_validator(wrong_worker, False, "must match host-runtime-matrix model")
-    codex_report["dag"][-1]["runtime"]["model"] = "gpt-5.6-sol"
-    run_validator(codex_report, False, "must match host-runtime-matrix")
 
+def valid_genius_escalation() -> dict[str, Any]:
+    """STANDARD producer escalated to Codex Sol high after multi-round GLM-5.3-Flash fail."""
+    requirement = "Hard slice closed after genius unstick"
+    return {
+        "schema_version": 2,
+        "task": {
+            "classification": "T1",
+            "goal": "Close a stuck implementation slice",
+            "success_criteria": ["Bounded fix lands"],
+            "constraints": ["Single file only"],
+            "no_go": ["Do not expand scope"],
+            "risk_flags": [],
+            "active_host": CONTROLLER_HOST,
+            "changed_artifacts": ["CODE"],
+            "changed_files": [
+                {
+                    "path": "src/stuck.py",
+                    "artifact_class": "CODE",
+                    "producer_task_id": "E1",
+                }
+            ],
+            "review_requested": False,
+            "controller_certainty": "high",
+        },
+        "dag": [
+            node(
+                "E1",
+                kind="EXECUTION",
+                owner="worker-1",
+                capability="STANDARD",
+                objective="Unstick the implementation",
+                requirement=requirement,
+                writable_paths=["src/stuck.py"],
+                artifact_classes=["CODE"],
+                evidence_ids=["V1"],
+                runtime={
+                    "host": "codex",
+                    "role": "genius_worker",
+                    "model": "gpt-5.6-sol",
+                    "effort": "high",
+                    "fallback_reason": "multi_round_fail after 2 GLM-5.3-Flash attempts; evidence prior",
+                },
+            )
+        ],
+        "evidence": [evidence("V1", "E1", requirement, evidence_type="DIFF")],
+        "review_gate": {
+            "required": False,
+            "reasons": ["micro_task_high_certainty"],
+            "status": "NOT_REQUIRED",
+            "review_task_id": None,
+        },
+        "decision": {"result": "COMPLETE", "remaining_task_ids": []},
+    }
+
+
+def main() -> int:
     for report in (
         valid_t0(),
         valid_t0_code_absolute_certainty(),
@@ -583,6 +614,7 @@ def main() -> int:
         valid_blocked(),
         valid_dependency_blocked(),
         valid_in_progress(),
+        valid_genius_escalation(),
     ):
         run_validator(report, True)
 
@@ -596,10 +628,10 @@ def main() -> int:
     def force_deep_on_t1(report: dict[str, Any]) -> None:
         report["dag"][0]["capability"] = "DEEP"
         report["dag"][0]["runtime"] = {
-            "host": DEFAULT_HOST,
+            "host": "codex",
             "role": "deep_worker",
-            "model": "grok-4.6",
-            "effort": "xhigh",
+            "model": "glm-5.3-flash",
+            "effort": "max",
             "fallback_reason": None,
         }
 
@@ -783,9 +815,24 @@ def main() -> int:
         "runtime must match host-runtime-matrix",
         valid_t0,
     )
+
+    expect_failure(
+        lambda report: report["dag"][0]["runtime"].update(
+            {
+                "host": "codex",
+                "role": "genius_worker",
+                "model": "gpt-5.6-sol",
+                "effort": "high",
+                "fallback_reason": None,
+            }
+        ),
+        "runtime must match host-runtime-matrix",
+        valid_t1_code_high_certainty,
+    )
+
     expect_failure(
         lambda report: report["task"].update({"active_host": "unknown-host"}),
-        "task.active_host must be codex, claude-code, or grok",
+        "task.active_host must be codex for the codex-glmflash profile",
         valid_t0,
     )
 
@@ -804,12 +851,6 @@ def main() -> int:
         hide_review_trigger,
         "review_gate.required must be true for recorded triggers",
     )
-
-    skill = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
-    if "Exclusive top pipeline" not in skill:
-        raise AssertionError("sam-orchestrate must declare Exclusive top pipeline")
-    if "Fix forward" not in skill:
-        raise AssertionError("sam-orchestrate must fix forward instead of restarting")
 
     validate_neutrality_adversaries()
     print("PASS: orchestration contract, adversarial fixtures, and neutrality conformance")

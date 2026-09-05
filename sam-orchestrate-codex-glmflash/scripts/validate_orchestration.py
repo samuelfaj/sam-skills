@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate a deterministic sam-orchestrate execution report."""
+"""Validate a deterministic sam-orchestrate-codex-glmflash execution report."""
 
 from __future__ import annotations
 
@@ -13,7 +13,9 @@ TASK_CLASSES = {"T0", "T1", "T2", "T3"}
 ARTIFACTS = {"CODE", "TEST", "DOCS", "CONFIG", "DATA", "RELEASE", "OTHER"}
 KINDS = {"EXECUTION", "ORCHESTRATION", "REVIEW"}
 CAPABILITIES = {"LIGHT", "STANDARD", "DEEP", "REVIEWER"}
-HOSTS = {"codex", "claude-code", "grok"}
+# Controller and delegated nodes run on Codex; producers use the Z.AI GLM profile.
+CONTROLLER_HOST = "codex"
+WORKER_HOSTS = {"codex"}
 RUNTIME_ROLES = {
     "fast_scan",
     "routine_worker",
@@ -41,37 +43,17 @@ OWNER_ROUTING = re.compile(
     re.IGNORECASE,
 )
 PACKAGE_DIR = Path(__file__).resolve().parent.parent
-RUNTIME_MATRIX: dict[str, dict[str, tuple[str, str, str]]] = {
-    "codex": {
-        "LIGHT": ("fast_scan", "gpt-5.6-luna", "medium"),
-        "STANDARD": ("routine_worker", "gpt-5.6-luna", "xhigh"),
-        "DEEP": ("deep_worker", "gpt-5.6-luna", "max"),
-        "REVIEWER": ("reviewer", "gpt-6-astra", "medium"),
-        "GENIUS": ("genius_worker", "gpt-5.6-luna", "max"),
-    },
-    "claude-code": {
-        "LIGHT": ("fast_scan", "haiku", "high"),
-        "STANDARD": ("routine_worker", "sonnet", "high"),
-        "DEEP": ("deep_worker", "opus", "medium"),
-        "REVIEWER": ("reviewer", "opus", "high"),
-        "GENIUS": ("genius_worker", "opus", "xhigh"),
-    },
-    "grok": {
-        "LIGHT": ("fast_scan", "grok-4.6", "medium"),
-        "STANDARD": ("routine_worker", "grok-4.6", "high"),
-        "DEEP": ("deep_worker", "grok-4.6", "xhigh"),
-        "REVIEWER": ("reviewer", "grok-4.6", "high"),
-        "GENIUS": ("genius_worker", "grok-4.6", "xhigh"),
-    },
+# capability -> (host, role, model, effort)
+PROFILE_MATRIX: dict[str, tuple[str, str, str, str]] = {
+    "LIGHT": ("codex", "fast_scan", "glm-5.3-flash", "max"),
+    "STANDARD": ("codex", "routine_worker", "glm-5.3-flash", "max"),
+    "DEEP": ("codex", "deep_worker", "glm-5.3-flash", "max"),
+    "REVIEWER": ("codex", "reviewer", "gpt-5.6-sol", "medium"),
+    "GENIUS": ("codex", "genius_worker", "gpt-5.6-sol", "high"),
 }
-MATRIX_MODELS = {
-    model for host_rows in RUNTIME_MATRIX.values() for _, model, _ in host_rows.values()
-}
-MATRIX_EFFORTS = {
-    effort
-    for host_rows in RUNTIME_MATRIX.values()
-    for _, _, effort in host_rows.values()
-}
+MATRIX_MODELS = {row[2] for row in PROFILE_MATRIX.values()}
+MATRIX_EFFORTS = {row[3] for row in PROFILE_MATRIX.values()}
+MATRIX_HOSTS = {row[0] for row in PROFILE_MATRIX.values()}
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -208,10 +190,9 @@ def validate_runtime_binding(
     model = runtime.get("model")
     effort = runtime.get("effort")
     fallback = runtime.get("fallback_reason")
-    if host not in HOSTS:
-        errors.append(f"{label}.runtime.host is invalid")
-    if active_host in HOSTS and host in HOSTS and host != active_host:
-        errors.append(f"{label}.runtime.host must match task.active_host")
+    if host not in WORKER_HOSTS:
+        errors.append(f"{label}.runtime.host is invalid for codex-glmflash profile")
+    _ = active_host
     if role not in RUNTIME_ROLES:
         errors.append(f"{label}.runtime.role is invalid")
     if not isinstance(model, str) or not model.strip():
@@ -224,46 +205,42 @@ def validate_runtime_binding(
         errors.append(
             f"{label}.runtime.fallback_reason must be null or a non-empty string"
         )
-    if host not in RUNTIME_MATRIX or capability not in CAPABILITIES:
+    if capability not in PROFILE_MATRIX:
         return
-    expected_role, expected_model, expected_effort = RUNTIME_MATRIX[host][capability]
-    if host == "codex" and model != expected_model:
-        errors.append(
-            f"{label}.runtime must match host-runtime-matrix model for capability {capability}"
-        )
-        return
+    expected_host, expected_role, expected_model, expected_effort = PROFILE_MATRIX[
+        capability
+    ]
     normalized_role = normalize_role(role) if isinstance(role, str) else role
-    genius_role, genius_model, genius_effort = RUNTIME_MATRIX[host]["GENIUS"]
+    genius_host, genius_role, genius_model, genius_effort = PROFILE_MATRIX["GENIUS"]
     matches_capability = (
-        normalized_role == expected_role
+        host == expected_host
+        and normalized_role == expected_role
         and model == expected_model
         and effort == expected_effort
     )
     matches_genius = (
         capability in {"STANDARD", "DEEP"}
+        and host == genius_host
         and normalized_role == genius_role
         and model == genius_model
         and effort == genius_effort
+        and isinstance(fallback, str)
+        and bool(fallback.strip())
     )
     if matches_capability or matches_genius:
         return
     if isinstance(fallback, str) and fallback.strip():
-        host_models = {row[1] for row in RUNTIME_MATRIX[host].values()}
-        host_efforts = {row[2] for row in RUNTIME_MATRIX[host].values()}
-        host_roles = {row[0] for row in RUNTIME_MATRIX[host].values()} | {
-            "ultra_worker"
-        }
-        if model not in host_models:
+        if model not in MATRIX_MODELS:
             errors.append(
-                f"{label}.runtime.model is outside the approved matrix for host {host}"
+                f"{label}.runtime.model is outside the approved codex-glmflash matrix"
             )
-        if effort not in host_efforts:
+        if effort not in MATRIX_EFFORTS:
             errors.append(
-                f"{label}.runtime.effort is outside the approved matrix for host {host}"
+                f"{label}.runtime.effort is outside the approved codex-glmflash matrix"
             )
-        if normalized_role not in host_roles and role not in host_roles:
+        if host not in MATRIX_HOSTS:
             errors.append(
-                f"{label}.runtime.role is outside the approved matrix for host {host}"
+                f"{label}.runtime.host is outside the approved codex-glmflash matrix"
             )
         return
     errors.append(
@@ -306,8 +283,8 @@ def validate(report: dict[str, Any]) -> list[str]:
     if classification not in TASK_CLASSES:
         errors.append("task.classification must be T0, T1, T2, or T3")
     active_host = task.get("active_host")
-    if active_host not in HOSTS:
-        errors.append("task.active_host must be codex, claude-code, or grok")
+    if active_host != CONTROLLER_HOST:
+        errors.append("task.active_host must be codex for the codex-glmflash profile")
     if not isinstance(task.get("goal"), str) or not task.get("goal", "").strip():
         errors.append("task.goal must be a non-empty string")
     string_list(

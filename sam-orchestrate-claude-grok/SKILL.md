@@ -52,9 +52,6 @@ Do not claim billing or quota savings.
 - **Cheap-first:** never open on `DEEP` or `genius_worker`. Escalate only after
   concrete capability failure, stall, or new risk evidence — never because a
   task is large.
-- **Equivalence policy:** `grok-4.6` / `high` ≈ `opus` / `medium`. Work at or
-  below that quality bar uses Grok. Grok `xhigh` is the DEEP producer bar.
-  Opus `high`/`xhigh`/`max` is reserved for review, genius unstick, and advisor.
 - Spawn Grok EXECUTION nodes via `sam-grok-worker` with the matrix effort
   (`--effort medium|high|xhigh`). Do not rely on the worker’s default when LIGHT
   needs `medium` or DEEP needs `xhigh`.

@@ -106,3 +106,7 @@ For `proposal`, keep `NOT_REQUESTED` until the user authorizes one compatible
 action. After returning the validated local decision, ask whether to publish
 when no action was supplied. Revalidate any `PLANNED`, `PUBLISHED`, `PARTIAL`,
 or `BLOCKED` publication update before reporting it.
+
+Scope authorization records changes to the agreed goal or contracts. File and
+line counts are evidence, not an automatic approval threshold. Every changed
+path must still be in scope and accounted for.

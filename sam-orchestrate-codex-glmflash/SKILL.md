@@ -1,16 +1,16 @@
 ---
-name: sam-orchestrate-codex-grok
-description: "Codex-controller hybrid orchestration: Grok 4.6 workers for routine and deep slices (medium LIGHT / high STANDARD / xhigh DEEP), Codex gpt-5.6-sol medium independent review, and Sol high only for stall/multi-round capability escalation. Use when the user runs /sam-orchestrate-codex-grok, wants Codex as orchestrator with Grok producers, or cross-host cost-aware multi-agent delivery under this profile."
+name: sam-orchestrate-codex-glmflash
+description: "Codex-controller orchestration with GLM-5.3-Flash workers via Z.AI (always max effort), Codex gpt-5.6-sol independent review, and Sol high only for stall or multi-round capability escalation. Use when the user runs /sam-orchestrate-codex-glmflash or wants Codex to coordinate work through the configured Z.AI GLM provider."
 ---
 
-# Sam Orchestrate Codex–Grok
+# Sam Orchestrate Codex–GLM Flash
 
-Controller-only orchestration with a **fixed hybrid runtime profile**:
+Controller-only orchestration with a **fixed Z.AI runtime profile**:
 
 - **Controller host:** Codex (long tasks, test re-runs, integration, proof).
-- **Default producers:** Grok `grok-4.6` (`medium` LIGHT, `high` STANDARD, `xhigh` DEEP).
+- **Default producers:** Z.AI `glm-5.3-flash` at `max` effort for LIGHT, STANDARD, and DEEP.
 - **Independent REVIEWER:** Codex `gpt-5.6-sol` / `medium`.
-- **Unstick / genius:** Codex `gpt-5.6-sol` / `high` only after multi-round Grok failure or stall.
+- **Unstick / genius:** Codex `gpt-5.6-sol` / `high` only after multi-round GLM-5.3-Flash failure or stall.
 
 Do not implement task artifacts on the main thread except controller integration,
 proof re-runs, conflict reconciliation, and final reporting.
@@ -36,8 +36,8 @@ secrets into the receipt. Exact-output commands and Skills remain lossless.
   `sam-work` > `sam-orchestrate`.
 - Keep the main agent controller-only. Delegate production code, tests, docs,
   migrations, and other task artifacts.
-- **Profile is fixed:** `task.active_host` must be `codex` (controller). Worker
-  `runtime.host` may be `grok` or `codex` per
+- **Profile is fixed:** `task.active_host` and every delegated `runtime.host` are
+  `codex`; the producer model is selected through provider `zai` per
   [references/host-runtime-matrix.md](references/host-runtime-matrix.md).
 - Give every worker one owner boundary, writable scope, no-go, dependencies,
   pass criteria, required proof, and a bound runtime receipt.
@@ -50,12 +50,14 @@ secrets into the receipt. Exact-output commands and Skills remain lossless.
 - **Cheap-first:** never open on `DEEP` or `genius_worker`. Escalate only after
   concrete capability failure, stall, or new risk evidence — never because a
   task is large.
-- Spawn Grok EXECUTION nodes via `sam-grok-worker` with the matrix effort
-  (`--effort medium|high|xhigh`). Do not rely on the worker’s default when LIGHT
-  needs `medium` or DEEP needs `xhigh`.
+- **Effort policy:** GLM-5.3-Flash always uses `max`, including LIGHT and STANDARD.
+  Sol `high` is reserved for genius unstick after GLM-5.3-Flash is exhausted.
+- Spawn GLM-5.3-Flash EXECUTION nodes via `codex exec` with explicit provider `zai`,
+  model `glm-5.3-flash`, and the matrix effort (`max`). Never pass the
+  API key on the command line; rely on the configured `ZAI_API_KEY` environment variable.
 - Spawn Codex REVIEWER / genius via Codex agent/`codex exec` with the matrix
   model and effort. REVIEWER is read-only.
-- If Codex or Grok CLI / auth is unavailable, stop with an evidence-backed
+- If Codex, the Z.AI provider, or GLM-5.3-Flash auth is unavailable, stop with an evidence-backed
   `EXTERNAL`/`ENVIRONMENT` blocker. No silent host fallback outside this profile.
 - Never expose secrets in prompts, reports, commands, or evidence.
 
@@ -90,10 +92,10 @@ Never invent `absolute`/`high` to save cost.
 
 | Mode | When | Shape |
 | --- | --- | --- |
-| **Micro** | `T0` + certainty `absolute`/`high` | Optional one `LIGHT` Grok worker; no REVIEWER if skip rules hold |
-| **Single** | `T1` | One `STANDARD` Grok worker (`LIGHT` if purely mechanical) |
-| **Multi** | `T2` | Min independent Grok workers (default parallel **2**, cap **3**); integration owner; review when multi-producer or risk |
-| **Critical** | `T3` | `DEEP` Grok only on the risky slice; serialize unsafe writes; **REVIEWER required** (Codex Sol medium) |
+| **Micro** | `T0` + certainty `absolute`/`high` | Optional one `LIGHT` GLM-5.3-Flash worker; no REVIEWER if skip rules hold |
+| **Single** | `T1` | One `STANDARD` GLM-5.3-Flash worker (`LIGHT` if purely mechanical) |
+| **Multi** | `T2` | Min independent GLM-5.3-Flash workers (default parallel **2**, cap **3**); integration owner; review when multi-producer or risk |
+| **Critical** | `T3` | `DEEP` GLM-5.3-Flash only on the risky slice; serialize unsafe writes; **REVIEWER required** (Codex Sol medium) |
 
 Parallel fan-out: default max **2** concurrent execution workers; hard cap **3**.
 
@@ -112,8 +114,8 @@ Classify `T0`–`T3` per [routing-policy.md](references/routing-policy.md).
 
 ### Micro path
 
-1. Controller-only only for pure integration; otherwise one short `LIGHT` Grok
-   worker (`grok-4.6` / `medium`) with a slice-only prompt.
+1. Controller-only only for pure integration; otherwise one short `LIGHT` GLM-5.3-Flash
+   worker (`glm-5.3-flash` / `max`) with a slice-only prompt.
 2. Proof: scope diff + at most one focused command.
 3. Skip REVIEWER when absolute/high certainty skip rules hold.
 4. Report: one table row or minimal validated JSON.
@@ -136,18 +138,20 @@ Bind from [host-runtime-matrix.md](references/host-runtime-matrix.md) only:
 
 | Capability | Host | Model | Effort |
 | --- | --- | --- | --- |
-| `LIGHT` | `grok` | `grok-4.6` | `medium` |
-| `STANDARD` | `grok` | `grok-4.6` | `high` |
-| `DEEP` | `grok` | `grok-4.6` | `xhigh` |
+| `LIGHT` | `codex` | `glm-5.3-flash` | `max` |
+| `STANDARD` | `codex` | `glm-5.3-flash` | `max` |
+| `DEEP` | `codex` | `glm-5.3-flash` | `max` |
 | `REVIEWER` | `codex` | `gpt-5.6-sol` | `medium` |
 | `genius_worker` (rare) | `codex` | `gpt-5.6-sol` | `high` |
 
 Worker prompts: [prompt-contract.md](references/prompt-contract.md).
 
-### Grok spawn
+### GLM-5.3-Flash spawn
 
-Use sibling skill `sam-grok-worker` with explicit effort from the matrix and an
-absolute `--prompt-file`. Pass only the slice; no full skill paste.
+Use `codex exec` with the provider, model, and effort bound by the matrix, and
+pipe an absolute prompt file on stdin (`codex exec ... - < prompt-file`).
+
+Pass only the slice; no full skill paste and no API key.
 
 ### Codex REVIEWER / genius spawn
 
@@ -179,12 +183,12 @@ Escalate a STANDARD/DEEP producer to `genius_worker` (`codex` /
 
 | Trigger | Minimum evidence |
 | --- | --- |
-| `multi_round_fail` | ≥2 Grok attempts on the same objective with TARGET `FAIL` or capability blocker |
+| `multi_round_fail` | ≥2 GLM-5.3-Flash attempts on the same objective with TARGET `FAIL` or capability blocker |
 | `stall` | 2× no material progress (no useful diff / same root cause loop) |
-| `deep_insufficient` | Node already `DEEP` Grok-xhigh and still unclosed |
+| `deep_insufficient` | Node already `DEEP` GLM-5.3-Flash-max and still unclosed |
 | `contradiction` | Worker claims contradict controller re-checked proof |
 
-**Caps:** max **2** Grok attempts per objective before Sol-high; max **1**
+**Caps:** max **2** GLM-5.3-Flash attempts per objective before Sol-high; max **1**
 Sol-high attempt per objective; then `BLOCKED` + user decision (or optional
 read-only advisor). Max **1** active genius node; serial. Prefer one tighter
 re-prompt at the same tier before escalating.
@@ -192,7 +196,7 @@ re-prompt at the same tier before escalating.
 Do **not** escalate for task size, latency, preference, or CLI/auth failure.
 
 Do **not** raise REVIEWER effort to `high`; corrections return to producers
-(Grok, or Sol-high if trigger already armed).
+(GLM-5.3-Flash, or Sol-high if trigger already armed).
 
 ## 5. Review Gate
 
@@ -227,8 +231,8 @@ Do **not** raise REVIEWER effort to `high`; corrections return to producers
 Write JSON per [output-contract.md](references/output-contract.md), then:
 
 ```bash
-SAM_ORCHESTRATE_CODEX_GROK_DIR="<absolute directory containing this SKILL.md>"
-python3 "$SAM_ORCHESTRATE_CODEX_GROK_DIR/scripts/validate_orchestration.py" \
+SAM_ORCHESTRATE_CODEX_GLMFLASH_DIR="<absolute directory containing this SKILL.md>"
+python3 "$SAM_ORCHESTRATE_CODEX_GLMFLASH_DIR/scripts/validate_orchestration.py" \
   "$ORCHESTRATION_TMP/report.json"
 ```
 

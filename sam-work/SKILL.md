@@ -15,50 +15,30 @@ Invoking this skill **is** the explicit user request for every action required b
 
 Execute and prove every canonical phase. Never report `COMPLETE` while a phase is missing, stale, non-terminal, unvalidated, or silently skipped. Playwright may be `NOT_APPLICABLE` only for a proven non-web system; every other unavailable phase blocks completion.
 
-## Autonomous execution (non-interactive)
+## Autonomous execution
 
-**Always run the full workflow. Never pause for permission on any step.**
-
-This section **overrides** every child skill’s “ask”, “request approval”, “confirm”, “unless explicitly requested”, or “publish only when authorized” language for the duration of the run.
-
-**Forbidden mid-run interactions (zero exceptions):**
-
-- Asking permission, confirmation, approval, “go ahead”, multiple-choice gates, or “should I continue?” for any phase or tool call.
-- Asking clarifying questions, target questions, scope questions, environment questions, or publication questions after the workflow has started.
-- Stopping for OS grants (screen recording, accessibility, camera, microphone), host/tool approval dialogs, or interactive consent. Attempt immediately with available capabilities.
-- Re-asking for commit, push, PR/MR create/update, test runs, service boot, Playwright, video record/convert/upload, or re-runs after fixes.
-- Using `AskUserQuestion`, waiting for a chat reply, or holding the session for human input.
-
-**Authorized without re-asking (this invocation is the request):**
-
-- Stage and commit task-owned work on the task branch; push that branch.
-- Create or update the single task proposal; rewrite its description when required by freshness.
-- Run tests, start verified local/dev/test services, capture Playwright video, record the demo MP4, convert media, upload every required video, and verify players.
-- Apply in-scope corrections from refine/review/simplify/coverage loops within child retry limits.
-
-**When something is ambiguous or impossible:**
-
-1. Prefer repository evidence, frozen prompt, existing proposal, and verified local/dev/test targets.
-2. If still blocked, record the assumption or exact failure and return `BLOCKED` (or continue remaining safe phases, then report).
-3. Never pause to ask. “Could not X” in the final report is the correct outcome—not a mid-flow prompt.
-
-Announce progress only as non-blocking status. Announcements must not wait for a reply.
+Continue the authorized workflow without re-asking for phase transitions or
+in-scope corrections. Resolve routine choices from the frozen request and
+repository evidence. If a required target, permission, tool, or material decision
+is unavailable, continue independent safe work and report the exact blocker.
+Never infer extra scope or authority from a child skill. Respect host permissions.
 
 ## Required skills
 
-Before changing the target repository, read these files completely and follow their referenced resources when each phase starts:
+Classify the task first. Read the selected implementation skill before editing;
+read each later skill and its applicable resources when that phase starts:
 
-1. `../sam-fix-bug/SKILL.md`
-2. `../sam-create-feature/SKILL.md`
-3. `../sam-refine-task/SKILL.md`
-4. `../sam-review/SKILL.md`
-5. `../sam-simplify-task/SKILL.md`
-6. `../sam-create-test-coverage/SKILL.md`
-7. `../sam-pr-description/SKILL.md`
-8. `../sam-create-playwright-tests/SKILL.md`
-9. `../sam-create-task-demo-video/SKILL.md`
+1. `../sam-fix-bug/SKILL.md` for a bug, or `../sam-create-feature/SKILL.md` for a feature
+2. `../sam-refine-task/SKILL.md`
+3. `../sam-review/SKILL.md`
+4. `../sam-simplify-task/SKILL.md`
+5. `../sam-create-test-coverage/SKILL.md`
+6. `../sam-pr-description/SKILL.md`
+7. `../sam-create-playwright-tests/SKILL.md`
+8. `../sam-create-task-demo-video/SKILL.md`
 
-If any required skill is absent or its contract cannot be honored, return `BLOCKED`. Do not emulate a missing skill from memory.
+Require only the children needed for the selected path. A missing required child
+is `BLOCKED`; do not emulate it from memory.
 
 State the complete workflow, the bug/feature classification, the target repository, the authorized external writes, and the pass criteria before implementation—then **continue without waiting**.
 

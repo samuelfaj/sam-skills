@@ -482,8 +482,6 @@ def validate(
             errors.append("refinement workflow must use empty owned paths")
         if approved is not False:
             errors.append("refinement workflow requires scope_expansion_approved=false")
-    if len(current_owned) > 2 * max(1, len(initial_owned)) and not approved:
-        blockers.append("owned scope expanded beyond two times the frozen baseline")
     cycle = scope.get("cycle")
     if not isinstance(cycle, int) or isinstance(cycle, bool) or cycle < 1:
         errors.append("scope.cycle must be a positive integer")

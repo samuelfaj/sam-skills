@@ -47,6 +47,7 @@ PROVIDER_SPECIFIC_REPLACEMENTS = {
     ),
 
     "sam-orchestrate": (
+        (re.compile(r"\bgpt-6-astra\b", re.IGNORECASE), "approved-model"),
         (re.compile(r"\bcodex\b", re.IGNORECASE), "host-runtime"),
         (re.compile(r"\bclaude(?:-code)?\b", re.IGNORECASE), "host-runtime"),
         (re.compile(r"\bgrok\b", re.IGNORECASE), "host-runtime"),
@@ -59,6 +60,11 @@ PROVIDER_SPECIFIC_REPLACEMENTS = {
         (re.compile(r"\bgrok\b", re.IGNORECASE), "host-runtime"),
         (re.compile(r"\bgpt-5\.6-(?:luna|sol)\b", re.IGNORECASE), "approved-model"),
         (re.compile(r"\bgrok-4\.6\b", re.IGNORECASE), "approved-model"),
+    ),
+    "sam-orchestrate-codex-glmflash": (
+        (re.compile(r"\bcodex\b", re.IGNORECASE), "host-runtime"),
+        (re.compile(r"\bgpt-5\.6-(?:luna|sol)\b", re.IGNORECASE), "approved-model"),
+        (re.compile(r"\bglm-5\.3-flash\b", re.IGNORECASE), "approved-model"),
     ),
     "sam-orchestrate-claude-grok": (
         (re.compile(r"\bclaude(?:-code)?\b", re.IGNORECASE), "host-runtime"),

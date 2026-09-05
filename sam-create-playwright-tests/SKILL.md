@@ -237,17 +237,10 @@ those runs, enable video capture, run the suite, and publish without asking
 again; zero videos is a failed phase, not a quiet pass. Follow
 [references/evidence-publishing.md](references/evidence-publishing.md):
 
-1. Inventory every video (and required screenshots) with path + SHA-256.
-2. Upload each file with `glab` (GitLab project uploads) or `gh` (GitHub
-   user-attachments / equivalent). Do not commit media.
-3. Embed in the PR/MR description or comment:
-   - **GitLab video:** `![scenario title](/uploads/<hash>/file.webm)`
-   - **GitHub video:** bare `https://github.com/user-attachments/assets/<id>`
-     alone on its own line
-   - **Images (either host):** host-issued inline image markup with descriptive alt text
-4. Forbid Markdown download links, HTML-only download links, and repo blob/raw URLs.
-5. Read the remote body back; require a rendered **player** (video) or **image**.
-6. Record each as `ART-###` with receipt, markup, and player/image verification.
+Confirm the authorized proposal and current head, upload the validated media,
+embed it using the platform's native markup, and verify the rendered player or
+image. Record hashes, upload receipts, and rendered readback. Never commit media
+or treat a download link as player proof. Stop on target drift or partial failure.
 
 ## 8. Validate, Clean, and Return
 
@@ -263,12 +256,11 @@ python3 "$SAM_PLAYWRIGHT_DIR/scripts/validate_e2e_report.py" \
 The validator re-verifies every execution receipt through
 `scripts/verify_receipts.py`, so it fails when a status disagrees with its
 receipt, a log hash does not recompute, a `TARGET` command ran once, or a claimed
-new test is not discovered by the runner. Keep `$WORK_TMP/receipts` until the
-report validates, then clean it with the rest of the ledger.
-
-Do not weaken the report to force completion. Stop services, containers, and
-temporary overrides; remove temporary data and artifacts not explicitly retained.
-Update every `CL-###` entry, revalidate, then remove `WORK_TMP`.
+new test is not discovered by the runner. Retain the report, bundles,
+receipts, and referenced logs at their recorded paths for caller re-validation.
+Mark these as retained evidence in the cleanup ledger. Stop only resources
+created by this run, remove temporary test data and overrides, update the ledger,
+and revalidate. Delete only scratch that no returned evidence references.
 
 Return `COMPLETE` only when all required scenarios and validations pass, required
 counterfactual proof exists, behavior is proven, no command is flaky, test wiring

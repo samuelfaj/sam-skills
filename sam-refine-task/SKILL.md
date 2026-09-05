@@ -133,4 +133,5 @@ When invoked under `sam-task` (or any parent that needs durable receipts), copy
 the validated report to `$PLAN_DIR/refine-report.json` (or another absolute path
 the parent records as `refine_report_path`) before cleaning temp artifacts.
 
-Remove temporary artifacts before returning.
+Retain the report and referenced evidence for caller re-validation; remove only
+unused scratch.

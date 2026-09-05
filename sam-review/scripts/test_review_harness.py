@@ -1346,15 +1346,10 @@ def self_test() -> None:
         ):
             raise RuntimeError("validator approved an introduced validation failure")
 
-        scope_blocked = copy.deepcopy(report)
-        scope_blocked["scope"]["baseline_file_count"] = 0
-        scope_blocked["decision"] = {
-            "result": "BLOCKED",
-            "confidence": "HIGH",
-            "non_gating_requested": False,
-            "remaining_corrections": [],
-        }
-        report_path.write_text(json.dumps(scope_blocked), encoding="utf-8")
+        # File-count growth alone does not change the authorized behavior.
+        scope_growth = copy.deepcopy(report)
+        scope_growth["scope"]["baseline_file_count"] = 0
+        report_path.write_text(json.dumps(scope_growth), encoding="utf-8")
         scope_valid = run(
             [
                 sys.executable,
@@ -1367,7 +1362,7 @@ def self_test() -> None:
             check=False,
         )
         if scope_valid.returncode != 0:
-            raise RuntimeError(f"valid scope block rejected: {scope_valid.stderr}")
+            raise RuntimeError(f"in-scope growth rejected: {scope_valid.stderr}")
 
 
 def main() -> int:

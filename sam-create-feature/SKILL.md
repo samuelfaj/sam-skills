@@ -36,7 +36,7 @@ provider-, host-, tool-, and model-neutral.
 ## 1. Freeze Target, Intent, and Scope
 
 Set the skill directory to the directory containing this file. Create temporary
-artifacts outside the repository and remove them before returning.
+artifacts outside the repository.
 
 ```bash
 SAM_FEATURE_DIR="<absolute directory containing this SKILL.md>"
@@ -95,11 +95,10 @@ cosmetic test solely to satisfy process.
   recovery states for user-visible work when applicable.
 - Update `current_owned_paths` only for files required by the feature.
 
-When owned paths exceed twice the frozen initial set, or delivery requires a
-new protocol, storage model, migration strategy, owner boundary, release
-process, or destructive action: under a parent workflow return `BLOCKED` with
-the exact breach (do not wait for approval); when standalone, stop and request
-approval.
+If a necessary change exceeds the authorized goal, contract, or owner boundary,
+return the exact gap to the parent, or ask the user when standalone. More files
+alone do not imply broader scope; justify each added path against acceptance
+criteria and preserve unrelated work.
 
 ## 4. Prove the Result
 
@@ -140,5 +139,5 @@ return `CHANGES_REQUIRED` or `BLOCKED` with exact remaining work.
 
 Draft publication text locally when useful. Publish it only after explicit user
 or parent-workflow authorization and record evidence of the authorized action;
-never re-ask when the parent already authorized. Remove temporary artifacts
-before the final response.
+never re-ask when the parent already authorized. Retain the report and evidence
+needed by the caller; remove only unused scratch.

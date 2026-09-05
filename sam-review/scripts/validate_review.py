@@ -113,14 +113,6 @@ def nonnegative_integer(value: Any, label: str, errors: list[str]) -> int | None
     return value
 
 
-def exceeds_double(baseline: Any, current: Any) -> bool:
-    if not isinstance(baseline, int) or not isinstance(current, int):
-        return False
-    if baseline == 0:
-        return current > 0
-    return current > baseline * 2
-
-
 def line_in_ranges(line: int, ranges: Any) -> bool:
     if not isinstance(ranges, list):
         return False
@@ -375,18 +367,6 @@ def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
         errors.append(
             "scope.current_non_test_lines must match bundle non-test line count"
         )
-    scope_blocked = bool(
-        (
-            exceeds_double(
-                scope.get("baseline_file_count"), scope.get("current_file_count")
-            )
-            or exceeds_double(
-                scope.get("baseline_non_test_lines"),
-                scope.get("current_non_test_lines"),
-            )
-        )
-        and not scope.get("scope_expansion_approved")
-    )
     cycle_blocked = bool(
         isinstance(review_cycle, int)
         and review_cycle > 2
@@ -660,7 +640,7 @@ def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
     # output so a typed "PASS" cannot close the review gate.
     receipts = verify_commands(report.get("validations"), errors)
     if result == "APPROVE":
-        if expected_remaining or stop_findings or scope_blocked or cycle_blocked:
+        if expected_remaining or stop_findings or cycle_blocked:
             errors.append(
                 "APPROVE cannot retain required, scope, convergence, or escalation blockers"
             )
@@ -689,7 +669,7 @@ def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
         if sorted(set(remaining)) != expected_remaining:
             errors.append("remaining_corrections must match accepted required findings")
     elif result == "BLOCKED":
-        if not stop_findings and not remaining and not scope_blocked and not cycle_blocked:
+        if not stop_findings and not remaining and not cycle_blocked:
             errors.append(
                 "BLOCKED requires a scope, convergence, escalation, or remaining correction"
             )

@@ -13,13 +13,6 @@ from pathlib import Path
 from typing import Any
 
 CHANGE_TYPES = {"BUG_FIX", "NEW_FEATURE", "REFACTOR", "DOCUMENTATION", "OTHER"}
-CHANGE_LABELS = {
-    "BUG_FIX": "Bug fix",
-    "NEW_FEATURE": "New feature",
-    "REFACTOR": "Refactor",
-    "DOCUMENTATION": "Documentation",
-    "OTHER": "Other",
-}
 EVIDENCE_TYPES = {"DIFF", "FILE", "COMMIT", "VALIDATION", "USER", "REMOTE"}
 EVIDENCE_STATUSES = {"PASS", "FAIL", "NOT_RUN", "INFO"}
 CLAIM_CATEGORIES = {
@@ -32,20 +25,6 @@ CLAIM_CATEGORIES = {
     "REFERENCE",
 }
 REMOTE_STATUSES = {"NOT_REQUESTED", "PLANNED", "UPDATED", "PARTIAL", "BLOCKED"}
-REQUIRED_HEADINGS = [
-    "Description",
-    "Type of Change",
-    "What Changed",
-    "Behavior",
-    "Business Rules",
-    "Scope and Impact",
-    "Risks and Mitigations",
-    "Rollout and Recovery",
-    "Validation",
-    "Tests",
-    "Author Checklist",
-    "Notes for Reviewer",
-]
 PLACEHOLDER_RE = re.compile(
     r"<!--|-->|\b(?:TODO|TBD)\b|_{4,}|<specific type>|<module or path>|<command>",
     re.IGNORECASE,
@@ -271,6 +250,8 @@ def validate(context: dict[str, Any], report: dict[str, Any]) -> list[str]:
     if len(set(change_types)) != len(change_types):
         errors.append("change_types must not contain duplicates")
 
+    body = nonempty_string(report.get("body"), "body", errors)
+    headings = re.findall(r"^## ([^\n]+)$", body, flags=re.MULTILINE)
     context_paths: list[str] = []
     for index, item in enumerate(context_files):
         path = item.get("path")
@@ -292,19 +273,13 @@ def validate(context: dict[str, Any], report: dict[str, Any]) -> list[str]:
         )
         path = nonempty_string(item.get("path"), f"{label}.path", errors)
         section = nonempty_string(item.get("section"), f"{label}.section", errors)
-        summary = nonempty_string(item.get("summary"), f"{label}.summary", errors)
+        nonempty_string(item.get("summary"), f"{label}.summary", errors)
         if path:
             covered_paths.append(path)
-        if section and section not in REQUIRED_HEADINGS:
-            errors.append(f"{label}.section must name a required body heading")
+        if section and section not in headings:
+            errors.append(f"{label}.section must name an existing body heading")
         if path and path not in context_path_set:
             errors.append(f"{label}.path is not in context")
-        body_value = report.get("body")
-        if isinstance(body_value, str):
-            if path and path not in body_value:
-                errors.append(f"{label}.path is not represented in body")
-            if summary and summary not in body_value:
-                errors.append(f"{label}.summary is not represented in body")
     duplicates = sorted(
         {path for path in covered_paths if covered_paths.count(path) > 1}
     )
@@ -353,7 +328,6 @@ def validate(context: dict[str, Any], report: dict[str, Any]) -> list[str]:
             errors.append(f"{label}.reference must be a context commit SHA")
         nonempty_string(item.get("detail"), f"{label}.detail", errors)
 
-    body = nonempty_string(report.get("body"), "body", errors)
     if body.startswith("```") or body.rstrip().endswith("```"):
         errors.append("body must be raw Markdown without an outer code fence")
     placeholder = PLACEHOLDER_RE.search(body)
@@ -361,26 +335,10 @@ def validate(context: dict[str, Any], report: dict[str, Any]) -> list[str]:
         errors.append(
             f"body contains placeholder or template marker: {placeholder.group(0)}"
         )
-    headings = re.findall(r"^## ([^\n]+)$", body, flags=re.MULTILINE)
-    if headings != REQUIRED_HEADINGS:
-        errors.append("body headings must appear exactly once in the required order")
-
-    marked_labels = {
-        match.group(1).strip()
-        for match in re.finditer(
-            r"^- \[[xX]\] ([^\n:]+)(?::[^\n]*)?$", body, flags=re.MULTILINE
-        )
-        if match.group(1).strip() in set(CHANGE_LABELS.values())
-    }
-    expected_labels = {
-        CHANGE_LABELS[item] for item in change_types if item in CHANGE_LABELS
-    }
-    if marked_labels != expected_labels:
-        errors.append("checked Type of Change boxes must match change_types")
-    if "OTHER" in change_types and re.search(
-        r"^- \[[xX]\] Other:\s*(?:$|Not applicable$)", body, re.MULTILINE
-    ):
-        errors.append("checked Other type requires a specific value")
+    if not {"Description", "Validation"}.issubset(headings):
+        errors.append("body must include Description and Validation headings")
+    if len(headings) != len(set(headings)):
+        errors.append("body headings must not repeat")
 
     claims = object_list(report.get("claims"), "claims", errors)
     if not claims:

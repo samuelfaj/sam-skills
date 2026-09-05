@@ -141,13 +141,18 @@ better `LIGHT`/`STANDARD` re-prompt over escalating model tier.
 Detect host once (`codex`, `claude-code`, `grok`). Bind matrix rows from
 [host-runtime-matrix.md](references/host-runtime-matrix.md).
 
+On Codex, use `gpt-6-astra` for the main planner/controller and independent
+review. Keep all execution workers on `gpt-5.6-luna`, including rare escalation.
+The planner/controller does not implement worker artifacts. If its model cannot
+be selected by the runtime, report that limitation rather than claiming a switch.
+
 | Capability | Codex | Claude Code | Grok |
 | --- | --- | --- | --- |
 | `LIGHT` | `gpt-5.6-luna` / `medium` | `haiku` / `high` | `grok-4.6` / `medium` |
 | `STANDARD` | `gpt-5.6-luna` / `xhigh` | `sonnet` / `high` | `grok-4.6` / `high` |
 | `DEEP` | `gpt-5.6-luna` / `max` | `opus` / `medium` | `grok-4.6` / `xhigh` |
-| rare escalate | `gpt-5.6-sol` / `high` | `opus` / `xhigh` | `grok-4.6` / `xhigh` |
-| `REVIEWER` | `gpt-5.6-sol` / `medium` | `opus` / `high` | `grok-4.6` / `high` |
+| rare escalate | `gpt-5.6-luna` / `max` | `opus` / `xhigh` | `grok-4.6` / `xhigh` |
+| `REVIEWER` | `gpt-6-astra` / `medium` | `opus` / `high` | `grok-4.6` / `high` |
 
 Worker prompts: [prompt-contract.md](references/prompt-contract.md) — **slice-only**,
 no full skill paste, no other workers’ conclusions into independent review.

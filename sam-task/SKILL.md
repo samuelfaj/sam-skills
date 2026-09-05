@@ -72,12 +72,6 @@ python3 -B "$SAM_TASK_DIR/scripts/validate_behavior_eval.py" \
   behavior-eval-run.json --require-complete-suite
 ```
 
-## Autonomous execution
-
-Same non-interactive rules as `sam-work`: no `AskUserQuestion`, no “should I
-continue?”, no waiting for OS grants mid-flow. Announce progress without
-blocking. On ambiguity: evidence first, else `BLOCKED`.
-
 ## Advisors (subordinate, non-phase)
 
 The provider-specific advisor skills (`sam-*-advisor`) are optional bounded

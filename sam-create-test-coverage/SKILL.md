@@ -212,12 +212,11 @@ python3 "$SAM_COVERAGE_DIR/scripts/validate_coverage_report.py" \
 The validator re-verifies every execution receipt through
 `scripts/verify_receipts.py`, so it fails when a status disagrees with its
 receipt, a log hash does not recompute, a `TARGET` command ran once, or a claimed
-new test is not discovered by the runner. Keep `$WORK_TMP/receipts` until the
-report validates; clean it afterwards with the rest of the ledger.
-
-Stop only resources created by this run. Remove temporary data, overrides, logs,
-and artifacts unless explicitly retained. Update the `CL-###` ledger, revalidate,
-and remove `WORK_TMP`.
+new test is not discovered by the runner. Retain the report, bundles,
+receipts, and referenced logs at their recorded paths for caller re-validation.
+Mark these as retained evidence in the cleanup ledger. Stop only resources
+created by this run, remove temporary test data and overrides, update the ledger,
+and revalidate. Delete only scratch that no returned evidence references.
 
 Return `FULL` only when all required scenarios and commands pass, required
 counterfactual proof exists, real-system proof is honest, the audit passes, and

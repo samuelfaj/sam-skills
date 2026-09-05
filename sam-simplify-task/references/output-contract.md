@@ -50,3 +50,7 @@ python3 scripts/validate_report.py \
 
 Return decision, candidates applied/skipped/blocked, exact complexity removed,
 behavior preserved, validations, files changed, residual risk, and next action.
+
+Scope authorization records changes to the agreed goal or contracts. File and
+line counts are evidence, not an automatic approval threshold. Every changed
+path must still be in scope and accounted for.

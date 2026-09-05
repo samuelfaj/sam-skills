@@ -168,18 +168,10 @@ When publication is explicit—including when `sam-work` requires `PUBLISHED` on
 the frozen proposal—upload and embed without asking for permission again. Follow
 [references/evidence-publishing.md](references/evidence-publishing.md):
 
-1. Reconfirm host, repository, proposal ID, and head SHA.
-2. Upload the exact validated MP4 with `glab` (GitLab project uploads) or `gh`
-   (GitHub user-attachments / equivalent). Do not commit media.
-3. Embed in the PR/MR description or comment:
-   - **GitLab video:** `![scenario title](/uploads/<hash>/file.mp4)`
-   - **GitHub video:** bare `https://github.com/user-attachments/assets/<id>`
-     alone on its own line
-   - **Images (either host):** host-issued inline image markup with descriptive alt text
-4. Forbid Markdown download links, HTML-only download links, and repo blob/raw URLs.
-5. Read the remote body back; require a rendered **player** (video) or **image**.
-6. Record receipt, markup, and `player_verified` under `ART-###`. Stop on drift
-   or link-only readback.
+Confirm the authorized proposal and current head, upload the validated media,
+embed it using the platform's native markup, and verify the rendered player or
+image. Record hashes, upload receipts, and rendered readback. Never commit media
+or treat a download link as player proof. Stop on target drift or partial failure.
 
 ## 7. Validate, Clean, and Return
 

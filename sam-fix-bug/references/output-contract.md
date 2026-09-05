@@ -58,3 +58,7 @@ python3 scripts/validate_report.py \
 Return observed versus expected behavior, reproduction, root cause, correction,
 exact files, regression scenarios, validations, behavior proof, gates,
 external-action status, decision, and residual risk.
+
+Scope authorization records changes to the agreed goal or contracts. File and
+line counts are evidence, not an automatic approval threshold. Every changed
+path must still be in scope and accounted for.

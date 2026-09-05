@@ -50,8 +50,13 @@ cross-host second opinion; even then, keep one producer host for writable work.
 
 ## Codex
 
-Based on the local Codex multi-agent cost ladder (Luna for cheap work, Sol for
-deep reasoning). Agent file names may use `ultra_worker` as an alias for
+Use `gpt-6-astra` for the main planner/controller and independent review;
+use `gpt-5.6-luna` for every execution worker. Keep the current controller effort
+unless the task requires changing it; do not force maximum reasoning.
+If the host cannot select the planner model, report the limitation explicitly.
+Codex fallbacks may adjust effort but must preserve Luna for execution and Astra
+for review. If the required model is unavailable, report the blocked role.
+Agent file names may use `ultra_worker` as an alias for
 `genius_worker` when the installed Codex agents require that name.
 
 | Capability / role | Model | Effort | Sandbox / notes |
@@ -59,9 +64,9 @@ deep reasoning). Agent file names may use `ultra_worker` as an alias for
 | `LIGHT` / `fast_scan` | `gpt-5.6-luna` | `medium` | read-only; narrow search and evidence only |
 | `STANDARD` / `routine_worker` | `gpt-5.6-luna` | `xhigh` | inherit parent permissions; bounded implementation |
 | `DEEP` / `deep_worker` | `gpt-5.6-luna` | `max` | inherit parent permissions; hard debug / architecture |
-| `genius_worker` (rare) | `gpt-5.6-sol` | `high` | final escalation only; never default |
-| `REVIEWER` | `gpt-5.6-sol` | `medium` | read-only independent review |
-| advisor (optional) | `gpt-5.6-sol` | `max` or `xhigh` | read-only focused second opinion |
+| `genius_worker` (rare) | `gpt-5.6-luna` | `max` | focused final attempt; same model/effort as DEEP, never default |
+| `REVIEWER` | `gpt-6-astra` | `medium` | read-only independent review |
+| advisor (optional) | `gpt-6-astra` | `max` or `xhigh` | read-only focused second opinion |
 
 Root agent settings when configuring Codex agents: `max_threads = 6`,
 `max_depth = 1`. Do not force `model_reasoning_effort = "ultra"`.

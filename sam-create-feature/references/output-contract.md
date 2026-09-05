@@ -57,3 +57,7 @@ python3 scripts/validate_report.py \
 Return requirements and intent, implementation summary, exact files, scenario
 and TDD proof, validations, behavior proof, gate results, external-action status,
 decision, and remaining risk. Do not claim unrun proof.
+
+Scope authorization records changes to the agreed goal or contracts. File and
+line counts are evidence, not an automatic approval threshold. Every changed
+path must still be in scope and accounted for.

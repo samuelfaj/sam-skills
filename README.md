@@ -67,6 +67,9 @@ and orchestration.
 - `sam-orchestrate-codex-grok`: hybrid controller/worker orchestration profile —
   Grok 4.6 producers (medium LIGHT / high STANDARD / xhigh DEEP), Sol medium
   independent review, and Sol high only for stall or multi-round unstick.
+- `sam-orchestrate-codex-glmflash`: controller with GLM-5.3-Flash producers via
+  the configured Z.AI provider, independent Sol medium review,
+  and Sol high only for stall or multi-round unstick.
 - `sam-orchestrate-claude-grok`: hybrid controller/worker orchestration profile —
   Grok 4.6 producers (medium LIGHT / high STANDARD / xhigh DEEP), high independent
   review, xhigh only for stall or multi-round unstick, max-effort advisor.

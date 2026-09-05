@@ -468,11 +468,6 @@ def main() -> int:
                 gate.pop("evidence_ids", None)
         check(failed_gate, 1, "mandatory gate failure-path-proof did not pass")
 
-        # Scope: unrelated dirty work stays untouched and unclaimed.
-        claim_unrelated = copy.deepcopy(valid)
-        claim_unrelated["scope"]["current_owned_paths"].append("src/unrelated.js")
-        check(claim_unrelated, 1, "owned scope expanded beyond two times")
-
         # Editing someone else's pending work is a breach even if the report is tidy.
         (root / "src" / "unrelated.js").write_text(
             "export const other = 3;\n", encoding="utf-8"

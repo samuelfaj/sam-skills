@@ -36,7 +36,7 @@ stack-, provider-, host-, tool-, and model-neutral.
 ## 1. Freeze Target, Intent, and Scope
 
 Set the skill directory to the directory containing this file. Keep temporary
-artifacts outside the repository and remove them before returning.
+artifacts outside the repository.
 
 ```bash
 SAM_BUG_DIR="<absolute directory containing this SKILL.md>"
@@ -96,11 +96,10 @@ compatibility, and adjacent regression scenarios when applicable. Verify
 user-visible loading, empty, error, disabled, accessibility, and recovery states
 only when the affected flow reaches them.
 
-If the correction needs more than twice the frozen owned scope or changes a
-protocol, storage model, migration strategy, owner boundary, release process, or
-destructive behavior: under a parent workflow return `BLOCKED` with the exact
-scope breach (do not wait for approval); when standalone, stop and request
-approval.
+If a necessary change exceeds the authorized goal, contract, or owner boundary,
+return the exact gap to the parent, or ask the user when standalone. More files
+alone do not imply broader scope; justify each added path against acceptance
+criteria and preserve unrelated work.
 
 ## 4. Validate and Run Gates
 
@@ -137,5 +136,5 @@ dirty-work preservation agree. Otherwise return `CHANGES_REQUIRED` or
 
 Draft publication text locally when useful. Publish only after explicit user or
 parent-workflow authorization and record the action evidence; never re-ask when
-the parent already authorized. Remove temporary artifacts before the final
-response.
+the parent already authorized. Retain the report and evidence needed by the
+caller; remove only unused scratch.

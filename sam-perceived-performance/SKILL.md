@@ -152,9 +152,10 @@ Every applied technique needs, before it counts as applied:
 - A passing test that the pending, settled, and failed states are announced, and a
   stated reduced-motion behavior.
 
-If owned scope exceeds twice the frozen initial set, or the work crosses an owner,
-protocol, storage, migration, or release boundary: under a parent workflow return
-`BLOCKED` with the exact breach; standalone, stop and request approval.
+If a necessary change exceeds the authorized goal, contract, or owner boundary,
+return the exact gap to the parent, or ask the user when standalone. More files
+alone do not imply broader scope; justify each added path against acceptance
+criteria and preserve unrelated work.
 
 ## 5. Prove the Perceived Improvement
 
@@ -202,4 +203,5 @@ technique is unavailable.
 
 Do not weaken the validator, the budget table, or a test to reach a status. Report
 real latency alongside perceived latency so the improvement cannot be mistaken for
-the work getting faster. Remove temporary artifacts before returning.
+the work getting faster. Retain the report and referenced evidence for caller
+re-validation; remove only unused scratch.

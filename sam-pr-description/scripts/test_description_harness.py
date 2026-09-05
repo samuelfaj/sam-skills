@@ -502,6 +502,20 @@ def main() -> int:
         clean = valid_report(context)
         validate(context_path, clean, True, root)
 
+        # A small change needs behavior and proof, not twelve template sections.
+        compact = copy.deepcopy(clean)
+        compact["body"] = (
+            "## Description\n\nService returns the corrected value.\n\n"
+            "## Validation\n\nFocused fixture test passed.\n"
+        )
+        for item in compact["file_coverage"]:
+            item["section"] = "Description"
+        validate(context_path, compact, True, root)
+
+        missing_section = copy.deepcopy(compact)
+        missing_section["file_coverage"][0]["section"] = "Missing section"
+        validate(context_path, missing_section, False, root)
+
         malformed_context = copy.deepcopy(context)
         malformed_context["commits"][0]["sha"] = "not-a-full-object-id"
         refingerprint(malformed_context, "context_fingerprint")
@@ -527,7 +541,7 @@ def main() -> int:
         validate(context_path, unsupported_claim, False, root)
 
         wrong_type = copy.deepcopy(clean)
-        wrong_type["change_types"] = ["NEW_FEATURE"]
+        wrong_type["change_types"] = ["UNSUPPORTED"]
         validate(context_path, wrong_type, False, root)
 
         unsafe_drift = copy.deepcopy(clean)

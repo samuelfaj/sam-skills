@@ -160,3 +160,7 @@ Return, in prose:
 
 State the illusion's boundary explicitly: what the user now sees immediately
 versus what is still settling behind it.
+
+Scope authorization records changes to the agreed goal or contracts. File and
+line counts are evidence, not an automatic approval threshold. Every changed
+path must still be in scope and accounted for.

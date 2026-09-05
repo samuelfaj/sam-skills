@@ -18,9 +18,6 @@ capability. Never ask the user which model to use. If a preferred model or
 effort is unavailable, stop with a blocker or record `runtime.fallback_reason`
 only for an in-matrix nearest supported row — do not invent out-of-profile hosts.
 
-**Equivalence policy:** `grok-4.6` / `high` ≈ `opus` / `medium`. Work at or
-below that bar binds to Grok. Grok `xhigh` is the DEEP producer bar. Opus
-`high` / `xhigh` / `max` is review, genius unstick, and advisor only.
 
 ## Capability ladder
 

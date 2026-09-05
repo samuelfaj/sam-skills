@@ -5,18 +5,6 @@ description: "Conduct task study and emit a machine freeze plan (goal, thesis, s
 
 # Sam Plan
 
-## Agent quickstart
-
-1. Scaffold `$PLAN_DIR` → study repo (tools + surfaces) → ledger FACT/ASSUMPTION/UNKNOWN.
-2. Draft freeze: goal/scope, thesis + rejected alternatives, ordered steps with
-   **why / how[] / surfaces / dod / proof_ids**, acceptance_trace, risks, council policy.
-3. `validate_plan_report.py` with `--repo-root` when possible.
-4. `render_plan_html.py` then `validate_plan_report.py --require-html`.
-5. Return status, paths, thesis one-liner, step count, residuals/blockers, council, VALID.
-
-READY fails closed without executable `how[]` and non-empty step `surfaces`
-(except SPIKE). Compact HTML must show status, scope, rich steps, and acceptance—not titles only.
-
 ## Purpose
 
 Turn one planning prompt into a **conducted inquiry + decision freeze**, not a
@@ -125,7 +113,6 @@ Decision points that must appear in the freeze (not empty template pages):
 
 ```bash
 SAM_PLAN_DIR="<absolute directory containing this SKILL.md>"
-WORK_TMP="$(mktemp -d)"
 PLAN_DIR="${PLAN_DIR:-$PWD/plan}"
 ```
 
@@ -154,13 +141,13 @@ Prefer resolving locators against the target repo:
 ```bash
 REPO_ROOT="${REPO_ROOT:-$PWD}"
 python3 -B "$SAM_PLAN_DIR/scripts/validate_plan_report.py" \
-  "$WORK_TMP/plan-report.json" \
+  "$PLAN_DIR/plan-report.json" \
   --repo-root "$REPO_ROOT"
 ```
 
 `--repo-root` enables path/line checks for FACT locators. Omit only when the
 target tree is unavailable (`BLOCKED` / `NOT_CONFIDENT` is better than fake
-paths). Copy the validated report to `$PLAN_DIR/plan-report.json`.
+paths).
 
 ### 4. Required HTML pack (light theme, for humans)
 
