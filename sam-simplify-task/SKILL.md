@@ -1,11 +1,11 @@
 ---
 name: sam-simplify-task
-description: "Simplify code introduced by a completed task while preserving observable behavior, public contracts, unrelated dirty work, and existing proof. Use after implementation already works when asked to reduce duplication, branching, state, indirection, speculative flexibility, or review complexity; do not use to add features, fix unknown defects, or perform broad cleanup."
+description: "Simplify code from a completed task without changing behavior, public contracts, unrelated dirty work, or existing proof. Use after the implementation works to cut duplication, branching, state, indirection, speculative flexibility, or review burden; not for features, unknown bugs, or broad cleanup."
 ---
 
 # Sam Simplify Task
 
-Remove task-introduced complexity without redesigning behavior. Remain stack-,
+Remove task-introduced complexity without redesigning behavior. Stay stack-,
 provider-, host-, tool-, and model-neutral.
 
 ## Non-Negotiable Contract
@@ -15,113 +15,100 @@ provider-, host-, tool-, and model-neutral.
 - Operate only after the primary task and its proof exist.
 - Preserve user-visible behavior, public contracts, security, permissions,
   migrations, compatibility handling, and observability.
-- Preserve unrelated staged, unstaged, and untracked work byte-for-byte.
-- Never reset, checkout, stash, clean, rebase, or broadly restore the workspace.
-  Undo only the exact patch introduced by this simplification.
-- Do not stage, commit, publish, or message an external system unless the user
-  or a parent workflow (for example `sam-work`) explicitly requests it. Parent
-  authorization is enough; do not re-ask.
-- Stop after two simplification cycles unless new evidence appears.
+- Preserve unrelated staged, unstaged, and untracked work byte-for-byte. Never
+  reset, checkout, stash, clean, rebase, or broadly restore the workspace.
+- Stage, commit, publish, or message an external system only when the user or a
+  parent workflow (e.g. `sam-work`) explicitly requested that exact action;
+  parent authorization is enough, never re-ask.
+- Child mode (a parent workflow or phase worker invoked you): never ask; if
+  ownership cannot be reconstructed safely, return `BLOCKED` with receipts.
+  Standalone: ask at most one blocking question, only for that case. Never
+  claim code because it is adjacent or untidy.
+- Return any change beyond the frozen goal, contract, or owner boundary to the
+  parent as the exact gap (standalone: ask). File or line counts alone neither
+  widen nor approve scope; justify each added path against the frozen goal.
+  Stop after two simplification cycles unless new evidence appears.
 
-## Resource Routing
+## Resources
 
-- Read [references/evidence-policy.md](references/evidence-policy.md) before
-  deciding whether proof is sufficient to edit.
-- Read [references/risk-lenses.md](references/risk-lenses.md) selectively while
-  assessing candidates.
-- Read [references/output-contract.md](references/output-contract.md) before
-  drafting the structured report.
-- Run `scripts/capture_scope.py` before and after simplification.
-- Run `scripts/validate_report.py` before returning the decision.
+Use literal absolute paths: `<skill>` is this directory; `<tmp>` is the
+parent's phase directory, else scratch outside `<repo>`. Re-read a file only
+after compaction or when you cannot quote the needed section; a copy of
+`evidence-policy.md` or `risk-lenses.md` already read from sam-fix-bug,
+sam-create-feature, or sam-refine-task counts.
 
-## 1. Freeze Completed Work and Invariants
+| Read | When |
+|---|---|
+| `references/output-contract.md` | Step 1, before freezing the report |
+| `references/evidence-policy.md` | Step 2, before deciding whether proof suffices to edit |
+| `references/risk-lenses.md` | Step 3: only lenses the candidates reach |
+
+## 1. Freeze Completed Work
 
 ```bash
-SAM_SIMPLIFY_DIR="<absolute directory containing this SKILL.md>"
-WORK_TMP="$(mktemp -d)"
-python3 "$SAM_SIMPLIFY_DIR/scripts/capture_scope.py" --repo "$PWD" \
-  > "$WORK_TMP/baseline.json"
+python3 <skill>/scripts/capture_scope.py --repo <repo> > <tmp>/baseline.json
+python3 <skill>/scripts/validate_report.py --scaffold --baseline <tmp>/baseline.json <tmp>/report.json
 ```
 
-Use repeated `--path <repo-relative-path>` only for explicit scope and reuse the
-exact arguments later.
+Repeat `--path <repo-relative-path>` only for explicit scope, with identical
+arguments in every capture. Never open `baseline.json` or `current.json`; the
+capture's stderr line summarizes them. Rewind (this skill already wrote a
+report for this task): capture and scaffold in a fresh `<tmp>` (under a parent,
+the handoff's phase dir) with `--from <prior report>`; never move, edit, or
+overwrite the prior report.
 
-Identify and freeze:
-
-- Task-owned changed paths and unrelated dirty paths.
-- Intended behavior, public contracts, invariants, and owner boundary.
-- Existing tests, runtime proof, review findings, and known limitations.
-- Initial owned paths, no-go paths, and baseline fingerprint.
-
-Under a parent workflow (for example `sam-work`), never ask—if ownership cannot
-be reconstructed safely, return `BLOCKED` with receipts. When running
-standalone, ask one blocking question only if ownership cannot be reconstructed
-safely. Do not claim unrelated code because it is adjacent or untidy.
+Freeze into the report: task-owned changed paths as initial owned paths and
+every `intent` field (goal: intended behavior; must_not_change: unrelated dirty
+paths, no-go paths, and public contracts). Identify existing tests, runtime
+proof, review findings, and known limitations.
 
 ## 2. Establish the Safety Baseline
 
-Inspect existing proof and run the narrowest relevant passing checks before
-editing. Record exact commands and results. If a proposed structural change can
-alter behavior and no practical proof can detect it, classify it `BLOCKED` or
-`SKIPPED`; do not guess.
+If a prior report qualifies for reuse (output-contract `evidence` row), cite its
+final-state checks instead of re-running them. Standalone, first re-run that
+report's validator; under a parent, its phase receipt suffices. Without such a
+report, run the narrowest relevant passing checks before editing and record
+exact commands and results. Inspect changed command definitions before
+executing them; keep backups and patches outside the repository.
 
-Inspect changed command definitions before executing them. Keep all temporary
-backups or patch artifacts outside the repository.
+A structural change that could alter behavior with no practical detecting proof
+is `BLOCKED` or `SKIPPED`; never guess.
 
-## 3. Classify Simplification Candidates
+## 3. Classify Candidates
 
 Review every task-owned file and only enough adjacent code to understand it.
-Look for removable duplication, branches, derived state stored unnecessarily,
+Look for removable duplication, branches, needlessly stored derived state,
 pass-through wrappers, speculative options, mixed abstraction levels, misplaced
-logic, brittle test setup, and artifacts made obsolete by the task.
-
-Classify each candidate:
+logic, brittle test setup, and artifacts the task made obsolete.
 
 - `APPLIED`: clearly safer or easier to understand, in scope, and provable.
 - `SKIPPED`: subjective, churn-heavy, contract-changing, or not worth the risk.
-- `BLOCKED`: valuable but requires missing proof, access, or a user decision.
+- `BLOCKED`: valuable but needs missing proof, access, or a user decision.
 
-For every applied candidate state what complexity was removed. Prefer deletion
-and existing canonical helpers. A move that preserves the same concepts,
-branches, modes, or layers is not sufficient evidence of simplification.
+Prefer deletion and existing canonical helpers. Moving the same concepts,
+branches, modes, or layers is not simplification.
 
-## 4. Apply Coherent Changes and Verify
+## 4. Apply and Verify
 
-Apply one coherent simplification at a time. Preserve public APIs and external
-behavior. Remove only imports, tests, fixtures, or helpers made obsolete by the
-current simplification.
-
-After each meaningful change:
+Apply one coherent simplification at a time; remove only imports, tests,
+fixtures, or helpers it made obsolete. After each change:
 
 1. Inspect the exact diff.
 2. Confirm only owned paths changed.
-3. Run targeted proof proportional to risk.
+3. Run fresh targeted proof proportional to risk.
 4. Undo only that exact patch if behavior changes or complexity merely moves.
 
-If a necessary change exceeds the authorized goal, contract, or owner boundary,
-return the exact gap to the parent, or ask the user when standalone. More files
-alone do not imply broader scope; justify each added path against acceptance
-criteria and preserve unrelated work.
+Run a second cycle only when the first exposes new objective simplification;
+stop at subjective polish.
 
-Run a second cycle only when the first exposes new objective simplification.
-Stop when remaining opportunities are subjective polish.
+## 5. Report and Decide
 
-## 5. Validate Scope and Decision
+Capture `<tmp>/current.json` with the step 1 arguments, re-scaffold with
+`--current <tmp>/current.json`, fill the report, and validate:
 
 ```bash
-python3 "$SAM_SIMPLIFY_DIR/scripts/capture_scope.py" --repo "$PWD" \
-  > "$WORK_TMP/current.json"
-python3 "$SAM_SIMPLIFY_DIR/scripts/validate_report.py" \
-  --baseline "$WORK_TMP/baseline.json" \
-  --current "$WORK_TMP/current.json" "$WORK_TMP/report.json"
+python3 <skill>/scripts/validate_report.py --baseline <tmp>/baseline.json --current <tmp>/current.json <tmp>/report.json
 ```
 
-Follow [references/output-contract.md](references/output-contract.md). Cover
-every post-baseline path exactly once. Any changed simplification requires
-passing behavior proof and mandatory gates.
-
-Return `SIMPLEST_DEFENSIBLE` only when an applied simplification is proven and
-no required candidate remains. Return `NO_CHANGE` when no edit is justified.
-Return `BLOCKED` when safe simplification requires missing proof, access,
-authorization, or scope expansion. Do not weaken the validator. Retain the report and referenced evidence for caller re-validation; remove only
-unused scratch.
+Never weaken the validator. Keep the report and referenced evidence for caller
+re-validation; remove only unused scratch.

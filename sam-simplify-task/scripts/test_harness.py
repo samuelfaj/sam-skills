@@ -11,6 +11,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 from typing import Any
 
 
@@ -73,7 +74,40 @@ def capture(repo: Path, *, env: dict[str, str] | None = None) -> JsonObject:
         raise AssertionError(f"capture failed: {result.stdout}{result.stderr}")
     value = json.loads(result.stdout)
     assert isinstance(value, dict)
+    # Agents read only this stderr line, so it must describe the exact bundle.
+    summary = (
+        f"scope: head={value['head_sha']} fingerprint={value['fingerprint']} "
+        f"files={value['file_count']}"
+    )
+    if result.stderr.strip() != summary:
+        raise AssertionError(f"capture summary does not match bundle: {result.stderr}")
     return value
+
+
+def racy_index_check(root: Path) -> None:
+    """A same-size edit in the same second as the index write must still count.
+
+    Git re-hashes a racily clean entry only when the index keeps its own mtime,
+    so the temporary index copy must preserve it or the edit reads as clean.
+    """
+    repo = root / "racy"
+    repo.mkdir()
+    git(repo, "init", "-q")
+    git(repo, "config", "user.email", "fixture@example.invalid")
+    git(repo, "config", "user.name", "Fixture")
+    git(repo, "config", "core.checkStat", "minimal")
+    git(repo, "config", "core.trustctime", "false")
+    source = repo / "a.txt"
+    stamp = int(time.time()) - 60
+    source.write_text("v1\n", encoding="utf-8")
+    os.utime(source, (stamp, stamp))
+    git(repo, "add", "a.txt")
+    git(repo, "commit", "-qm", "baseline")
+    source.write_text("v2\n", encoding="utf-8")
+    os.utime(source, (stamp, stamp))
+    os.utime(repo / ".git/index", (stamp, stamp))
+    if capture(repo)["file_count"] != 1:
+        raise AssertionError("racily clean same-size edit was captured as clean")
 
 
 def write_probe(path: Path, marker: Path) -> None:
@@ -410,6 +444,370 @@ def validate(
         )
 
 
+def run_validator(artifacts: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return run(
+        [sys.executable, "-B", str(SKILL_DIR / "scripts/validate_report.py"), *args],
+        artifacts,
+        check=False,
+    )
+
+
+def scaffold_checks(
+    artifacts: Path, valid: JsonObject, before: JsonObject, after: JsonObject
+) -> None:
+    """The scaffold replaces hand-typed hashes and paths, so it must derive them
+    exactly, keep authored work, carry only frozen intent, and never validate
+    while a placeholder remains."""
+    baseline_path = artifacts / "scaffold-baseline.json"
+    current_path = artifacts / "scaffold-current.json"
+    baseline_path.write_text(json.dumps(before), encoding="utf-8")
+    current_path.write_text(json.dumps(after), encoding="utf-8")
+    bundles = ["--baseline", str(baseline_path), "--current", str(current_path)]
+
+    def write_scaffold(
+        path: Path, *extra: str, expected: int = 0
+    ) -> subprocess.CompletedProcess[str]:
+        result = run_validator(artifacts, "--scaffold", *extra, str(path))
+        if result.returncode != expected:
+            raise AssertionError(
+                f"scaffold {path.name}: expected {expected}, got {result.returncode}\n"
+                f"{result.stdout}{result.stderr}"
+            )
+        return result
+
+    fresh_path = artifacts / "scaffold-fresh.json"
+    write_scaffold(fresh_path, *bundles)
+    fresh = json.loads(fresh_path.read_text(encoding="utf-8"))
+    if fresh["target"] != target(before, after) or [
+        item["path"] for item in fresh["file_coverage"]
+    ] != delta_paths(before, after):
+        raise AssertionError("scaffold did not derive target and the exact delta")
+    if any(item["reason"] for item in fresh["file_coverage"]):
+        raise AssertionError("scaffold invented file_coverage reasons")
+    validate(artifacts, "scaffold-untouched", fresh, before, after, expected=1)
+
+    early_path = artifacts / "scaffold-baseline-only.json"
+    write_scaffold(early_path, "--baseline", str(baseline_path))
+    early = json.loads(early_path.read_text(encoding="utf-8"))
+    if early["target"] != target(before, before) or early["file_coverage"]:
+        raise AssertionError("baseline-only scaffold must target the baseline alone")
+
+    # Step 5 refresh of a step 1 scaffold: same baseline, new current capture.
+    merged_path = artifacts / "scaffold-merged.json"
+    authored = {
+        key: deepcopy(value)
+        for key, value in valid.items()
+        if key not in {"schema_version", "workflow"}
+    }
+    authored["target"] = target(before, before)
+    authored["file_coverage"] = valid["file_coverage"] + [
+        {"path": "no-longer-changed.txt", "reason": "stale entry"}
+    ]
+    merged_path.write_text(json.dumps(authored), encoding="utf-8")
+    write_scaffold(merged_path, *bundles)
+    merged = json.loads(merged_path.read_text(encoding="utf-8"))
+    if merged != valid:
+        raise AssertionError("scaffold refresh lost authored fields or kept stale paths")
+    validate(artifacts, "scaffold-merged", merged, before, after, expected=0)
+
+    # A report left by an earlier iteration (another baseline) must never absorb
+    # a new baseline: its evidence, statuses, and cycle would pass as fresh.
+    stale_path = artifacts / "scaffold-stale-baseline.json"
+    stale_report = deepcopy(valid)
+    stale_report["target"] = target(after, after)
+    stale_path.write_text(json.dumps(stale_report), encoding="utf-8")
+    refused = write_scaffold(
+        stale_path, "--baseline", str(baseline_path), expected=2
+    )
+    if json.loads(stale_path.read_text(encoding="utf-8")) != stale_report:
+        raise AssertionError("scaffold merged a report from another baseline")
+    # A parent may already cite that report, so the recovery the refusal names
+    # first must leave it in place: a new report path carried with --from.
+    if "scaffold a new report path with --from REPORT" not in refused.stderr:
+        raise AssertionError(f"stale-baseline refusal lacks the new-path recovery: {refused.stderr}")
+
+    prior_path = artifacts / "scaffold-prior.json"
+    prior_path.write_text(json.dumps(valid), encoding="utf-8")
+    carried_path = artifacts / "scaffold-carried.json"
+    write_scaffold(carried_path, "--from", str(prior_path), *bundles)
+    carried = json.loads(carried_path.read_text(encoding="utf-8"))
+    if (
+        carried["intent"] != valid["intent"]
+        or carried["scope"]["cycle"] != valid["scope"]["cycle"] + 1
+        or carried["scope"]["current_owned_paths"]
+        != valid["scope"]["current_owned_paths"]
+    ):
+        raise AssertionError("--from must carry intent and ownership and bump cycle")
+    if carried["evidence"][0]["status"] != "PASS|FAIL|NOT_RUN" or "|" not in str(
+        carried["decision"]["result"]
+    ):
+        raise AssertionError("--from must never carry evidence or a decision")
+    if WORKFLOW == "bugfix" and (
+        carried["bug"]["root_cause"] != valid["bug"]["root_cause"]
+        or carried["bug"]["root_cause_evidence_ids"]
+    ):
+        raise AssertionError("--from must carry bug text but not its evidence")
+    if WORKFLOW == "feature" and (
+        [item["id"] for item in carried["requirements"]]
+        != [item["id"] for item in valid["requirements"]]
+        or any(item["evidence_ids"] for item in carried["requirements"])
+        or any("|" not in item["status"] for item in carried["requirements"])
+    ):
+        raise AssertionError("--from must carry requirement text, not status or evidence")
+    validate(artifacts, "scaffold-carried", carried, before, after, expected=1)
+    write_scaffold(prior_path, "--from", str(prior_path), *bundles, expected=2)
+    if json.loads(prior_path.read_text(encoding="utf-8")) != valid:
+        raise AssertionError("--from onto itself must not rewrite the prior report")
+
+    wrong_path = artifacts / "scaffold-wrong-workflow.json"
+    wrong_path.write_text(json.dumps({**valid, "workflow": "other"}), encoding="utf-8")
+    write_scaffold(
+        artifacts / "scaffold-unused.json", "--from", str(wrong_path), *bundles, expected=2
+    )
+    corrupt_path = artifacts / "scaffold-corrupt.json"
+    corrupt_path.write_text("{not json", encoding="utf-8")
+    write_scaffold(corrupt_path, *bundles, expected=2)
+    if corrupt_path.read_text(encoding="utf-8") != "{not json":
+        raise AssertionError("scaffold overwrote an unreadable existing report")
+
+
+def gate_and_reuse_checks(
+    artifacts: Path, valid: JsonObject, before: JsonObject, after: JsonObject
+) -> None:
+    """Parent-owned gates and reused evidence skip work, so each is accepted only
+    under its exact mechanical condition."""
+    parent_owned = deepcopy(valid)
+    parent_owned["gates"].append(
+        {
+            "name": "code-review",
+            "mandatory": True,
+            "status": "NOT_APPLICABLE",
+            "evidence_ids": [],
+            "reason": "owned by parent phase",
+        }
+    )
+    # Only implementation children hand review and coverage to the parent;
+    # a simplification cannot skip a mandatory gate this way.
+    validate(
+        artifacts,
+        "parent-owned-gate",
+        parent_owned,
+        before,
+        after,
+        expected=1 if WORKFLOW == "simplification" else 0,
+    )
+    skipped_mandatory = deepcopy(parent_owned)
+    skipped_mandatory["gates"][-1]["reason"] = "not needed"
+    validate(
+        artifacts, "skipped-mandatory-gate", skipped_mandatory, before, after, expected=1
+    )
+    # The parent takes over only a gate that never ran here: a mandatory gate
+    # that FAILED or was NOT_RUN still blocks, whatever its reason says.
+    for status in ("FAIL", "NOT_RUN"):
+        ran_owned = deepcopy(parent_owned)
+        ran_owned["gates"][-1]["status"] = status
+        validate(
+            artifacts, f"parent-owned-{status.lower()}-gate", ran_owned, before, after, expected=1
+        )
+    # Only review, coverage, and browser-proof gates move to the parent; the
+    # child's own proof gate can never be handed off.
+    core_gate = deepcopy(valid)
+    core_gate["gates"][0].update(
+        {
+            "mandatory": True,
+            "status": "NOT_APPLICABLE",
+            "evidence_ids": [],
+            "reason": "owned by parent phase",
+        }
+    )
+    validate(artifacts, "parent-owned-core-gate", core_gate, before, after, expected=1)
+
+    def reuse_report(
+        name: str, prior: JsonObject, report: JsonObject, reused_id: str = "E_GREEN"
+    ) -> JsonObject:
+        prior_path = artifacts / f"{name}-prior.json"
+        prior_path.write_text(json.dumps(prior), encoding="utf-8")
+        report = deepcopy(report)
+        report["evidence"].append(
+            {
+                "id": "E_REUSED",
+                "status": "PASS",
+                "classification": "TARGET",
+                "detail": "Pre-edit checks passed in the prior phase",
+                "reused_from": str(prior_path),
+                "reused_id": reused_id,
+            }
+        )
+        return report
+
+    # A completed report whose final state is exactly this baseline and which
+    # cites E_GREEN as gate and scenario proof of that state.
+    matching = deepcopy(valid)
+    matching["target"] = target(before, before)
+    no_delta = deepcopy(valid)
+    no_delta["target"] = target(before, before)
+    no_delta["file_coverage"] = []
+    if WORKFLOW == "simplification":
+        no_delta["candidates"] = [
+            {
+                "opportunity": "Inline a helper",
+                "status": "SKIPPED",
+                "reason": "Subjective polish",
+            }
+        ]
+        no_delta["decision"] = {"result": "NO_CHANGE", "remaining": []}
+    validate(artifacts, "no-delta-honest", no_delta, before, before, expected=0)
+
+    if WORKFLOW != "simplification":
+        # Implementation children always run their own proof.
+        validate(
+            artifacts,
+            "reuse-outside-simplification",
+            reuse_report("reuse-outside", matching, valid),
+            before,
+            after,
+            expected=1,
+        )
+        return
+
+    implementation = deepcopy(matching)
+    implementation["workflow"] = "bugfix"
+    implementation["decision"]["result"] = "COMPLETE"
+    accepted = (
+        ("reuse-matching-baseline", matching),
+        ("reuse-from-implementation", implementation),
+    )
+    for name, prior in accepted:
+        validate(
+            artifacts, name, reuse_report(name, prior, valid), before, after, expected=0
+        )
+
+    # Identical state (no delta): reused proof still proves the current state.
+    identical = reuse_report("reuse-identical-state", matching, no_delta)
+    identical["behavior_proof"]["evidence_ids"] = ["E_REUSED"]
+    identical["scenarios"][0]["evidence_ids"] = ["E_REUSED"]
+    validate(
+        artifacts, "reuse-identical-state-proof", identical, before, before, expected=0
+    )
+
+    # After an edit, reused evidence records only the baseline: every slot that
+    # proves the current state must cite fresh evidence.
+    post_edit_slots = {
+        "behavior": lambda r: r["behavior_proof"],
+        "scenario": lambda r: r["scenarios"][0],
+        "gate": lambda r: r["gates"][0],
+        "candidate": lambda r: r["candidates"][0],
+    }
+    for slot, locate in post_edit_slots.items():
+        cited = reuse_report(f"reuse-post-edit-{slot}", matching, valid)
+        locate(cited)["evidence_ids"] = ["E_REUSED"]
+        validate(
+            artifacts,
+            f"reuse-cited-as-post-edit-{slot}",
+            cited,
+            before,
+            after,
+            expected=1,
+        )
+
+    stub = {
+        "workflow": "bugfix",
+        "target": {
+            "current_head_sha": before["head_sha"],
+            "current_fingerprint": before["fingerprint"],
+        },
+        "decision": {"result": "COMPLETE", "remaining": []},
+    }
+    other_workflow = deepcopy(matching)
+    other_workflow["workflow"] = "refinement"
+    other_workflow["decision"]["result"] = "HIGH_CONFIDENCE"
+    stale = deepcopy(matching)
+    stale["target"]["current_fingerprint"] = "0" * 64
+    other_paths = deepcopy(matching)
+    other_paths["target"]["paths"] = ["elsewhere"]
+    unfinished = deepcopy(matching)
+    unfinished["decision"] = {"result": "BLOCKED", "remaining": ["x"]}
+    chained = deepcopy(matching)
+    next(item for item in chained["evidence"] if item["id"] == "E_GREEN")[
+        "reused_from"
+    ] = str(artifacts / "earlier-report.json")
+    no_schema = deepcopy(matching)
+    del no_schema["schema_version"]
+    # The validator does not re-validate the prior, so a prior that still cites
+    # a failed check as PASS gate/scenario proof must not lend it as a pass.
+    source_failed = deepcopy(matching)
+    next(item for item in source_failed["evidence"] if item["id"] == "E_GREEN")[
+        "status"
+    ] = "FAIL"
+    rejected = [
+        ("reuse-from-stub", stub, "E_GREEN"),
+        ("reuse-other-workflow", other_workflow, "E_GREEN"),
+        ("reuse-stale-state", stale, "E_GREEN"),
+        ("reuse-other-paths", other_paths, "E_GREEN"),
+        ("reuse-incomplete-prior", unfinished, "E_GREEN"),
+        ("reuse-unknown-id", matching, "E_MISSING"),
+        # E_REQ passed but the prior never cited it as proof of its final state.
+        ("reuse-uncited-id", matching, "E_REQ"),
+        ("reuse-chained", chained, "E_GREEN"),
+        ("reuse-prior-no-schema", no_schema, "E_GREEN"),
+        ("reuse-source-not-pass", source_failed, "E_GREEN"),
+    ]
+    for name, prior, reused_id in rejected:
+        validate(
+            artifacts,
+            name,
+            reuse_report(name, prior, valid, reused_id),
+            before,
+            after,
+            expected=1,
+        )
+    not_pass = reuse_report("reuse-entry-not-pass", matching, valid)
+    next(item for item in not_pass["evidence"] if item["id"] == "E_REUSED")[
+        "status"
+    ] = "NOT_RUN"
+    validate(artifacts, "reuse-entry-not-pass", not_pass, before, after, expected=1)
+    self_citation = deepcopy(no_delta)
+    self_citation["evidence"].append(
+        {
+            "id": "E_SELF",
+            "status": "PASS",
+            "classification": "TARGET",
+            "detail": "Circular reuse",
+            "reused_from": str(artifacts / "reuse-self-citation-report.json"),
+            "reused_id": "E_GREEN",
+        }
+    )
+    validate(
+        artifacts, "reuse-self-citation", self_citation, before, before, expected=1
+    )
+
+    # A simplification claim needs both an applied candidate and a real change.
+    applied_without_delta = deepcopy(no_delta)
+    applied_without_delta["candidates"] = deepcopy(valid["candidates"])
+    applied_without_delta["decision"] = {
+        "result": "SIMPLEST_DEFENSIBLE",
+        "remaining": [],
+    }
+    validate(
+        artifacts,
+        "simplest-without-delta",
+        applied_without_delta,
+        before,
+        before,
+        expected=1,
+    )
+    delta_without_applied = deepcopy(valid)
+    delta_without_applied["candidates"] = deepcopy(no_delta["candidates"])
+    validate(
+        artifacts,
+        "simplest-without-applied",
+        delta_without_applied,
+        before,
+        after,
+        expected=1,
+    )
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix=f"{WORKFLOW}-harness-") as raw:
         root = Path(raw)
@@ -428,6 +826,7 @@ def main() -> int:
             (repo / "app.txt").write_text("wrapper\noriginal\n", encoding="utf-8")
 
         security_checks(repo, artifacts)
+        racy_index_check(root)
 
         status_before = git(repo, "status", "--porcelain=v1", "-z")
         index_before = file_hash(repo / ".git/index")
@@ -655,6 +1054,9 @@ def main() -> int:
             expected=1,
         )
 
+        scaffold_checks(artifacts, valid, baseline, current)
+        gate_and_reuse_checks(artifacts, valid, baseline, current)
+
         (repo / "unrelated.txt").write_text(
             "agent changed user work\n", encoding="utf-8"
         )
@@ -674,7 +1076,8 @@ def main() -> int:
         "invariants, unique requirement IDs, refinement read-only scope, planned "
         "verification, scope drift, missing proof, contradictory completion, Git "
         "isolation, counterfactual proof, dirty-work preservation, unauthorized "
-        "external action"
+        "external action, capture summary, scaffold and stale-baseline refusal, "
+        "parent-owned gates, baseline-only evidence reuse"
     )
     return 0
 

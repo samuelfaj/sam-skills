@@ -50,6 +50,8 @@ REQUIRED_GATES = (
     "failure-path-proof",
     "accessibility-announcement",
 )
+# Recomputed from the numbers `after` reports, so they rest on its TARGET run.
+LATENCY_GATES = {"honest-feedback", "real-latency-non-regression"}
 PROGRESS_SIGNALS = {"REAL", "SYNTHETIC", "NONE"}
 PROGRESS_PRESENTATIONS = {"DETERMINATE", "INDETERMINATE", "NONE"}
 
@@ -187,6 +189,7 @@ def validate_metrics(
     evidence: dict[str, JsonObject],
     errors: list[str],
     *,
+    classification: str,
     enforce_budget: bool = True,
 ) -> dict[str, int]:
     item = mapping(block, label, errors)
@@ -200,7 +203,7 @@ def validate_metrics(
             f"{label}.samples is {samples}; timing claims need at least {MIN_SAMPLES} "
             "samples to survive wall-clock noise"
         )
-    cited(
+    ids = cited(
         item.get("evidence_ids"),
         f"{label}.evidence_ids",
         evidence,
@@ -208,6 +211,13 @@ def validate_metrics(
         require_pass=True,
         allow_empty=False,
     )
+    # A before/after pair needs a BASELINE and a repeat-verified TARGET run: one
+    # measurement (or an overwritten receipt) cannot stand in for both.
+    if ids and not any(
+        evidence.get(evidence_id, {}).get("classification") == classification
+        for evidence_id in ids
+    ):
+        errors.append(f"{label}.evidence_ids must cite {classification} evidence")
     errors.extend(
         budget_errors(
             label,
@@ -374,10 +384,15 @@ def validate_interactions(
             f"{interaction_id}.baseline",
             evidence,
             errors,
+            classification="BASELINE",
             enforce_budget=False,
         )
         after = validate_metrics(
-            item.get("after"), f"{interaction_id}.after", evidence, errors
+            item.get("after"),
+            f"{interaction_id}.after",
+            evidence,
+            errors,
+            classification="TARGET",
         )
         increase = after["settled_ms"] - baseline["settled_ms"]
         allowed = regression_budget_ms(baseline["settled_ms"])
@@ -426,7 +441,7 @@ def validate_gates(
         if status not in {"PASS", "FAIL", "NOT_RUN", "NOT_APPLICABLE"}:
             errors.append(f"gates[{index}].status is invalid")
         if status == "PASS":
-            cited(
+            ids = cited(
                 item.get("evidence_ids"),
                 f"gates[{index}].evidence_ids",
                 evidence,
@@ -434,6 +449,11 @@ def validate_gates(
                 require_pass=True,
                 allow_empty=False,
             )
+            if name in LATENCY_GATES and not any(
+                evidence.get(evidence_id, {}).get("classification") == "TARGET"
+                for evidence_id in ids
+            ):
+                errors.append(f"gate {name} must cite the TARGET measurement behind after")
         else:
             nonempty_text(item.get("reason"), f"gates[{index}].reason", errors)
         if boolean(item.get("mandatory"), f"gates[{index}].mandatory", errors):

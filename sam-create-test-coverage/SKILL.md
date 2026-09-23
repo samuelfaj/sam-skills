@@ -1,224 +1,100 @@
 ---
 name: sam-create-test-coverage
-description: "Design, implement, and validate risk-based regression coverage across unit, component, integration, API/contract, and browser E2E layers, selecting the smallest reliable proof for each changed behavior. Use when asked to add tests, prove a bug fix, increase confidence or coverage, map acceptance criteria, or close backend or frontend test gaps."
+description: "Add risk-based regression tests across unit, component, integration, API/contract, and E2E layers with the smallest reliable proof per behavior. Use when asked to add tests, prove a bug fix, raise coverage or confidence, map acceptance criteria, or close test gaps."
 ---
 
 # Sam Create Test Coverage
 
-Create the smallest reliable set of tests that proves the changed contract.
-Remain stack-, host-, provider-, tool-, and model-agnostic.
-
 ## Non-Negotiable Contract
 
-- Honor the exact repository, path, branch, commit, range, and criteria supplied.
-- Preserve existing work. Do not reset, checkout, stash, clean, rebase, or rewrite history.
-- Freeze base SHA, head SHA, bundle fingerprint, intent, no-go scope, environment
-  identity, and cleanup ledger before editing.
-- Inspect changed scripts, hooks, test runners, package commands, containers, and
-  CI definitions before executing them.
-- Fail closed when a real-data E2E target is unknown or is not a verified local,
-  test, or development environment.
-- Keep artifacts local by default. Publish only when the user or a parent
-  workflow (for example `sam-work`) explicitly requests it and the exact remote
-  target is resolved. Parent authorization is enough; do not re-ask.
-- Never expose secrets, credentials, private data, or sensitive paths in bundles,
-  commands, artifacts, reports, or returned evidence.
-- Reject `.only`, `.skip`, retries, broad timeouts, snapshot refreshes, assertion
-  weakening, and mocks that remove the contract under test.
-- Never report a command result that did not come from `scripts/run_checked.py`.
-  A status without a verifiable receipt is not evidence.
-- Limit production changes to the in-scope correction or smallest test seam
-  required by an accepted scenario.
-- Record and clean every process, container, port, record, override, and artifact.
+- Honor the exact repository, path, branch, commit, range, and criteria. Preserve existing work: never reset, checkout, restore, stash, clean, rebase, or rewrite history.
+- Inspect changed scripts, hooks, runners, package commands, containers, and CI definitions before executing them.
+- Fail closed: real-data E2E only on a verified `local`, `test`, or `dev` environment; never infer a safe database or tenant from a name; never automate production credentials, customer tenants, or private customer data.
+- Never expose secrets, credentials, private data, or sensitive paths in bundles, commands, artifacts, reports, or returned evidence.
+- Keep artifacts local; publish only on an explicit user or parent-workflow request with a resolved remote target.
+- Reject `.only`, `.skip`, retries, broad timeouts, snapshot refreshes, assertion weakening, and mocks that remove the contract under test.
+- Report only results backed by a `scripts/run_checked.py` receipt; never edit a receipt or its log.
+- Change production code only for the in-scope correction or the smallest test seam a scenario needs. Fix in-scope defects at their owning boundary, never by changing expectations; record unrelated failures separately.
+- Register every process, container, port, record, override, environment file, log, and artifact in the cleanup ledger when created, and clean it.
+- Under a parent workflow never ask: use the frozen target/environment or return `BLOCKED` with receipts. Standalone, ask one question only when the target or a safety-critical environment cannot be discovered.
 
-## Resource Routing
+## Run Rules
 
-- Read [references/layer-selection.md](references/layer-selection.md) when mapping
-  scenarios to test layers.
-- Read [references/scenario-and-risk-policy.md](references/scenario-and-risk-policy.md)
-  while building the coverage ledger.
-- Read [references/environment-and-data-safety.md](references/environment-and-data-safety.md)
-  before starting services or using persistent data.
-- Read [references/regression-proof.md](references/regression-proof.md) before
-  claiming a new test protects a regression.
-- Read [references/output-contract.md](references/output-contract.md) before
-  drafting and validating the report.
+- Use literal absolute paths: `<repo>` the repository root; `<skill>` this directory; `<work>` the parent's phase dir when given, else one `mktemp -d` outside the repository, reused on re-invocation; `<receipts>` is `<work>/receipts-<n>`; `<previous>` this skill's prior report (parent-named, else `<work>/report.json`), if any.
+- Do not re-read a file already read in this context unless context was compacted or you cannot quote the section you need.
 
-## 1. Resolve and Freeze the Change
+| Reference | Read when |
+| --- | --- |
+| [references/output-contract.md](references/output-contract.md) | step 8 or an early `BLOCKED` exit; before step 1 if `<previous>` exists (§ Re-invocation) |
 
-Set the skill directory to the directory containing this file. Build a local
-bundle without fetching or modifying refs:
+## 1. Resolve and Freeze
 
 ```bash
-SAM_COVERAGE_DIR="<absolute directory containing this SKILL.md>"
-WORK_TMP="$(mktemp -d)"
-python3 "$SAM_COVERAGE_DIR/scripts/build_test_impact.py" \
-  --repo "$PWD" --environment-kind unknown \
-  --environment-id "unverified" > "$WORK_TMP/baseline-bundle.json"
+python3 <skill>/scripts/build_test_impact.py --repo <repo> --environment-kind unknown --environment-id unverified --out <work>/baseline
 ```
 
-Pass `--base`, `--head`, and repeated `--path` arguments when specified. Rebuild
-after verifying a real-data environment.
+Add `--base`, `--head`, and repeated `--path` when given. Read only the one-line stderr summary and `bundle.patch`, never `bundle.json`. Before editing, freeze: target mode, refs, SHAs, fingerprint, changed files; intended behavior, invariants, acceptance criteria, no-go scope; owning boundaries, affected contracts, command definitions; environment kind, identity, UI/API endpoints, database/tenant, proof.
 
-Freeze:
+## 2. Behavior and Risk Ledger
 
-- Target mode, base/head refs and SHAs, bundle fingerprint, and changed files.
-- Intended behavior, invariants, acceptance criteria, and explicit no-go scope.
-- Owning boundaries, affected contracts, and command definitions.
-- Environment kind, identity, endpoints, database/tenant, and proof.
-- Cleanup ledger initialized for all resources the run may create.
+IDs look like `AC-001`: `AC` criterion, `B` behavior, `R` risk, `S` scenario, `T` test, `CMD` command, `ART` evidence, `CL` cleanup.
 
-Under a parent workflow (for example `sam-work`), never ask—use the frozen
-target/environment or return `BLOCKED` with receipts. When running standalone,
-ask one concise question only when the target or safety-critical environment
-cannot be discovered. Never infer a safe database or tenant from a name alone.
+Risk: `CRITICAL` authorization, destructive data, money, secrets, irreversible work; `HIGH` public contract, persistence, cross-service wiring, concurrency, primary flow; `MEDIUM` realistic validation, recovery, compatibility, accessibility; `LOW` contained local behavior. A bundle tagged `security`, `data`, `contract`, or `concurrency` needs a `HIGH`/`CRITICAL` risk.
 
-## 2. Build the Behavior and Risk Ledger
+Cover applicable success, negative, boundary, permission, validation, state-transition, persistence, cache, concurrency, error, recovery, compatibility, and accessibility cases; omit inapplicable classes with a reason. Use equivalence classes from reachable branches; add null, missing, empty, malformed, sentinel, add/update/remove/preserve variants only when they change the contract.
 
-Use stable IDs:
+Scenario status: `PLANNED`; `AUTOMATED`; `MANUAL_PROOF` only when automation is less safe or reliable; `REDUNDANT` with the equivalent scenario ID and why; `NOT_COVERED` with exact blocker, residual risk, next action.
 
-- `AC-###`: acceptance criterion.
-- `B-###`: changed behavior.
-- `R-###`: reachable risk.
-- `S-###`: scenario.
-- `T-###`: test.
-- `CMD-###`: validation command and result.
-- `ART-###`: local or explicitly published evidence.
-- `CL-###`: cleanup resource.
+## 3. Smallest Reliable Layer
 
-Link criteria to behaviors, risks, scenarios, tests, commands, results, and
-artifacts. Cover applicable success, negative, boundary, permission, validation,
-state-transition, persistence, cache, concurrency, error, recovery, compatibility,
-and accessibility cases. Omit inapplicable classes with a reason.
+Pick the lowest layer that proves the real contract without replacing its owner: `UNIT` pure rules, parsing, formatting, serializers, validators, reducers, state transitions (never mock the unit under test); `COMPONENT` isolated rendering, form state, interaction, accessibility semantics, client serialization (no network or persistence); `INTEGRATION` coordination of service/repository, storage, cache invalidation, transactions, queue consumers, modules; `API_CONTRACT` exact method, path, query, headers, auth, role, payload, validation, status, body, compatibility on the client's route; `E2E` critical journeys, navigation/auth wiring, browser-only behavior, frontend/backend integration.
 
-Assign each scenario `PLANNED`, `AUTOMATED`, `MANUAL_PROOF`, `REDUNDANT`, or
-`NOT_COVERED`. Link `REDUNDANT` to an equivalent scenario. Give `NOT_COVERED` an
-exact blocker, residual risk, and next action.
+Never default to E2E or repeat a branch a lower layer already proves; use several layers only for different failure boundaries. Coverage percentage is diagnostic, never sufficient.
 
-## 3. Select the Smallest Reliable Layer
+Delegation: under a parent that runs `sam-create-playwright-tests` on the same head, record browser journeys as `PLANNED` `E2E` scenarios, prove lower layers here, and set `real_system_proof` `NOT_APPLICABLE` with `reason` exactly `delegated to playwright phase`.
 
-Apply [references/layer-selection.md](references/layer-selection.md). Prefer:
+## 4. Counterfactual Regression Proof
 
-- Unit for pure rules, mapping, parsing, validation, and state transitions.
-- Component for isolated rendering, interaction, and accessibility state.
-- Integration for module, storage, cache, queue, or service coordination.
-- API/contract for method, route, auth, payload, status, headers, and response.
-- E2E for critical real-browser journeys and frontend/backend wiring.
+Each new or changed test gets one status: `RED_GREEN` (fails on a safely available defective state, passes on the corrected one); `MUTATION` (one focused reversible change, touching nothing unrelated, fails it for the expected reason); `CONTRACT` (asserts an authoritative local schema, invariant, route, type, or requirement boundary); `NOT_PROVEN` (unsafe or unavailable; reason and residual risk). `HIGH`/`CRITICAL`-linked tests need `RED_GREEN` or `MUTATION`.
 
-Do not default every case to E2E. Use multiple layers only when each proves a
-different boundary. Record why the selected layer is sufficient.
-
-## 4. Plan Counterfactual Regression Proof
-
-Give every new or changed test one proof status:
-
-- `RED_GREEN`: safely observed failure before correction and pass after it.
-- `MUTATION`: focused reversible mutation made the test fail.
-- `CONTRACT`: authoritative boundary plus targeted assertion proves discrimination.
-- `NOT_PROVEN`: proof was unsafe or unavailable, with reason and residual risk.
-
-**A test linked to a `HIGH` or `CRITICAL` risk requires `RED_GREEN` or
-`MUTATION`.** `CONTRACT` is assertable without running anything, so it cannot
-close high risk, and `NOT_PROVEN` never can.
-
-Risk level is not a free choice. When the builder tags the diff `security`,
-`data`, `contract`, or `concurrency`, at least one declared risk must be `HIGH`
-or `CRITICAL`; the validator rejects a report that downgrades a tagged diff.
-
-Never mutate the user's checkout solely to manufacture proof. Use an isolated
-temporary copy when safe. Do not claim full confidence with any proof marked
-`NOT_PROVEN`.
+Record the exact command and observed failure for red/green and mutation; never mutate the user's checkout to manufacture proof (use an isolated copy when safe). Reject tests that pass on defective and corrected code alike, assert only fixture literals, or check mock calls while the user-visible contract stays untested.
 
 ## 5. Implement Without Gaming Coverage
 
-Use repository frameworks, fixtures, factories, helpers, selectors, and style.
-Test observable contracts instead of internal calls when practical. Avoid shared
-mutable state, sleeps, execution-order dependencies, hardcoded-literal assertions,
-and mocks that bypass ownership boundaries.
+Before changing any test, capture the runner's discovery listing as `CMD-900` (`--classification ENVIRONMENT`, step-7 form) unless `<previous>` or an earlier `<receipts>` has one. Use repository frameworks, fixtures, factories, helpers, selectors, and style; test observable contracts over internals; avoid shared mutable state, sleeps, and order dependencies.
 
-Before running the changed suite, rerun the exact builder command with the same
-target arguments and verified environment into `$WORK_TMP/bundle.json`. Preserve
-`baseline-bundle.json`; the final bundle must include the newly changed tests.
-Then audit that final patch:
+Then rerun the step-1 builder (same target arguments, verified environment) with `--out <work>/final`; the final bundle must include the new tests. Audit it; findings block until disproven from the exact diff:
 
 ```bash
-python3 "$SAM_COVERAGE_DIR/scripts/audit_test_diff.py" \
-  "$WORK_TMP/bundle.json" > "$WORK_TMP/test-diff-audit.json"
+python3 <skill>/scripts/audit_test_diff.py <work>/final/bundle.json > <work>/test-diff-audit.json
 ```
 
-Treat audit findings as blocking until disproven from the exact diff. Inspect all
-changed command definitions before execution.
+## 6. Environment and Real System
 
-## 6. Prove the Real System When Required
+Before starting services or touching persistent data, prove the step-1 environment fields with evidence; aliases, tunnels, proxies, and copied snapshots stay unknown until proven. Prefer existing lockfiles and repository commands, temporary overrides outside the repository, and unused ports; confirm every client points to the frozen backend.
 
-For browser-facing behavior, start the real UI linked to the intended backend
-using safe repository-supported workflows. Confirm the browser uses the frozen
-environment. Use isolated deterministic data.
+For browser-facing behavior not delegated, start the real UI linked to the intended backend with isolated deterministic data. Mocked pages, request-only checks, and component shells are `FALLBACK`, allowed only after recorded serious direct, container, port/config, and linking attempts with exact blocker and residual risk; never call them real E2E.
 
-Treat mocked pages, request-only checks, and component shells as fallback proof
-only after recording serious direct, container, port/config, and linking attempts.
-State the exact blocker and residual risk. Never label fallback proof as real E2E.
-
-## 7. Run and Classify Validation
-
-Every reported result must come from an execution receipt. A typed `PASS` is not
-a result. Run each command through the wrapper:
+## 7. Run and Classify
 
 ```bash
-python3 "$SAM_COVERAGE_DIR/scripts/run_checked.py" \
-  --id CMD-001 --receipts-dir "$WORK_TMP/receipts" \
-  --classification TARGET --repeat 3 -- <command and arguments>
+python3 <skill>/scripts/run_checked.py --id CMD-001 --receipts-dir <receipts> --classification TARGET --repeat 3 -- <command and arguments>
 ```
 
-- Run new targeted tests, affected suites, relevant type/lint checks, broader
-  suites proportional to risk, then required real-system proof.
-- Classify each command `TARGET`, `BASELINE`, `ENVIRONMENT`, or `EXTERNAL`, and
-  record its status as `PASS`, `FAIL`, or `NOT_RUN` exactly as the receipt states.
-- **`TARGET` commands require `--repeat` of at least 2** (prefer 3). Differing
-  exit codes across runs mark the command `FLAKY`; a flaky green is not proof and
-  blocks `FULL`. Never "fix" flake by retrying until green—diagnose it or report
-  the residual risk.
-- Copy `commands[].command` from the receipt argv and set `commands[].receipt` to
-  the receipt path. `NOT_RUN` carries a reason and no receipt.
-- Never edit a receipt or its log. The validator recomputes both hashes.
-
-Prove that each new test actually runs. A test file that exists but is never
-collected proves nothing, so capture the runner's own discovery before and after
-adding the test:
-
-```bash
-python3 "$SAM_COVERAGE_DIR/scripts/run_checked.py" \
-  --id CMD-900 --receipts-dir "$WORK_TMP/receipts" \
-  --classification ENVIRONMENT -- <discovery command>   # before the new test
-```
-
-Record `test_wiring` with both receipts and the exact new test names. Each name
-must be absent from the before-log and present in the after-log.
-
-Do not hide a product defect by changing expectations. Fix only in-scope product
-behavior at its owning boundary. Record unrelated failures separately.
+- Run new targeted tests, affected suites, relevant type/lint checks, broader suites proportional to risk, then required real-system proof.
+- Classify `TARGET`, `BASELINE`, `ENVIRONMENT`, or `EXTERNAL`.
+- `TARGET` needs `--repeat` ≥ 2 (prefer 3); differing exit codes, or a fail then pass with nothing fixed, mean `FLAKY`. Never re-run an id with a `FAIL` receipt: fix the cause (rebuild the final bundle if files changed) and re-run every command but `CMD-900` in the next `<receipts>`, or report the residual risk.
+- After the tests exist, capture discovery again as `CMD-901`; read listings from `<receipts>/<id>.run1.log`.
 
 ## 8. Validate, Clean, and Return
 
-Draft the structured report from
-[references/output-contract.md](references/output-contract.md), then run:
+Scaffold, fill the empty fields and decision (never retype derived ones), and validate. Omit `--wiring` when no test was added (`test_wiring` `NOT_APPLICABLE` with a reason).
 
 ```bash
-python3 "$SAM_COVERAGE_DIR/scripts/validate_coverage_report.py" \
-  --baseline "$WORK_TMP/baseline-bundle.json" \
-  --bundle "$WORK_TMP/bundle.json" "$WORK_TMP/report.json"
+python3 <skill>/scripts/scaffold_report.py --baseline <work>/baseline/bundle.json --bundle <work>/final/bundle.json --receipts-dir <receipts> --wiring CMD-900 CMD-901 --out <work>/report.json
+python3 <skill>/scripts/validate_coverage_report.py --baseline <work>/baseline/bundle.json --bundle <work>/final/bundle.json <work>/report.json
 ```
 
-The validator re-verifies every execution receipt through
-`scripts/verify_receipts.py`, so it fails when a status disagrees with its
-receipt, a log hash does not recompute, a `TARGET` command ran once, or a claimed
-new test is not discovered by the runner. Retain the report, bundles,
-receipts, and referenced logs at their recorded paths for caller re-validation.
-Mark these as retained evidence in the cleanup ledger. Stop only resources
-created by this run, remove temporary test data and overrides, update the ledger,
-and revalidate. Delete only scratch that no returned evidence references.
+Fix from the validator's error lines (it runs `scripts/verify_receipts.py`) and patch the report in place; do not read validator source or rewrite the whole report.
 
-Return `FULL` only when all required scenarios and commands pass, required
-counterfactual proof exists, real-system proof is honest, the audit passes, and
-cleanup succeeds. Return `PARTIAL` for residual gaps. Return `BLOCKED` for unsafe
-environment, scope, authorization, or execution conditions.
+Mark explicitly requested safe artifacts `RETAINED` with exact path and reason. Stop only resources this run created, remove temporary data and overrides, delete only scratch that no returned evidence references, update the cleanup ledger, and revalidate. Decide by the output-contract gates and return in its § Return format.

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -14,6 +15,7 @@ from typing import Any, Callable
 
 ROOT = Path(__file__).resolve().parent.parent
 VALIDATOR = ROOT / "scripts/validate_council_report.py"
+SCAFFOLD = ROOT / "scripts/scaffold_council_report.py"
 REVIEWERS = [
     "logic",
     "assumptions",
@@ -25,6 +27,8 @@ REVIEWERS = [
 VERIFIERS = ["closure-verifier", "system-verifier", "arbiter"]
 FAST_REVIEWERS = ["frame-evidence", "delivery-failure", "simplification"]
 FAST_VERIFIERS = ["triage-arbiter"]
+HEAD_A = "a" * 40
+HEAD_B = "b" * 40
 CONDITIONAL_SELECTION = {
     "security-privacy": "NOT_APPLICABLE: fixture has no identity boundary.",
     "data-migration": "NOT_APPLICABLE: fixture has no migration.",
@@ -612,6 +616,57 @@ def fast_report() -> dict[str, Any]:
     return report
 
 
+def fast_zero_objection_report() -> dict[str, Any]:
+    """All fast seats clean: nothing to revise, so the triage-arbiter is skipped."""
+    report = fast_report()
+    report["independence"]["verifier_ids"] = []
+    report["independence"]["batch_plan"] = report["independence"]["batch_plan"][:1]
+    report["rounds"][0]["verification"] = []
+    report["rounds"][0]["output_thesis_id"] = "T-001"
+    report["thesis"]["id"] = "T-001"
+    report["decision"]["final_thesis_id"] = "T-001"
+    return report
+
+
+def fast_zero_skip_with_objection() -> dict[str, Any]:
+    report = fast_zero_objection_report()
+    report["rounds"][0]["reviewer_results"][0]["verdict"] = "OBJECTIONS"
+    objection = copy.deepcopy(base_report()["rounds"][0]["objections"][0])
+    objection.update(
+        reviewer_id="frame-evidence",
+        supporting_reviewer_ids=["frame-evidence"],
+        severity="MEDIUM",
+    )
+    report["rounds"][0]["objections"] = [objection]
+    return report
+
+
+def on_head(report: dict[str, Any], head: str = HEAD_A) -> dict[str, Any]:
+    report["packet_head"] = head
+    return report
+
+
+def as_delta(report: dict[str, Any]) -> dict[str, Any]:
+    """Re-review, on a newer head, of the base's final thesis T-002."""
+    report.update(packet_scope="DELTA", base_report="base.json", packet_head=HEAD_B)
+    report["rounds"][0].update(input_thesis_id="T-002", output_thesis_id="T-003")
+    report["thesis"]["id"] = "T-003"
+    report["decision"]["final_thesis_id"] = "T-003"
+    return report
+
+
+def delta_base() -> dict[str, Any]:
+    return on_head(fast_report())
+
+
+def delta_report() -> dict[str, Any]:
+    return as_delta(fast_report())
+
+
+def full_delta_report() -> dict[str, Any]:
+    return as_delta(base_report())
+
+
 def fast_escalation_report() -> dict[str, Any]:
     report = fast_report()
     report["status"] = "ESCALATE_TO_FULL"
@@ -653,13 +708,17 @@ def over_objection_cap_report() -> dict[str, Any]:
     return report
 
 
-def run_validator(report: dict[str, Any]) -> subprocess.CompletedProcess[str]:
+def run_validator(
+    report: dict[str, Any], base: dict[str, Any] | None = None, cwd: Path = ROOT
+) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory(prefix="sam-council-") as temporary:
         path = Path(temporary) / "report.json"
         path.write_text(json.dumps(report), encoding="utf-8")
+        if base is not None:
+            (Path(temporary) / "base.json").write_text(json.dumps(base), encoding="utf-8")
         return subprocess.run(
             [sys.executable, "-B", str(VALIDATOR), str(path)],
-            cwd=ROOT,
+            cwd=cwd,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -674,6 +733,511 @@ def mutate(
     report = copy.deepcopy(source())
     operation(report)
     return report
+
+
+def scaffold(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-B", str(SCAFFOLD), *args],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def write_json(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value), encoding="utf-8")
+
+
+def git(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.name=harness",
+         "-c", "user.email=harness@example.invalid", "-c", "commit.gpgsign=false", *args],
+        text=True, capture_output=True, check=True,
+    ).stdout.strip()
+
+
+def fill_fast(path: Path, output_thesis_id: str, verification: list[Any]) -> None:
+    """Author the judgment fields of an init skeleton from the fast fixture."""
+    report = json.loads(path.read_text(encoding="utf-8"))
+    fixture = fast_report()
+    report["status"] = fixture["status"]
+    report["thesis"] = {**fixture["thesis"], "id": output_thesis_id}
+    report["evidence"] = fixture["evidence"]
+    report["independence"]["conditional_seat_selection"] = CONDITIONAL_SELECTION.copy()
+    report["rounds"][0].update(
+        output_thesis_id=output_thesis_id,
+        reviewer_results=fixture["rounds"][0]["reviewer_results"],
+        verification=verification,
+    )
+    report["decision"].update(confidence=80, rationale="Clean triage.")
+    write_json(path, report)
+
+
+def prefix_only(selection: dict[str, Any]) -> dict[str, str]:
+    """Edit init's seat entries the way the validator's prefix error invites:
+    drop a TODO marker and the unchosen ESCALATE alternative, add no reason."""
+    return {
+        seat: str(value).replace("TODO ", "").replace("ESCALATE|", "")
+        for seat, value in selection.items()
+    }
+
+
+def scaffold_checks() -> tuple[int, list[str]]:
+    """Scaffold output must satisfy the validator's mechanical invariants.
+
+    The agent authors judgment fields only; init/finalize derive constants, seat
+    IDs, minimum batches, and ledgers. Placeholders must fail closed. Reuse must
+    require an identical, genuine, VALID, non-BLOCKED packet on the same clean
+    commit, because seats read cited repository files that change with the head.
+    A DELTA must extend a VALID passing base of the same thesis on an ancestor.
+    """
+    checks: list[tuple[str, bool]] = []
+    with tempfile.TemporaryDirectory(prefix="sam-council-scaffold-") as temporary:
+        root = Path(temporary).resolve()
+        ceiling = os.environ.get("GIT_CEILING_DIRECTORIES")
+        os.environ["GIT_CEILING_DIRECTORIES"] = str(root)
+        try:
+            return _scaffold_checks(root, checks)
+        finally:
+            if ceiling is None:
+                os.environ.pop("GIT_CEILING_DIRECTORIES", None)
+            else:
+                os.environ["GIT_CEILING_DIRECTORIES"] = ceiling
+
+
+def _scaffold_checks(
+    root: Path, checks: list[tuple[str, bool]]
+) -> tuple[int, list[str]]:
+    repo = root / "repo"
+    (repo / "src").mkdir(parents=True)
+    cited = repo / "src/foo.py"
+    cited.write_text("VALUE = 1\n", encoding="utf-8")
+    git(repo, "init", "-q")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "one")
+    head1 = git(repo, "rev-parse", "HEAD")
+    packet = root / "packet.md"
+    original_packet = "T-001 thesis, evidence, src/foo.py:1-1\n"
+    packet.write_text(original_packet, encoding="utf-8")
+    runtime_args = ["--model", "host-default", "--reviewer-effort", "medium", "--arbiter-effort", "high"]
+    fast_args = [
+        "--packet", str(packet), "--profile", "fast", "--provider",
+        "portable-host", "--max-parallel", "2", *runtime_args, "--repo", str(repo),
+    ]
+    run1 = root / "run1/council-report.json"
+    init = scaffold("init", "--out", str(run1), *fast_args)
+    checks.append(("init writes skeleton", init.returncode == 0 and run1.is_file()))
+    if not run1.is_file():
+        return len(checks), [f"init: {init.stderr.strip()}"]
+    report = json.loads(run1.read_text(encoding="utf-8"))
+    checks.append((
+        "init requires runtime facts instead of defaulting them",
+        scaffold("init", "--out", str(root / "no-runtime.json"), *fast_args[:8], *fast_args[-2:])
+        .returncode != 0,
+    ))
+    checks.append((
+        "reuse and DELTA need an explicit --repo",
+        scaffold(
+            "init", "--out", str(root / "no-repo.json"), *fast_args[:-2],
+            "--reuse-dir", str(root),
+        ).returncode != 0,
+    ))
+    checks.append((
+        "init derives the head from a clean repository",
+        report.get("packet_head") == head1 and "packet_fingerprint" in report,
+    ))
+    checks.append((
+        "init constants match fast policy",
+        report["execution_policy"] == fast_report()["execution_policy"]
+        and set(report["independence"]["conditional_seat_selection"])
+        == set(CONDITIONAL_SELECTION),
+    ))
+    checks.append((
+        "unfilled placeholders fail closed",
+        scaffold("finalize", str(run1)).returncode != 0,
+    ))
+    fill_fast(run1, "T-002", fast_report()["rounds"][0]["verification"])
+    final = scaffold("finalize", str(run1))
+    derived = json.loads(run1.read_text(encoding="utf-8"))
+    blind = [b for b in derived["independence"]["batch_plan"] if b["phase"] == "blind"]
+    checks.append((
+        "finalize derives minimum batches and final thesis",
+        final.returncode == 0
+        and len(blind) == 2
+        and derived["independence"]["verifier_ids"] == FAST_VERIFIERS
+        and derived["decision"]["final_thesis_id"] == "T-002",
+    ))
+    # Every specialist needs a system-specific reason; a prefix left as init
+    # wrote it (minus the markers) must not validate as a recorded decision.
+    seats_only = copy.deepcopy(derived)
+    seats_only["independence"]["conditional_seat_selection"] = prefix_only(
+        report["independence"]["conditional_seat_selection"]
+    )
+    write_json(root / "seats-only/council-report.json", seats_only)
+    seats_final = scaffold("finalize", str(root / "seats-only/council-report.json"))
+    checks.append((
+        "fast: conditional seats with only init's prefix edited fail closed",
+        seats_final.returncode != 0
+        and "conditional_seat_selection" in seats_final.stdout + seats_final.stderr,
+    ))
+    checks.append((
+        "validator rejects a typed fingerprint and an unreadable packet",
+        run_validator({**derived, "packet_fingerprint": "0" * 64}).returncode != 0
+        and run_validator({**derived, "packet_path": str(root / "missing.md")}).returncode
+        != 0,
+    ))
+
+    run2 = root / "run2/council-report.json"
+    reuse = scaffold("init", "--out", str(run2), *fast_args, "--reuse-dir", str(root))
+    checks.append((
+        "identical VALID packet is reused",
+        reuse.stdout.startswith(f"REUSE {run1.resolve()}")
+        and "validator: VALID: TRIAGE_PASS" in reuse.stdout
+        and not run2.exists(),
+    ))
+    checks.append((
+        "repo run with --head none or a foreign head fails closed",
+        scaffold("init", "--out", str(run2), *fast_args, "--head", "none").returncode != 0
+        and scaffold("init", "--out", str(run2), *fast_args, "--head", "0" * 40).returncode
+        != 0
+        and not run2.exists(),
+    ))
+    blocked = copy.deepcopy(derived)
+    blocked.update(status="BLOCKED", blockers=["Distinct workers became unavailable."])
+    write_json(root / "blocked/council-report.json", blocked)
+    blocked_valid = run_validator(blocked).returncode == 0
+    not_blocked = scaffold(
+        "init", "--out", str(run2), *fast_args, "--reuse-dir", str(root / "blocked")
+    )
+    checks.append((
+        "VALID BLOCKED report is never reused",
+        blocked_valid and not_blocked.stdout.startswith("INIT "),
+    ))
+    cited.write_text("VALUE = 2\n", encoding="utf-8")
+    dirty_path = root / "dirty/council-report.json"
+    dirty = scaffold("init", "--out", str(dirty_path), *fast_args, "--reuse-dir", str(root))
+    dirty_report = json.loads(dirty_path.read_text(encoding="utf-8")) if dirty_path.is_file() else {}
+    checks.append((
+        "dirty work tree is never reused and records no fingerprint",
+        dirty.stdout.startswith("INIT ")
+        and dirty_report.get("packet_head") == head1
+        and "packet_fingerprint" not in dirty_report,
+    ))
+    cited.write_text("VALUE = 1\n", encoding="utf-8")
+    packet.write_text("T-001 thesis, evidence, changed excerpt\n", encoding="utf-8")
+    run3 = root / "run3/council-report.json"
+    changed = scaffold("init", "--out", str(run3), *fast_args, "--reuse-dir", str(root))
+    checks.append(("changed packet is not reused", changed.stdout.startswith("INIT ")))
+    forged = copy.deepcopy(derived)
+    forged["packet_fingerprint"] = changed.stdout.split("fingerprint=", 1)[-1].strip()
+    forged["packet_path"] = str(root / "forged/packet.md")
+    write_json(root / "forged/council-report.json", forged)
+    (root / "forged/packet.md").write_text(original_packet, encoding="utf-8")
+    run4 = root / "run4/council-report.json"
+    forged_run = scaffold(
+        "init", "--out", str(run4), *fast_args, "--reuse-dir", str(root / "forged")
+    )
+    checks.append((
+        "typed fingerprint without a matching packet is not reused",
+        forged_run.stdout.startswith("INIT "),
+    ))
+
+    packet.write_text(original_packet, encoding="utf-8")
+    cited.write_text("VALUE = 3\n", encoding="utf-8")
+    git(repo, "commit", "-q", "-am", "two")
+    head2 = git(repo, "rev-parse", "HEAD")
+    run5 = root / "run5/council-report.json"
+    moved = scaffold("init", "--out", str(run5), *fast_args, "--reuse-dir", str(root))
+    checks.append((
+        "same packet on a different head is not reused",
+        moved.stdout.startswith("INIT ") and f"head={head2}" in moved.stdout,
+    ))
+
+    delta_path = root / "delta/council-report.json"
+    delta_init = scaffold(
+        "init", "--out", str(delta_path), *fast_args, "--base-report", str(run1)
+    )
+    delta = json.loads(delta_path.read_text(encoding="utf-8")) if delta_path.is_file() else {}
+    linked = (
+        delta_init.returncode == 0
+        and delta.get("packet_scope") == "DELTA"
+        and delta["rounds"][0]["input_thesis_id"] == "T-002"
+        and delta["thesis"]["objective"] == fast_report()["thesis"]["objective"]
+    )
+    if delta_path.is_file():
+        fill_fast(delta_path, "T-002", [])
+    delta_unanchored = scaffold("finalize", str(delta_path))
+    delta_foreign = scaffold("finalize", str(delta_path), "--repo", str(root))
+    delta_final = scaffold("finalize", str(delta_path), "--repo", str(repo))
+    delta_derived = (
+        json.loads(delta_path.read_text(encoding="utf-8")) if delta_path.is_file() else {}
+    )
+    checks.append((
+        "DELTA init links the base thesis and validates on an ancestor head",
+        linked
+        and delta_final.returncode == 0
+        and run_validator(delta_derived, cwd=repo).returncode == 0,
+    ))
+    # scaffold() runs from this skill's directory, a repository that lacks the
+    # temp commits: without --repo the validator's ancestry check would pass
+    # silently there, so finalize must refuse a DELTA without the target repo.
+    unknown_base = root / "unknown-base/council-report.json"
+    write_json(unknown_base, on_head(delta_report(), head2))
+    write_json(unknown_base.parent / "base.json", on_head(fast_report(), "c" * 40))
+    delta_unknown = scaffold("finalize", str(unknown_base), "--repo", str(repo))
+    checks.append((
+        "DELTA finalize needs --repo holding both packet_heads",
+        all(
+            result.returncode != 0 and "--repo" in result.stderr
+            for result in (delta_unanchored, delta_foreign, delta_unknown)
+        ),
+    ))
+    ancestry = root / "ancestry/council-report.json"
+    write_json(ancestry, on_head(delta_report(), head1))
+    write_json(ancestry.parent / "base.json", on_head(fast_report(), head2))
+    not_ancestor = scaffold("finalize", str(ancestry), "--repo", str(repo))
+    chained = scaffold(
+        "init", "--out", str(root / "d3.json"), *fast_args, "--base-report", str(ancestry)
+    )
+    # A reuse candidate for this packet and head whose base sits on a parentless
+    # side commit: VALID outside the repository, a broken chain inside it.
+    side = git(repo, "commit-tree", f"{head2}^{{tree}}", "-m", "side")
+    candidate = on_head(delta_report(), head2)
+    candidate.update(
+        packet_path=str(packet),
+        packet_fingerprint=moved.stdout.split("fingerprint=", 1)[-1].strip(),
+    )
+    write_json(root / "reuse-delta/council-report.json", candidate)
+    write_json(root / "reuse-delta/base.json", on_head(fast_report(), side))
+    unanchored_reuse = scaffold(
+        "init", "--out", str(root / "r6.json"), *fast_args,
+        "--reuse-dir", str(root / "reuse-delta"),
+    )
+    checks.append((
+        "init, reuse, and finalize run the DELTA ancestry check in --repo",
+        not_ancestor.returncode != 0
+        and "not an ancestor" in not_ancestor.stderr
+        and chained.returncode != 0
+        and "not an ancestor" in chained.stderr
+        and not (root / "d3.json").exists()
+        and run_validator(candidate, on_head(fast_report(), side)).returncode == 0
+        and unanchored_reuse.stdout.startswith("INIT "),
+    ))
+    checks.append((
+        "DELTA base that is not an ancestor is rejected in the repository",
+        run_validator(on_head(delta_report(), head2), on_head(fast_report(), head1), repo)
+        .returncode == 0
+        and run_validator(
+            on_head(delta_report(), head1), on_head(fast_report(), head2), repo
+        ).returncode != 0,
+    ))
+    checks.append((
+        "DELTA init refuses a profile change or a same-head base",
+        scaffold(
+            "init", "--out", str(root / "d1.json"), *fast_args[:4], "full",
+            *fast_args[5:], "--base-report", str(run1),
+        ).returncode != 0
+        and scaffold(
+            "init", "--out", str(root / "d2.json"), *fast_args,
+            "--base-report", str(delta_path),
+        ).returncode != 0,
+    ))
+    # Runtime labels are recorded evidence; init never invents a default for
+    # any one of them (the case above drops all three at once).
+    checks.append((
+        "init requires --model and each effort flag individually",
+        all(
+            scaffold(
+                "init", "--out", str(root / "m.json"),
+                *[arg for index, arg in enumerate(fast_args)
+                  if index not in (drop, drop + 1)],
+            ).returncode != 0
+            for drop in (
+                fast_args.index("--model"),
+                fast_args.index("--reviewer-effort"),
+                fast_args.index("--arbiter-effort"),
+            )
+        )
+        and not (root / "m.json").exists(),
+    ))
+
+    norepo = root / "norepo"
+    norepo.mkdir()
+    loose_args = [*fast_args[:-1], str(norepo)]
+    loose = root / "loose/council-report.json"
+    loose_init = scaffold("init", "--out", str(loose), *loose_args)
+    if loose.is_file():
+        fill_fast(loose, "T-002", fast_report()["rounds"][0]["verification"])
+    loose_valid = scaffold("finalize", str(loose)).returncode == 0
+    loose_again = scaffold(
+        "init", "--out", str(root / "loose2.json"), *loose_args,
+        "--reuse-dir", str(loose.parent),
+    )
+    checks.append((
+        "outside a repository nothing is reused and --head must be a full SHA",
+        loose_init.returncode == 0
+        and loose_valid
+        and loose_again.stdout.startswith("INIT ")
+        and scaffold(
+            "init", "--out", str(root / "loose3.json"), *loose_args, "--head", "abc123"
+        ).returncode != 0,
+    ))
+
+    # A typed head outside the repository never becomes a reuse key inside it.
+    typed = root / "typed/council-report.json"
+    typed_init = scaffold("init", "--out", str(typed), *loose_args, "--head", head2)
+    if typed.is_file():
+        fill_fast(typed, "T-002", fast_report()["rounds"][0]["verification"])
+    typed_valid = scaffold("finalize", str(typed)).returncode == 0
+    typed_report = json.loads(typed.read_text(encoding="utf-8")) if typed.is_file() else {}
+    typed_again = scaffold(
+        "init", "--out", str(root / "typed2.json"), *fast_args, "--reuse-dir", str(typed.parent)
+    )
+    checks.append((
+        "a report made outside the repository is never reused inside it",
+        typed_init.returncode == 0
+        and typed_valid
+        and "packet_fingerprint" not in typed_report
+        and typed_again.stdout.startswith("INIT "),
+    ))
+
+    # BLOCKED before dispatch: the author fills judgment fields only, leaves
+    # rounds as [], and finalize derives final_thesis_id from the thesis.
+    early = root / "early-blocked/council-report.json"
+    early_init = scaffold(
+        "init", "--out", str(early), "--packet", str(packet), "--profile", "full",
+        "--provider", "portable-host", "--max-parallel", "4", *runtime_args,
+        "--repo", str(repo),
+    )
+    early_ok = early_placeholder_fails = False
+    if early.is_file():
+        blocked_early = json.loads(early.read_text(encoding="utf-8"))
+        blocked_early.update(
+            status="BLOCKED", rounds=[], evidence=base_report()["evidence"],
+            blockers=["The runtime cannot create distinct subagents."],
+            thesis={**base_report()["thesis"], "id": "T-001"},
+        )
+        blocked_early["independence"]["conditional_seat_selection"] = (
+            CONDITIONAL_SELECTION.copy()
+        )
+        blocked_early["decision"].update(confidence=90, rationale="Blocked before dispatch.")
+        write_json(early, blocked_early)
+        early_final = scaffold("finalize", str(early))
+        early_ok = (
+            early_final.returncode == 0
+            and "VALID: BLOCKED" in early_final.stdout
+            and json.loads(early.read_text(encoding="utf-8"))["decision"]["final_thesis_id"]
+            == "T-001"
+        )
+        blocked_early["thesis"]["id"] = "TODO"
+        write_json(early, blocked_early)
+        early_placeholder_fails = scaffold("finalize", str(early)).returncode != 0
+    checks.append((
+        "BLOCKED before dispatch finalizes with rounds [] and a derived final thesis",
+        early_init.returncode == 0 and early_ok and early_placeholder_fails,
+    ))
+
+    revise = revise_report()
+    revise["decision"].update(open_high_ids=[], final_thesis_id="")
+    revise["independence"].update(reviewer_ids=[], verifier_ids=[], batch_plan=[])
+    write_json(root / "revise.json", revise)
+    revise_final = scaffold("finalize", str(root / "revise.json"))
+    revise_derived = json.loads((root / "revise.json").read_text(encoding="utf-8"))
+    checks.append((
+        "finalize derives exact decision ledgers",
+        revise_final.returncode == 0
+        and revise_derived["decision"]["open_high_ids"] == ["O-R1-001"],
+    ))
+
+    multi_path = root / "multi/council-report.json"
+    multi_init = scaffold(
+        "init", "--out", str(multi_path), "--packet", str(packet), "--profile",
+        "full", "--provider", "codex", "--provider", "grok", "--max-parallel", "6",
+        *runtime_args, "--repo", str(repo),
+    )
+    multi = json.loads(multi_path.read_text(encoding="utf-8")) if multi_path.is_file() else {}
+    runtimes = multi.get("independence", {}).get("provider_runtimes", {})
+    checks.append((
+        "init records runtime only for the first provider",
+        runtimes.get("codex", {}).get("model") == "host-default"
+        and runtimes.get("grok", {}).get("reviewer_effort") == "TODO"
+        and runtimes.get("grok", {}).get("max_parallel_workers")
+        != runtimes.get("codex", {}).get("max_parallel_workers"),
+    ))
+    unfilled = scaffold("finalize", str(multi_path)) if multi_path.is_file() else None
+    checks.append((
+        "an unfilled second-provider runtime fails closed",
+        unfilled is not None and unfilled.returncode != 0,
+    ))
+    source = multi_provider_report()
+    # Only the second provider's adapter/model/capacity stay as init wrote
+    # them; every other field matches the passing report below. A leftover
+    # placeholder, or the controller's capacity copied onto another provider,
+    # must not validate as a recorded runtime.
+    partial_output = ""
+    seats_output = ""
+    if runtimes:
+        partial = copy.deepcopy(multi)
+        partial["independence"]["provider_runtimes"]["grok"] = {
+            **runtimes["codex"],
+            "adapter": runtimes["grok"].get("adapter"),
+            "model": runtimes["grok"].get("model"),
+            "max_parallel_workers": runtimes["grok"].get("max_parallel_workers"),
+        }
+        for key in ("status", "thesis", "evidence", "confrontation", "rounds", "decision"):
+            partial[key] = source[key]
+        full_seats = prefix_only(multi["independence"]["conditional_seat_selection"])
+        partial["independence"]["conditional_seat_selection"] = CONDITIONAL_SELECTION.copy()
+        partial_path = root / "multi-partial/council-report.json"
+        write_json(partial_path, partial)
+        partial_final = scaffold("finalize", str(partial_path))
+        if partial_final.returncode != 0:
+            partial_output = partial_final.stdout + partial_final.stderr
+        # Full profile: every runtime filled, seats left as init wrote them.
+        partial["independence"]["provider_runtimes"]["grok"] = dict(runtimes["codex"])
+        partial["independence"]["conditional_seat_selection"] = full_seats
+        write_json(partial_path, partial)
+        seats_final = scaffold("finalize", str(partial_path))
+        if seats_final.returncode != 0:
+            seats_output = seats_final.stdout + seats_final.stderr
+    checks.append((
+        "a second-provider adapter/model/capacity left as init wrote it fails closed",
+        "grok.adapter" in partial_output
+        and "grok.model" in partial_output
+        and "grok.max_parallel_workers" in partial_output,
+    ))
+    checks.append((
+        "full: conditional seats with only init's prefix edited fail closed",
+        "conditional_seat_selection" in seats_output
+        and "grok." not in seats_output,
+    ))
+    if runtimes:
+        runtimes["grok"] = dict(runtimes["codex"])
+    for key in ("status", "thesis", "evidence", "confrontation", "rounds", "decision"):
+        multi[key] = source[key]
+    multi.setdefault("independence", {})["conditional_seat_selection"] = (
+        CONDITIONAL_SELECTION.copy()
+    )
+    write_json(multi_path, multi)
+    checks.append((
+        "multi-provider finalize derives namespaced batches",
+        multi_init.returncode == 0 and scaffold("finalize", str(multi_path)).returncode == 0,
+    ))
+    checks.append((
+        "init rejects fast multi-provider and fast specialist selection",
+        scaffold(
+            "init", "--out", str(root / "x.json"), "--packet", str(packet),
+            "--profile", "fast", "--provider", "codex", "--provider", "grok",
+            "--max-parallel", "6",
+        ).returncode != 0
+        and scaffold(
+            "init", "--out", str(root / "y.json"), *fast_args,
+            "--select", "security-privacy",
+        ).returncode != 0,
+    ))
+    return len(checks), [f"scaffold: {name}" for name, ok in checks if not ok]
 
 
 def main() -> int:
@@ -1107,6 +1671,122 @@ def main() -> int:
             ),
             False,
         ),
+        ("fast zero-objection pass skips arbiter", fast_zero_objection_report(), True),
+        (
+            "arbiter skip cannot hide an objection",
+            fast_zero_skip_with_objection(),
+            False,
+        ),
+        (
+            "all-clean seats cannot hide a recorded objection",
+            mutate(
+                fast_zero_objection_report,
+                lambda r: r["rounds"][0].update(
+                    objections=[
+                        {
+                            **copy.deepcopy(base_report()["rounds"][0]["objections"][0]),
+                            "reviewer_id": "frame-evidence",
+                            "supporting_reviewer_ids": ["frame-evidence"],
+                            "severity": "LOW",
+                        }
+                    ]
+                ),
+            ),
+            False,
+        ),
+        (
+            "arbiter skip cannot revise the thesis",
+            mutate(
+                fast_zero_objection_report,
+                lambda r: (
+                    r["rounds"][0].update(output_thesis_id="T-002"),
+                    r["thesis"].update(id="T-002"),
+                    r["decision"].update(final_thesis_id="T-002"),
+                ),
+            ),
+            False,
+        ),
+        (
+            "arbiter skip cannot escalate",
+            mutate(
+                fast_zero_objection_report,
+                lambda r: (
+                    r.update(status="ESCALATE_TO_FULL"),
+                    r["thesis"]["assumptions"][0].update(
+                        state="UNRESOLVED", evidence_ids=[]
+                    ),
+                ),
+            ),
+            False,
+        ),
+        (
+            "arbiter skip keeps no verifier ledger",
+            mutate(
+                fast_zero_objection_report,
+                lambda r: r["independence"].update(verifier_ids=["triage-arbiter"]),
+            ),
+            False,
+        ),
+        (
+            "full cannot skip verification",
+            mutate(
+                base_report,
+                lambda r: (
+                    r["rounds"][0].update(verification=[]),
+                    r["independence"].update(
+                        verifier_ids=[],
+                        batch_plan=r["independence"]["batch_plan"][:1],
+                    ),
+                ),
+            ),
+            False,
+        ),
+        (
+            "unknown packet scope",
+            mutate(fast_report, lambda r: r.update(packet_scope="PARTIAL")),
+            False,
+        ),
+        (
+            "delta without base report",
+            mutate(delta_report, lambda r: r.pop("base_report")),
+            False,
+        ),
+        ("delta on passing base", delta_report(), True, delta_base()),
+        ("delta on escalated base", delta_report(), False, on_head(fast_escalation_report())),
+        (
+            "delta on invalid base",
+            delta_report(),
+            False,
+            mutate(delta_base, lambda r: r.update(schema_version=1)),
+        ),
+        ("delta profile differs from base", delta_report(), False, on_head(base_report())),
+        ("full delta on fast triage base", full_delta_report(), False, delta_base()),
+        ("full delta on full base", full_delta_report(), True, on_head(base_report())),
+        ("self-referential delta base", delta_report(), False, delta_report()),
+        (
+            "delta on unrelated base objective",
+            delta_report(),
+            False,
+            mutate(delta_base, lambda r: r["thesis"].update(objective="Another goal.")),
+        ),
+        (
+            "delta skips the base final thesis",
+            mutate(delta_report, lambda r: r["rounds"][0].update(input_thesis_id="T-001")),
+            False,
+            delta_base(),
+        ),
+        ("delta base without commit head", delta_report(), False, on_head(fast_report(), "none")),
+        (
+            "delta on the base head",
+            mutate(delta_report, lambda r: r.update(packet_head=HEAD_A)),
+            False,
+            delta_base(),
+        ),
+        (
+            "packet head must be none or a full commit SHA",
+            mutate(fast_report, lambda r: r.update(packet_head="abc123")),
+            False,
+        ),
     ]
 
     skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -1124,18 +1804,21 @@ def main() -> int:
         return 1
 
     failures: list[str] = []
-    for name, report, should_pass in cases:
-        result = run_validator(report)
+    for name, report, should_pass, *base in cases:
+        result = run_validator(report, base[0] if base else None)
         passed = result.returncode == 0
         if passed != should_pass:
             detail = (result.stderr or result.stdout).strip().splitlines()
             failures.append(f"{name}: {detail[-1] if detail else 'no output'}")
+    scaffold_count, scaffold_failures = scaffold_checks()
+    failures.extend(scaffold_failures)
+    total = len(cases) + scaffold_count
     if failures:
         for failure in failures:
             print(f"FAIL: {failure}", file=sys.stderr)
-        print(f"FAILED: {len(failures)}/{len(cases)} scenarios", file=sys.stderr)
+        print(f"FAILED: {len(failures)}/{total} scenarios", file=sys.stderr)
         return 1
-    print(f"PASS: {len(cases)} sam-council harness scenarios")
+    print(f"PASS: {total} sam-council harness scenarios")
     return 0
 
 

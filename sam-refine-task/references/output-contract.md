@@ -1,58 +1,23 @@
 # Refinement Report Contract
 
-Write a temporary JSON object with these fields before rendering the response.
+Cited evidence ids must exist; string lists must not repeat.
 
-## Common Fields
+| Field | Shape and rules |
+| --- | --- |
+| `schema_version`, `workflow`, `target` | `1`, `refinement`, and the bundles' `baseline_fingerprint`, `current_fingerprint`, `baseline_head_sha`, `current_head_sha`, `paths` (scaffold) |
+| `intent` | Non-empty `goal`, `owner_boundary`, `must_not_change[]`, `invariants[]`; boolean `user_visible` (`true` blocks completion unless `behavior_proof` is `PROVEN`) |
+| `scope` | Empty `initial_owned_paths`/`current_owned_paths`; `cycle` >= 1 (> 2 needs `new_evidence: true`); `scope_expansion_approved: false` |
+| `file_coverage` | `{path, reason}` per changed path; must equal the baseline-to-current delta, normally `[]`; any delta blocks completion |
+| `evidence` | Non-empty, unique-`id` `{id, status PASS\|FAIL\|NOT_RUN, classification TARGET\|INTRODUCED\|BASELINE\|ENVIRONMENT\|EXTERNAL, detail}`; `FAIL`+`INTRODUCED` blocks. Optional `plan_ref` (plan FACT id) + `locator` (its exact locator) needs `PASS` (use classification `TARGET`), top-level absolute `plan_report` (the snapshot), and the locator resolving at the current bundle's head commit or in a changed file whose bytes still match the capture; decision and command locators (`user decision: …`, `command: …`) skip resolution |
+| `claims` | Non-empty `{claim, status FACT\|ASSUMPTION\|UNKNOWN, material bool, evidence_ids, probe}`; FACT needs evidence; UNKNOWN needs `probe`; material non-FACT blocks |
+| `loopholes` | Non-empty `{loophole, status CLOSED\|REJECTED\|OPEN, evidence_ids}`; `CLOSED`/`REJECTED` need PASS evidence; `OPEN` blocks |
+| `verification_plan` | Non-empty `{proof, status, evidence_ids, reason}` (`proof` may cite a plan `V-###`): `PASS` already executed (PASS evidence); `PLANNED` exact proof runnable only after implementation, cites none; `NOT_RUN` unresolved; `BLOCKED`; `NOT_APPLICABLE` concrete reason. Non-PASS needs `reason`; `NOT_RUN`/`BLOCKED` block |
+| `scenarios` | May be `[]` (key required); `{behavior, status PROVEN\|MISSING_REQUIRED\|OPTIONAL\|NOT_APPLICABLE, evidence_ids, reason}`; `PROVEN` needs PASS evidence, others `reason`; `MISSING_REQUIRED` blocks |
+| `behavior_proof` | `{status PROVEN\|NOT_PROVEN\|NOT_APPLICABLE, evidence_ids, reason}`; normally `NOT_APPLICABLE` with `reason`; `PROVEN` (PASS evidence) only when behavior evidence is part of the refinement |
+| `gates` | May be `[]` (key required); read-only `{name, mandatory bool, status PASS\|FAIL\|NOT_RUN\|NOT_APPLICABLE, evidence_ids, reason}`; `PASS` needs PASS evidence, others `reason`; mandatory non-PASS blocks |
+| `external_actions` | `[]`; refinement never publishes (validator item: `{kind, requested bool, status NOT_REQUESTED\|DRAFTED\|PUBLISHED\|BLOCKED, evidence_ids}`) |
+| `decision` | `result`: `HIGH_CONFIDENCE` only when nothing blocks, with empty `remaining`; else concrete `remaining` work and `BLOCKED` (needs missing access, a user decision, unsafe authorization, or unavailable evidence) or `NOT_CONFIDENT` (required proof remains) |
 
-- `schema_version`: `1`.
-- `workflow`: `refinement`.
-- `target`: `baseline_fingerprint`, `current_fingerprint`,
-  `baseline_head_sha`, `current_head_sha`, and exact `paths` from both bundles.
-- `intent`: non-empty `goal`, `must_not_change`, `invariants`,
-  `owner_boundary`, and boolean `user_visible`.
-- `scope`: empty `initial_owned_paths` and `current_owned_paths`, positive
-  `cycle`, `scope_expansion_approved: false`, and optional `new_evidence`.
-- `file_coverage`: empty unless external workspace drift occurred; then cover
-  every changed path while returning a non-confident decision.
-- `evidence`: unique `{id, status, classification, detail}` entries.
-- `scenarios`: strategy risks as `{behavior, status, evidence_ids, reason}`.
-- `behavior_proof`: normally `NOT_APPLICABLE` with reason; use `PROVEN` only
-  when behavior evidence is part of the refinement.
-- `gates`: read-only evidence gates with `name`, `mandatory`, `status`,
-  `evidence_ids`, and `reason`.
-- `external_actions`: normally empty. `PUBLISHED` always requires an explicit
-  request and passing evidence, but refinement itself must not publish.
-
-## Refinement Fields
-
-- `claims`: `{claim, status, material, evidence_ids}` entries. Use
-  `FACT|ASSUMPTION|UNKNOWN`; every fact needs evidence.
-- `loopholes`: `{loophole, status, evidence_ids}` entries. Use
-  `CLOSED|REJECTED|OPEN`; include at least one adversarial candidate, and give
-  closed or rejected entries evidence.
-- `verification_plan`: `{proof, status, evidence_ids, reason}` entries. Use
-  `PASS|PLANNED|NOT_RUN|BLOCKED|NOT_APPLICABLE`. `PLANNED` means an exact
-  executable proof intentionally deferred until implementation; it requires a
-  reason and no executed evidence. `NOT_RUN` remains unresolved.
-- `decision`: `result` and `remaining`. Use
-  `HIGH_CONFIDENCE|NOT_CONFIDENT|BLOCKED`.
-
-## Consistency Rules
-
-- `HIGH_CONFIDENCE` requires no material assumption or unknown, no open
-  loophole, no `NOT_RUN` or `BLOCKED` verification, no mandatory-gate failure,
-  no scope mutation, and no remaining work. Future proof may be `PLANNED`.
-- `NOT_CONFIDENT` or `BLOCKED` requires concrete remaining work.
-- Baseline and current `head_sha`, fingerprint, and workspace state must match
-  because this workflow is read-only.
-- Keep the report outside the repository and validate it with:
-
-```bash
-python3 scripts/validate_report.py \
-  --baseline baseline.json --current current.json report.json
-```
-
-## Rendered Response
-
-Return decision, refined strategy, facts, removed and remaining assumptions,
-loopholes, corrections, verification plan, blockers, and residual risk.
+Completion also fails when the bundles' HEADs differ or the fingerprint changed
+without a file delta. Both bundles must be read-only captures of one repository
+with identical paths.

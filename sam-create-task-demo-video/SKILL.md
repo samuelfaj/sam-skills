@@ -1,193 +1,91 @@
 ---
 name: sam-create-task-demo-video
-description: "Record and validate a human-paced MP4 walkthrough of a completed task, feature, or bug fix using the real runnable UI, with acceptance-criterion traceability, privacy checks, deterministic media validation, and optional external publication. Use when asked for a demo video, proof video, walkthrough, screen recording, MP4, or explicitly requested PR/MR video attachment."
+description: "Record and validate a human-paced MP4 walkthrough of a finished task, feature, or bug fix in the real UI, with criterion traceability, privacy checks, and media validation. Use when asked for a demo or proof video, walkthrough, screen recording, MP4, or PR/MR video attachment."
 ---
 
 # Sam Create Task Demo Video
 
-Create a human-reviewable demo artifact. Do not present a demo as automated test
-coverage. Remain host-, provider-, tool-, and model-agnostic.
+Create a human-reviewable demo; never present it as automated test coverage. Stay host-, provider-, tool-, and model-agnostic.
 
 ## Non-Negotiable Contract
 
-- Honor the exact repository, change, behavior, and acceptance criteria supplied.
-- Freeze base SHA, head SHA, manifest fingerprint, intent, no-go scope,
-  environment identity, and cleanup ledger before recording.
-- Preserve existing work. Do not reset, checkout, stash, clean, or rewrite history.
-- Inspect changed scripts, hooks, command definitions, containers, and browser
-  configuration before executing them.
-- **Real product UI first for every demo.** Record the actual application pages,
-  routes, and flows a user would see—linked to the intended backend—not a
-  throwaway page, component shell, Storybook mount, or mock screen built only
-  for the recording.
-- **Do not create a new component, route, or demo-only UI** to stage the walkthrough
-  when the real product surface can show the behavior. Prefer seed data, demo
-  accounts, and existing navigation.
-- Demos must be as faithful to reality as possible: real boot path, real auth
-  (or existing demo login), real navigation, real actions, real visible outcomes.
-- Label mocked or isolated recording honestly as **fallback only after**
-  documenting real-system attempts and blockers. Never present fallback as a
-  real linked UI demonstration.
-- Fail closed when real data is requested and the environment is unknown or is
-  not a verified local, test, or development target.
-- Keep final and intermediate media local until a remote proposal target is
-  authorized. Publish only when the user or a parent workflow (for example
-  `sam-work`) explicitly requests it and the exact remote target is known.
-  Parent-workflow authorization is sufficient; do not re-ask the user.
-- **Never commit** generated videos, screenshots, contact sheets, or recordings
-  to the task branch, LFS, or product-tree history.
-- When publication is authorized, **always upload** via the host CLI (`gh` /
-  `glab` platform uploads) and place the media in the PR/MR **description** or
-  a **comment/note** using player/image embed markup. Follow
-  [references/evidence-publishing.md](references/evidence-publishing.md).
-- **Video → inline/native player. Image → inline image. Never a hyperlink.**
-  Forbid Markdown download links, “Download MP4” anchors, blob/raw repo URLs,
-  and HTML download anchors.
-- Never expose secrets, tokens, credentials, private customer data, internal
-  identifiers, or sensitive production information.
-- Record and clean every process, container, port, record, override, raw video,
-  contact sheet, and temporary file.
+- Honor the exact repository, change, behavior, and acceptance criteria supplied; keep the demo scoped to linked criteria.
+- Never reset, checkout, stash, clean, or rewrite history. Inspect changed scripts, hooks, package commands, command definitions, containers, CI definitions, and browser config before executing them.
+- **Real UI.** Record the real product pages, routes, and flows linked to the intended backend: real boot, auth (or an existing demo/test account), navigation, actions, and visible outcomes. While the real surface can show the behavior, build no demo-only page, route, component, story mount, component shell, mock screen bypassing router/layout/providers/auth/API clients, or parallel "demo UI" copy; prefer config or seed fixes.
+- **Fallback** only after recording each real-system attempt and blocker (boot, auth, seed, ports/config, backend link): thinnest temporary surface that still proves useful visible behavior, artifact and proof labeled `FALLBACK`, `recording.real_ui=false` with an exact `fallback_reason`, never described as a real linked walkthrough.
+- Real data only on a verified `local`, `test`, or `dev` target; fail closed when unknown. Never capture, show on screen, or expose production credentials, customer tenants, private customer data, secrets, tokens, cookies, internal URLs, emails, internal identifiers, or sensitive production information.
+- **Publication.** All media stays local, with no upload or comment, unless the user or a parent workflow (e.g. `sam-work`) explicitly requests publication to a known target. Parent authorization is enough; never re-ask. Never infer it from a PR, MR, branch, or CLI login.
+- **Never commit** videos, screenshots, contact sheets, traces, or recordings (branch, LFS, product tree, release assets); upload through the host platform as an inline player or image, never a hyperlink, download anchor, or blob/raw URL.
+- Register every process, container, port, record, override, raw video, contact sheet, and temp file at creation; clean every one this run created and nothing else, except `report.json`, `manifest.json`, and the final MP4, which stay `RETAINED` for caller re-validation.
 
-## Resource Routing
+## Paths and Reads
 
-- Read [references/recording-policy.md](references/recording-policy.md) before
-  starting services or recording.
-- Read [references/media-validation.md](references/media-validation.md) before
-  conversion and playback checks.
-- Read [references/evidence-publishing.md](references/evidence-publishing.md)
-  only after explicit publication authorization.
-- Read [references/output-contract.md](references/output-contract.md) before
-  drafting and validating the report.
+Write literal absolute paths in every command (shell variables do not persist): `<skill>` = this file's directory, `<tmp>` = one scratch directory outside the repository (`mktemp -d` once), `<repo>` = the repository root.
 
-## 1. Resolve and Freeze the Demo Target
+| Read | Read when |
+| --- | --- |
+| [references/output-contract.md](references/output-contract.md) | step 4, before scaffolding the report |
+| [references/evidence-publishing.md](references/evidence-publishing.md) | step 6, only when publication is authorized |
 
-Set the skill directory to the directory containing this file. Build the manifest
-without fetching or changing refs:
+Do not re-read a file already read in this context unless context was compacted since or you cannot quote the section you need.
+
+## 1. Freeze the Target
 
 ```bash
-SAM_DEMO_DIR="<absolute directory containing this SKILL.md>"
-WORK_TMP="$(mktemp -d)"
-python3 "$SAM_DEMO_DIR/scripts/build_demo_manifest.py" \
-  --repo "$PWD" --environment-kind unknown \
-  --environment-id "unverified" > "$WORK_TMP/manifest.json"
+python3 <skill>/scripts/build_demo_manifest.py --repo <repo> \
+  --environment-kind unknown --environment-id unverified > <tmp>/manifest.json
 ```
 
-Pass `--base`, `--head`, and repeated `--path` when specified. Rebuild after
-verifying a real-data environment.
+Add `--base`, `--head`, and repeated `--path` when specified; refs are never fetched or changed. Rebuild with the verified kind and identity once a real-data environment is verified. Read changed paths and the fingerprint from its stderr summary. **Never open or print manifest.json** (it embeds the full patch); the scaffold copies its fields. When the summary shows `more=N`, list every path with: `python3 -c 'import json,sys;[print(f["path"]) for f in json.load(open(sys.argv[1]))["files"]]' <tmp>/manifest.json`.
 
-Freeze:
+Freeze before recording: target mode, refs/SHAs, changed files, fingerprint; intended visible behavior, invariants, criteria, risks, no-go surfaces; environment kind, identity, UI/API endpoints, database/tenant, evidence; the local output path; whether publication was explicitly requested; the cleanup ledger.
 
-- Target mode, base/head refs and SHAs, changed files, and manifest fingerprint.
-- Intended visible behavior, invariants, criteria, risks, and no-go surfaces.
-- Environment kind, identity, UI/API endpoints, database/tenant, and evidence.
-- Exact local output path and whether publication was explicitly requested.
-- Cleanup ledger initialized for every resource the run may create.
+Under a parent workflow ask nothing: record, convert, publish when authorized, or fail closed with receipts. Standalone, ask one concise question only when a safety-critical target cannot be discovered.
 
-Under a parent workflow that already froze the target, environment, and
-publication flag (for example `sam-work`), never ask any permission,
-confirmation, or clarifying question—record, convert, and publish (when
-authorized) or fail closed with receipts. When running standalone, ask one
-concise question only when a safety-critical target cannot be discovered. Do not
-infer authorization from the presence of a PR, MR, branch, or CLI login alone.
+## 2. Storyboard
 
-## 2. Build the Proof Storyboard
+IDs: `AC-###` criterion, `R-###` risk, `S-###` scenario, `T-###` proof check, `CMD-###` recording, conversion, inspection, or validation command and result, `ART-###` artifact, `CL-###` cleanup resource.
 
-Use stable traceability IDs:
-
-- `AC-###`: acceptance criterion.
-- `R-###`: visible or operational risk.
-- `S-###`: demo scenario.
-- `T-###`: proof check linked to a scenario; this is not a coverage claim.
-- `CMD-###`: recording, conversion, inspection, or validation command and result.
-- `ART-###`: local or explicitly published artifact.
-- `CL-###`: cleanup resource.
-
-For each scenario define the **real product entry route**, initial state, exact
-human actions on that surface, visible proof moment, final stable state, linked
-criteria/risks/checks, and expected artifact. Keep the story focused. Use
-before/after only when the defective state is safely available.
-
-Storyboard against shipping UI only. Do not plan a custom demo component unless
-the storyboard already records why the real page cannot be used.
+Per scenario: the real entry route that owns the changed behavior, initial state, exact human actions on the controls users use, visible proof moment, stable final state, linked AC/R/T, and expected artifact. Show before/after only when the defective state is safely available.
 
 ## 3. Prepare the Real Linked System
 
-Inspect changed command definitions first. Start the app with repository-supported
-direct, container, or compose workflows. Prefer temporary overrides and unused
-ports. Confirm the browser reaches the frozen **product** UI and backend—not a
-test harness URL invented for the video.
+Reuse a parent's `sam-create-playwright-tests` environment only when its report has `decision` `COMPLETE`, `target.head_sha` equal to the manifest head, and a validator `PASS` (handoff receipt or rerun): copy `environment` `kind`/`identity`/`real_data`, cite the report path in `environment.evidence`, skip identity re-verification, and restart only what stopped, using the boot, auth, and seed steps in its `environment.evidence` and `cleanup[]`, or the repository workflows in the next paragraph when it records none.
 
-Use deterministic seed data or a dedicated demo account on the real app. Use real
-data only on a verified local, test, or dev target. Register every created
-resource immediately.
+Otherwise boot with repository-supported direct, container, or compose workflows, supported lockfiles and commands, temporary overrides, and unused ports, and use deterministic seed data or a dedicated demo account on the linked backend, never in-browser-only fake state while the backend is available. Either way, after any (re)start confirm the browser reaches the frozen product UI and backend, not a harness URL invented for the video.
 
-If the real UI cannot run after serious direct, container, port/config, auth,
-seed, and linking attempts, record the exact attempts and blocker. Continue only
-with an honestly labeled fallback that still proves useful visible behavior. Do
-not build a permanent product component solely to make the demo possible when a
-config/seed fix would restore the real page.
-
-## 4. Audit and Record
-
-Draft the manifest-linked recording plan, then run:
+## 4. Scaffold, Audit, Record
 
 ```bash
-python3 "$SAM_DEMO_DIR/scripts/audit_demo_plan.py" \
-  --manifest "$WORK_TMP/manifest.json" "$WORK_TMP/report.json"
+python3 <skill>/scripts/scaffold_demo_report.py --manifest <tmp>/manifest.json \
+  --report <tmp>/report.json --publish-requested <true|false>
+python3 <skill>/scripts/audit_demo_plan.py --manifest <tmp>/manifest.json <tmp>/report.json
 ```
 
-Resolve every audit finding before recording. Record with a stable viewport,
-human-readable pacing, visible readiness waits, deterministic state, and pauses
-on the opening, key action, proof moment, and ending. Inject captions only in the
-browser session; do not modify product files for captions.
+Before the audit, fill `environment` (`kind`, `identity`, `real_data`, `evidence`), `command_definitions`, `recording`, and the storyboard tables. Resolve every audit finding before recording. Use a stable viewport, human-readable pacing, and waits on visible readiness or network completion, never fixed timers. Pause on the opening, key action, proof moment, and final state. Keep captions short and inject them only in the browser session, never into product files. Use the real navigation path when it is part of the proof story.
 
 ## 5. Convert and Validate Media
 
-Keep raw media temporary. Produce MP4 using the conditional media helper:
-
 ```bash
-python3 "$SAM_DEMO_DIR/scripts/media_tools.py" convert \
-  --input "$WORK_TMP/raw.webm" --output "$WORK_TMP/demo.mp4"
-python3 "$SAM_DEMO_DIR/scripts/media_tools.py" inspect \
-  --input "$WORK_TMP/demo.mp4" > "$WORK_TMP/media.json"
-python3 "$SAM_DEMO_DIR/scripts/media_tools.py" contact-sheet \
-  --input "$WORK_TMP/demo.mp4" --output "$WORK_TMP/contact-sheet.png"
+python3 <skill>/scripts/media_tools.py convert --input <tmp>/raw.webm --output <tmp>/demo.mp4
+python3 <skill>/scripts/media_tools.py inspect --input <tmp>/demo.mp4 > <tmp>/media.json
+python3 <skill>/scripts/media_tools.py contact-sheet --input <tmp>/demo.mp4 --output <tmp>/contact-sheet.png
+python3 <skill>/scripts/scaffold_demo_report.py --manifest <tmp>/manifest.json \
+  --report <tmp>/report.json --media <tmp>/media.json
 ```
 
-Follow [references/media-validation.md](references/media-validation.md). Verify
-playback, start/action/proof/end content, duration, video stream, codec, dimensions,
-hash, and contact-sheet privacy. Report missing media tooling as a blocker; do not
-pretend raw WebM is the requested MP4.
+The deliverable is MP4 unless the user explicitly changes the request; raw WebM never substitutes. Missing tooling (probe with `media_tools.py capabilities`) is a blocker. Play the final file and review the contact sheet (spans the full duration): initial state, actions, proof moment, final state, readable pacing, no secrets or private data. A metadata-only check proves neither content nor privacy.
 
-## 6. Publish Only When Explicitly Requested
+## 6. Publish Only When Authorized
 
-Without explicit authorization, retain only the safe local MP4 requested by the
-user. Do not upload or comment. Never `git add` / commit the MP4.
+When authorized (including `sam-work` requiring `PUBLISHED`), upload, embed, and verify with `scripts/count_embeds.py` per references/evidence-publishing.md.
 
-When publication is explicit—including when `sam-work` requires `PUBLISHED` on
-the frozen proposal—upload and embed without asking for permission again. Follow
-[references/evidence-publishing.md](references/evidence-publishing.md):
-
-Confirm the authorized proposal and current head, upload the validated media,
-embed it using the platform's native markup, and verify the rendered player or
-image. Record hashes, upload receipts, and rendered readback. Never commit media
-or treat a download link as player proof. Stop on target drift or partial failure.
-
-## 7. Validate, Clean, and Return
-
-Complete `report.json` using [references/output-contract.md](references/output-contract.md),
-then run:
+## 7. Validate, Clean, Return
 
 ```bash
-python3 "$SAM_DEMO_DIR/scripts/validate_demo_report.py" \
-  --manifest "$WORK_TMP/manifest.json" "$WORK_TMP/report.json"
+python3 <skill>/scripts/validate_demo_report.py --manifest <tmp>/manifest.json <tmp>/report.json
 ```
 
-Stop only resources created by this run. Remove raw media, temporary captions,
-contact sheets, data, overrides, and logs unless explicitly retained. Update every
-`CL-###` entry, revalidate, then remove `WORK_TMP` except for an explicitly retained
-final artifact outside it.
+If a local output path was frozen, move the MP4 there, rerun `inspect` on it, and rerun the scaffold with `--media`. Clean every other registered resource, including raw media, temporary captions, and logs, unless explicitly retained. Update every `CL-###`, revalidate, then delete only scratch that no retained file references.
 
-Return `READY_LOCAL` for a validated local MP4, `PUBLISHED` only with verified
-remote readback, and `BLOCKED` when safety, conversion, playback, privacy,
-authorization, target drift, or cleanup prevents an honest deliverable.
+Decide `READY_LOCAL` (validated local MP4), `PUBLISHED` (verified remote readback), or `BLOCKED` (safety, conversion, playback, privacy, authorization, drift, or cleanup prevents an honest deliverable); return per references/output-contract.md.

@@ -14,6 +14,7 @@ from typing import Any
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from audit_test_diff import audit as audit_patch  # noqa: E402
 from verify_receipts import verify_commands, verify_wiring  # noqa: E402
 
 PREFIXES = {
@@ -281,6 +282,26 @@ def validate(
         audit.get("status") in {"PASS", "FAIL"} and bool(audit.get("evidence")),
         "test diff audit result required",
     )
+    # Recompute the audit from the final bundle instead of trusting a typed PASS.
+    # A PASS over real findings needs one disproof per finding (id, kind, path,
+    # reason). Ids are positional, so the path keeps a disproof on its finding.
+    recomputed_audit = audit_patch(bundle)
+    if audit.get("status") == "PASS" and recomputed_audit["status"] != "PASS":
+        disproven = {
+            (str(item.get("id")), str(item.get("kind")), str(item.get("path")))
+            for item in audit.get("disproven") or []
+            if isinstance(item, dict) and str(item.get("reason") or "").strip()
+        }
+        undisproven = [
+            f"{issue['id']} {issue['kind']} {issue['path']}"
+            for issue in recomputed_audit["issues"]
+            if (issue["id"], issue["kind"], issue["path"]) not in disproven
+        ]
+        require(
+            not undisproven,
+            "test_diff_audit PASS but the recomputed audit reports undisproven "
+            "finding(s): " + ", ".join(undisproven),
+        )
     authorization = report.get("authorization", {})
     require(
         isinstance(authorization.get("publish_requested"), bool),

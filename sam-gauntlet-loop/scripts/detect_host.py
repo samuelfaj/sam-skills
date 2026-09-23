@@ -21,7 +21,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     result = detect_host(override=args.host)
-    print(json.dumps(result, indent=2))
+    print(json.dumps(result))
     if result["status"] not in DETECT_STATUSES:
         print("ERROR: unknown detector status", file=sys.stderr)
         return 2

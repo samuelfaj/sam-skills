@@ -1,42 +1,32 @@
 # Publication Policy
 
-Publication is an external mutation. The local review contract never grants it.
-
 ## Authorization
 
-- Set `requested: true` only when the user explicitly asks to publish, comment,
-  approve, request changes, or update the remote review.
-- A URL, proposal ID, or request to review authorizes read access only.
-- Do not broaden a request for one comment into approval or other state change.
-- When a proposal review ends without publication authorization, return the
-  complete validated decision first, then ask one concise question offering
-  only actions compatible with that decision.
-- Do not ask a publication question for local, branch, commit, or range targets.
+Set `requested: true` only when the user explicitly asks to publish, comment, approve, request changes, or update the remote review, or a parent authorized that exact action. Never broaden one comment into approval or another state change.
 
-## Preflight
-
-Before the first write:
+## Preflight (before the first write)
 
 1. Confirm the validated report fingerprint.
-2. Re-read the remote head and publication capabilities.
-3. Abort all writes on head drift.
-4. Confirm the action matches the decision and user authorization.
-5. Render comments to temporary files without secrets.
+2. Re-read the remote head and publication capabilities; on head drift write nothing.
+3. Confirm the action is authorized and matches the decision: `APPROVE` needs an `APPROVE` decision, `REQUEST_CHANGES` needs `CHANGES_REQUIRED`.
+4. Render comments to temporary files without secrets.
 
-## Idempotency and Failure
+## Writes and Failure
 
-Use one stable `review_id` for the frozen report. Inspect existing review state
-before retrying. Record one receipt per confirmed write.
+- Inline only accepted `BLOCKER`/`IMPORTANT` findings whose exact side and line exist in the frozen diff. Suggestions never go inline; they enter an authorized summary only when explicitly requested.
+- Keep one stable `review_id` per frozen report; inspect existing review state before any retry; record one receipt per confirmed write.
+- On `PARTIAL`, stop; never replay confirmed writes; return receipts and the exact failing operation for later reconciliation.
+- If the platform cannot represent the requested state, publish only an authorized summary and report the limitation.
+- Revalidate the report after every publication state change.
 
-- `PLANNED`: authorized and preflight passed; no writes confirmed.
-- `PUBLISHED`: all planned writes have receipts.
-- `PARTIAL`: at least one write succeeded and at least one failed.
-- `BLOCKED`: no write occurred because preflight or capability failed.
-- `NOT_REQUESTED`: local draft only.
+## Report Fields
 
-On `PARTIAL`, stop. Do not replay already confirmed writes. Return receipts and
-the exact failing operation so a later run can reconcile safely.
+`{requested, expected_head_sha, observed_head_sha, review_id, action, status, inline_comments, receipts, error}`: *derived* `expected_head_sha` (bundle head) and `review_id` (`[A-Za-z0-9._:-]{12,128}`); non-empty `observed_head_sha` (re-read head; frozen head for a draft); action `NONE`, `COMMENT`, `REQUEST_CHANGES`, `APPROVE`; `error` null or non-empty; `inline_comments[]` `{finding_id, path, line, side}` match an accepted `BLOCKER`/`IMPORTANT`; `receipts[]` `{kind, id, url, status}` non-empty, credential-free.
 
-Never approve when a required finding remains. Never publish optional
-suggestions inline. If the platform cannot represent a requested review state,
-publish only a summary when authorized and report the capability limitation.
+| Status | Meaning | Action, receipts, error |
+| --- | --- | --- |
+| `NOT_REQUESTED` | local draft; only with `requested: false` | `NONE`, none, null |
+| `PLANNED` | authorized, preflight passed, no confirmed write | action, none, null |
+| `PUBLISHED` | every planned write has a receipt | action, yes, null |
+| `PARTIAL` | ≥ 1 write succeeded and ≥ 1 failed | action, yes, error |
+| `BLOCKED` | no write: head drift (forced), preflight or capability failure | `NONE`, none, error |

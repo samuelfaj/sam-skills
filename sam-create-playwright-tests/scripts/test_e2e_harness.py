@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import copy
+import importlib.util
 import json
 import os
 import pathlib
@@ -18,6 +19,7 @@ BUILDER = HERE / "build_e2e_bundle.py"
 AUDITOR = HERE / "audit_test_diff.py"
 RUN_CHECKED = HERE / "run_checked.py"
 VALIDATOR = HERE / "validate_e2e_report.py"
+SCAFFOLD = HERE / "scaffold_report.py"
 
 
 def run(
@@ -255,6 +257,57 @@ def verify_base_resolution() -> None:
             raise AssertionError("non-main remote default branch was not used")
 
 
+def verify_risk_tags() -> None:
+    """Substring tags minus audited false-positive words, aligned with the
+    coverage builder; flatcase compounds keep their tags."""
+    sys.dont_write_bytecode = True
+    spec = importlib.util.spec_from_file_location("e2e_builder", BUILDER)
+    assert spec is not None and spec.loader is not None
+    builder = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(builder)
+    for path, tag in {"src/rapid/capital.py": "contract", "src/Clock.tsx": "ui"}.items():
+        if tag in builder.risk_tags(path):
+            raise AssertionError(f"substring over-match tagged {path} as {tag}")
+    true_positives = {
+        "src/auth/session.py": {"auth"},
+        "src/oauth2/callback.py": {"auth"},
+        "src/AuthController.ts": {"auth", "contract"},
+        "src/api/routes.py": {"contract"},
+        "db/migrations/001_init.sql": {"data"},
+        "playwright.config.ts": {"ui"},
+        "src/pages/Account.tsx": {"ui"},
+        "middleware/basicauth.go": {"auth"},
+        "src/httpclient.go": {"contract"},
+        "src/approutes.py": {"contract"},
+    }
+    for path, tags in true_positives.items():
+        found = set(builder.risk_tags(path))
+        if not tags <= found:
+            raise AssertionError(f"tag lost for {path}: {sorted(found)}")
+
+
+def check(
+    bundle_path: pathlib.Path,
+    report_path: pathlib.Path,
+    report: dict[str, Any],
+    expected: int,
+    expect: str | None = None,
+) -> None:
+    write_json(report_path, report)
+    result = run(
+        sys.executable,
+        str(VALIDATOR),
+        "--baseline",
+        str(bundle_path),
+        "--bundle",
+        str(bundle_path),
+        str(report_path),
+        expected=expected,
+    )
+    if expect is not None and expect not in result.stderr:
+        raise AssertionError(f"expected {expect!r}, got:\n{result.stderr}")
+
+
 def write_json(path: pathlib.Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True), encoding="utf-8")
 
@@ -464,6 +517,36 @@ def main() -> int:
             "fixture",
         )
         bundle = json.loads(result.stdout)
+        # The stderr summary carries the freeze fields and no patch content.
+        for field in (
+            f"fingerprint={bundle['fingerprint']}",
+            f"base={bundle['target']['base_sha']}",
+            f"head={bundle['target']['head_sha']}",
+            "risk_tags=",
+            "command_definitions=",
+        ):
+            if field not in result.stderr:
+                raise AssertionError(f"builder summary lacks {field}: {result.stderr}")
+        if "saved name remains visible" in result.stderr:
+            raise AssertionError("builder summary leaked patch content")
+        with tempfile.TemporaryDirectory(prefix="sam-e2e-out-") as out_temp:
+            out_dir = pathlib.Path(out_temp) / "final"
+            builder_args = (
+                sys.executable, str(BUILDER), "--repo", str(root),
+                "--environment-kind", "dev", "--environment-id", "fixture",
+            )
+            out_result = run(*builder_args, "--out", str(out_dir))
+            if out_result.stdout:
+                raise AssertionError("--out must keep stdout empty")
+            if json.loads((out_dir / "bundle.json").read_text(encoding="utf-8")) != bundle:
+                raise AssertionError("--out bundle differs from the stdout bundle")
+            if (out_dir / "bundle.patch").read_text(encoding="utf-8") != bundle["patch"]:
+                raise AssertionError("--out patch sidecar differs from the bundle patch")
+            if f"json={out_dir.resolve() / 'bundle.json'}" not in out_result.stderr:
+                raise AssertionError("summary does not name the written bundle")
+            inside = run(*builder_args, "--out", str(root / "out"), expected=2)
+            if "outside the repository" not in inside.stderr:
+                raise AssertionError("--out inside the repository was not refused")
         write_json(bundle_path, bundle)
         if len(bundle["files"]) != 2 or not bundle["fingerprint"]:
             raise AssertionError("builder did not preserve the complete local target")
@@ -643,11 +726,248 @@ def main() -> int:
             bundle_path, report_path, unwired, "not discovered by the runner"
         )
 
+        # The audit is recomputed from the bundle: a typed PASS cannot hide a
+        # finding, and each real finding needs its own disproof.
+        suspicious_bundle = copy.deepcopy(bundle)
+        suspicious_bundle["files"].append(
+            {"path": "tests/config.spec.js", "is_test": True, "command_definition": False}
+        )
+        suspicious_bundle["patch"] += (  # audit-fixture: allow
+            "\n--- a/tests/config.spec.js\n+++ b/tests/config.spec.js\n"
+            "+  expect(config.timeout(5000)).toBe(5000);\n"
+        )
+        suspicious_path = root / "suspicious-bundle.json"
+        write_json(suspicious_path, suspicious_bundle)
+        check(suspicious_path, report_path, report, 1, "undisproven finding(s): AUD-001 TIMEOUT_INCREASE")
+        disproved = copy.deepcopy(report)
+        disproved["test_diff_audit"]["disproven"] = [
+            {
+                "id": "AUD-001",
+                "kind": "TIMEOUT_INCREASE",
+                "path": "tests/config.spec.js",
+                "reason": "asserts the product timeout value; no runner timeout changed",
+            }
+        ]
+        check(suspicious_path, report_path, disproved, 0)
+
+        # The scaffold derives mechanical fields from real files and fails closed
+        # until the agent fills the ledger and decision.
+        scaffold_path = root / "scaffold-report.json"
+        run(
+            sys.executable, str(SCAFFOLD),
+            "--baseline", str(bundle_path), "--bundle", str(bundle_path),
+            "--receipts-dir", str(receipts), "--wiring", "CMD-900", "CMD-901",
+            "--out", str(scaffold_path),
+        )
+        draft = json.loads(scaffold_path.read_text(encoding="utf-8"))
+        derived = {key: draft["commands"][0][key] for key in ("id", "command", "status", "classification")}
+        if derived != {key: report["commands"][0][key] for key in derived} or len(draft["commands"]) != 1:
+            raise AssertionError(f"scaffold commands differ from receipts: {draft['commands']}")
+        if draft["bundle_fingerprint"] != bundle["fingerprint"] or draft["test_diff_audit"]["status"] != "PASS":
+            raise AssertionError("scaffold did not derive fingerprint and audit")
+        if "behavior_proof" not in draft or "behaviors" in draft:
+            raise AssertionError("scaffold used the wrong report shape")
+        run(
+            sys.executable, str(VALIDATOR), "--baseline", str(bundle_path),
+            "--bundle", str(bundle_path), str(scaffold_path), expected=1,
+        )
+        for field in ("intent", "environment", "criteria", "risks", "scenarios", "tests",
+                      "artifacts", "cleanup", "behavior_proof", "decision"):
+            draft[field] = copy.deepcopy(report[field])
+        draft["commands"][0]["test_ids"] = ["T-001"]
+        draft["test_wiring"]["discovered_tests"] = ["saved name remains visible"]
+        check(bundle_path, report_path, draft, 0)
+
+        # A run that adds no spec omits --wiring, but its discovery listings are
+        # still wiring evidence: harvesting them as commands would leave entries
+        # that reference no test, which the validator rejects.
+        unwired_path = root / "scaffold-unwired.json"
+        run(
+            sys.executable, str(SCAFFOLD), "--baseline", str(bundle_path),
+            "--bundle", str(bundle_path), "--receipts-dir", str(receipts),
+            "--out", str(unwired_path),
+        )
+        unwired_draft = json.loads(unwired_path.read_text(encoding="utf-8"))
+        if [item["id"] for item in unwired_draft["commands"]] != ["CMD-001"]:
+            raise AssertionError(f"scaffold harvested discovery receipts: {unwired_draft['commands']}")
+        for field in ("intent", "environment", "criteria", "risks", "scenarios", "tests",
+                      "artifacts", "cleanup", "behavior_proof", "decision"):
+            unwired_draft[field] = copy.deepcopy(report[field])
+        unwired_draft["commands"][0]["test_ids"] = ["T-001"]
+        unwired_draft["test_wiring"] = {"status": "NOT_APPLICABLE", "reason": "only existing specs changed"}
+        check(bundle_path, unwired_path, unwired_draft, 0)
+
+        # Audit ids are positional: a disproof binds to its path. New inputs keep
+        # only the ledger: the previous receipts dir is refused and proof,
+        # artifacts, and disproofs reset; the original CMD-900 is reused.
+        def timeout_bundle(paths: list[str], fingerprint: str) -> dict[str, Any]:
+            value = copy.deepcopy(bundle)
+            for name in paths:
+                value["files"].append({"path": name, "is_test": True, "command_definition": False})
+                value["patch"] += f"\n--- a/{name}\n+++ b/{name}\n"
+                value["patch"] += "+  expect(config.timeout(5000)).toBe(5000);\n"  # audit-fixture: allow
+            value["fingerprint"] = fingerprint
+            return value
+
+        def bind(value: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
+            value = copy.deepcopy(value)
+            value["baseline_fingerprint"] = value["bundle_fingerprint"] = target["fingerprint"]
+            value["target"] = {key: target["target"][key] for key in ("base_sha", "head_sha")}
+            return value
+
+        only_b = timeout_bundle(["tests/b.spec.js"], "b" * 64)
+        a_and_b = timeout_bundle(["tests/a.spec.js", "tests/b.spec.js"], "c" * 64)
+        only_b_path, a_and_b_path = root / "only-b.json", root / "a-and-b.json"
+        write_json(only_b_path, only_b)
+        write_json(a_and_b_path, a_and_b)
+        b_disproof = {
+            "id": "AUD-001", "kind": "TIMEOUT_INCREASE", "path": "tests/b.spec.js",
+            "reason": "asserts the product timeout value",
+        }
+        previous = bind(draft, only_b)
+        previous["test_diff_audit"]["disproven"] = [b_disproof]
+        check(only_b_path, report_path, previous, 0)
+        shifted = bind(previous, a_and_b)
+        shifted["test_diff_audit"]["disproven"] = [b_disproof, {**b_disproof, "id": "AUD-002"}]
+        check(a_and_b_path, report_path, shifted, 1,
+              "undisproven finding(s): AUD-001 TIMEOUT_INCREASE tests/a.spec.js")
+        write_json(report_path, previous)
+        scaffold_moved = (
+            sys.executable, str(SCAFFOLD), "--baseline", str(a_and_b_path),
+            "--bundle", str(a_and_b_path), "--wiring", "CMD-900", "CMD-901",
+            "--previous", str(report_path), "--out", str(report_path),
+        )
+        stale = run(*scaffold_moved, "--receipts-dir", str(receipts), expected=2)
+        if "use a fresh --receipts-dir" not in stale.stderr:
+            raise AssertionError("scaffold accepted the previous receipts on new inputs")
+        fresh = root / "receipts-2"
+        make_receipt(fresh, "CMD-001", "TARGET", "echo '1 passed'")
+        make_receipt(
+            fresh, "CMD-901", "ENVIRONMENT",
+            "echo 'account.spec.js > loads > saved name remains visible'", repeat=1,
+        )
+        run(*scaffold_moved, "--receipts-dir", str(fresh))
+        moved = json.loads(report_path.read_text(encoding="utf-8"))
+        if (
+            moved["scenarios"] != report["scenarios"]
+            or moved["behavior_proof"] != {"status": "", "evidence": ""}
+            or moved["environment"]["evidence"] != ""
+            or moved["test_diff_audit"]["disproven"] != []
+            or any(item["status"] or item["safety_review"] for item in moved["artifacts"])
+            or any(item["regression_proof"] != {"status": "", "evidence": ""} for item in moved["tests"])
+            or not any(str(fresh.resolve()) in item["resource"] for item in moved["cleanup"])
+            or moved["test_wiring"]["before_receipt"]
+            != str(pathlib.Path(report["test_wiring"]["before_receipt"]).resolve())
+        ):
+            raise AssertionError(f"changed inputs must keep only the ledger: {moved}")
+        check(a_and_b_path, report_path, moved, 1)
+        # The same patch on a new head resets disproofs: the path key cannot show
+        # that the flagged line is unchanged.
+        moved_head = copy.deepcopy(only_b)
+        moved_head["target"]["head_sha"] = "f" * 40
+        moved_head_path = root / "moved-head.json"
+        write_json(moved_head_path, moved_head)
+        write_json(report_path, previous)
+        run(
+            sys.executable, str(SCAFFOLD), "--baseline", str(moved_head_path),
+            "--bundle", str(moved_head_path), "--wiring", "CMD-900", "CMD-901",
+            "--previous", str(report_path), "--out", str(report_path),
+            "--receipts-dir", str(fresh),
+        )
+        if json.loads(report_path.read_text(encoding="utf-8"))["test_diff_audit"]["disproven"]:
+            raise AssertionError("a disproof survived a head change")
+        # Without wiring, the previous report's harvested CMD-900 is reused.
+        unwired = copy.deepcopy(previous)
+        unwired["test_wiring"] = {"status": "NOT_APPLICABLE", "reason": "no spec added"}
+        unwired["commands"].append(
+            {"id": "CMD-900", "status": "PASS", "receipt": report["test_wiring"]["before_receipt"]}
+        )
+        write_json(report_path, unwired)
+        run(*scaffold_moved, "--receipts-dir", str(fresh))
+        reused = json.loads(report_path.read_text(encoding="utf-8"))["test_wiring"]
+        if reused["before_receipt"] != str(pathlib.Path(report["test_wiring"]["before_receipt"]).resolve()):
+            raise AssertionError(f"previous CMD-900 command not reused: {reused}")
+
+        # A FAIL is never re-run under its id: after a fix the next receipts dir
+        # re-runs every command except CMD-900, captured once before any spec
+        # changed. An early unwired scaffold still cites CMD-900, and later
+        # scaffolds find it in --previous or an earlier receipts-<n> instead of
+        # demanding a re-capture that would list the new specs as present.
+        phase = root / "phase"
+        first, second = phase / "receipts-1", phase / "receipts-2"
+        make_receipt(first, "CMD-900", "ENVIRONMENT", "echo 'account.spec.js > loads'", repeat=1)
+        make_receipt(first, "CMD-001", "TARGET", "echo 'failed'; exit 1")
+        early_path = phase / "early.json"
+        run(
+            sys.executable, str(SCAFFOLD), "--baseline", str(bundle_path),
+            "--bundle", str(bundle_path), "--receipts-dir", str(first),
+            "--out", str(early_path),
+        )
+        early = json.loads(early_path.read_text(encoding="utf-8"))
+        first_before = str((first / "CMD-900.receipt.json").resolve())
+        if early["test_wiring"].get("before_receipt") != first_before:
+            raise AssertionError(f"unwired scaffold did not cite CMD-900: {early['test_wiring']}")
+        make_receipt(second, "CMD-001", "TARGET", "echo '1 passed'")
+        make_receipt(
+            second, "CMD-901", "ENVIRONMENT",
+            "echo 'account.spec.js > loads > saved name remains visible'", repeat=1,
+        )
+        fixed_path = phase / "fixed.json"
+        run(
+            sys.executable, str(SCAFFOLD), "--baseline", str(bundle_path),
+            "--bundle", str(bundle_path), "--receipts-dir", str(second),
+            "--wiring", "CMD-900", "CMD-901", "--out", str(fixed_path),
+        )
+        fixed = json.loads(fixed_path.read_text(encoding="utf-8"))
+        if fixed["test_wiring"]["before_receipt"] != first_before or [
+            (item["id"], item["status"]) for item in fixed["commands"]
+        ] != [("CMD-001", "PASS")]:
+            raise AssertionError(f"rerun after a fix lost CMD-900 or kept the FAIL: {fixed}")
+        for field in ("intent", "environment", "criteria", "risks", "scenarios", "tests",
+                      "artifacts", "cleanup", "behavior_proof", "decision"):
+            fixed[field] = copy.deepcopy(report[field])
+        fixed["commands"][0]["test_ids"] = ["T-001"]
+        fixed["test_wiring"]["discovered_tests"] = ["saved name remains visible"]
+        check(bundle_path, fixed_path, fixed, 0)
+        # Re-invoked in a parent's fresh phase dir, only the early report's
+        # citation can supply CMD-900.
+        other = root / "phase-2" / "receipts-1"
+        make_receipt(other, "CMD-001", "TARGET", "echo '1 passed'")
+        make_receipt(
+            other, "CMD-901", "ENVIRONMENT",
+            "echo 'account.spec.js > loads > saved name remains visible'", repeat=1,
+        )
+        again_path = root / "phase-2" / "report.json"
+        run(
+            sys.executable, str(SCAFFOLD), "--baseline", str(bundle_path),
+            "--bundle", str(bundle_path), "--receipts-dir", str(other),
+            "--wiring", "CMD-900", "CMD-901", "--previous", str(early_path),
+            "--out", str(again_path),
+        )
+        again = json.loads(again_path.read_text(encoding="utf-8"))["test_wiring"]
+        if again["before_receipt"] != first_before:
+            raise AssertionError(f"re-invocation did not reuse the cited CMD-900: {again}")
+        # A cleanup entry for receipts-10 does not name receipts-1.
+        early["cleanup"] = [
+            {"id": "CL-001", "resource": str(first.resolve()) + "0", "status": "CLEANED"}
+        ]
+        write_json(early_path, early)
+        run(
+            sys.executable, str(SCAFFOLD), "--baseline", str(bundle_path),
+            "--bundle", str(bundle_path), "--receipts-dir", str(first),
+            "--previous", str(early_path), "--out", str(early_path),
+        )
+        cleanup = json.loads(early_path.read_text(encoding="utf-8"))["cleanup"]
+        if [item["resource"].endswith(str(first.resolve())) for item in cleanup] != [False, True]:
+            raise AssertionError(f"receipts-10 entry hid the receipts-1 RETAINED entry: {cleanup}")
+
+    verify_risk_tags()
     verify_git_isolation()
     verify_base_resolution()
     print(
-        "PASS: E2E bundle, Git isolation/base resolution, reciprocal graph, "
-        "audit, safety, and decision fixtures"
+        "PASS: E2E bundle, summary/--out, risk tags, Git isolation/base resolution, "
+        "reciprocal graph, recomputed audit, scaffold carry-forward, safety, and "
+        "decision fixtures"
     )
     return 0
 

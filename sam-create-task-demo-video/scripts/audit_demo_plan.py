@@ -41,7 +41,13 @@ def audit(manifest: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
         )
 
     environment = report.get("environment", {})
-    if environment.get("real_data") is True and environment.get("kind") not in {
+    if not isinstance(environment.get("real_data"), bool):
+        issue(
+            "UNDECLARED_REAL_DATA",
+            "$.environment.real_data",
+            "declare real_data true or false before recording",
+        )
+    elif environment.get("real_data") is True and environment.get("kind") not in {
         "local",
         "test",
         "dev",

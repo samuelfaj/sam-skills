@@ -1,32 +1,12 @@
 # Bar Policy
 
-A gauntlet loop only produces quality if the comparison target is real. A
-rubric lets the agent grade itself against words it wrote. A bar forces a
-side-by-side pick against something that already exists.
+A usable bar passes all three tests:
 
-## Three tests
+- **Named.** A specific artifact, not a category. "Stripe pricing page" works; "award-winning SaaS sites" does not.
+- **Fetchable.** The critic can screenshot it, read it, run it, or open it.
+- **Comparable.** Both artifacts sit side by side and a judge picks one. One bar is one artifact of one kind. Two products, a live app plus a repo, or a brochure URL plus a desktop window are two bars: offer them separately; never merge them into one bar.
 
-Every bar must pass all three before compile:
-
-- **Named.** A specific artifact, not a category. "Stripe pricing page" works.
-  "Award-winning SaaS sites" does not.
-- **Fetchable.** The critic can screenshot it, read it, run it, or open it. If
-  the agent cannot obtain the reference, it will hallucinate the comparison.
-- **Comparable.** Both artifacts can sit side by side and a judge can pick one.
-  If you cannot imagine the A/B, it is not a bar. One bar is one artifact of
-  one kind. Two products, a live app plus a repo, or a brochure URL plus a
-  desktop window are two bars. Offer them separately. Do not compile a union.
-
-Reject a bar that fails any test. Offer two or three replacements instead of
-compiling.
-
-The locator must be the surface the later critic will open. A marketing page,
-launch post, or README is not the live app, checkout, or running product. If
-the user has that window or path open, name it (bundle, title, file). Do not
-swap in a brochure URL. A benchmark or test suite named beside a repo is the
-measurable half of that same artifact, not a second product.
-
-## Bars by goal type
+The locator is the surface the later critic will open. A marketing page, launch post, or README is not the live app, checkout, or running product. If the user has that window or path open, name it (bundle, title, file); never swap in a brochure URL. A benchmark or test suite named beside a repo is the measurable half of that same artifact, not a second product.
 
 | Goal | Bar that works |
 | --- | --- |
@@ -37,18 +17,6 @@ measurable half of that same artifact, not a second product.
 | Research, analysis | A named report or paper methods section |
 | Deck, doc, deliverable | A real artifact from a firm known for it, same page count |
 
-Prefer the hardest bar the critic can genuinely reach. An easy bar exits on
-round one. When the goal has a measurable half, name the number beside the
-reference: taste plus a number beats taste alone.
+Prefer the hardest bar the critic can fetch. When the goal has a measurable half (benchmark, pass rate, load time, length), name the number beside the reference.
 
-## Fetch methods
-
-| Method | Use when |
-| --- | --- |
-| `screenshot` | Visual A/B; same viewport as the work |
-| `read` | Prose, docs, papers, source |
-| `run` | CLI, benchmark, test suite, binary |
-| `open` | Repo, artifact, or file the critic can inspect |
-
-If fetch fails, the critic must return `unfetched`. That is `BLOCKED`, not a
-win.
+Fetch method: `screenshot` for a visual A/B at the same viewport; `read` for prose, docs, papers, or source; `run` for a CLI, benchmark, test suite, or binary; `open` for a repo, artifact, or file the critic inspects.

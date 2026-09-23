@@ -1,139 +1,78 @@
 ---
 name: sam-pr-description
-description: "Create or update an evidence-backed description for a pull request, merge request, or equivalent change proposal using the actual base, immutable branch diff, complete file coverage, verified tests and safety claims, and deterministic validation. Use when asked to draft, rewrite, standardize, or remotely update a proposal description."
+description: "Write or update a pull/merge request description from the real base and immutable diff, covering every file and only verified test and safety claims. Use when asked to draft, rewrite, standardize, or remotely update a proposal description."
 ---
 
 # Sam PR Description
 
-Generate a concise reviewer-focused description from the actual change. Default
-to a local draft and EN-US unless the user explicitly requests another language.
-Remain provider-, host-, model-, tool-, and stack-neutral.
+Concise and reviewer-focused; provider-, host-, model-, tool-, and stack-neutral.
 
 ## Non-Negotiable Contract
 
 - Never assume the target branch name.
-- Never infer implementation, ticket, test, architecture, business-rule, or
-  safety claims without evidence.
+- Never make an implementation, ticket, test, architecture, business-rule, or safety claim without evidence; write `Not applicable` or `Not verified` instead of filling gaps; distinguish tests changed from commands actually run.
 - Account for every changed file exactly once.
-- Distinguish tests changed from commands actually run.
-- Use `Not applicable` or `Not verified` instead of filling evidence gaps.
-- Do not update a remote proposal unless the user or a parent workflow (for
-  example `sam-work`) explicitly requests it. Parent authorization is enough;
-  do not re-ask.
-- Re-check the remote head immediately before an authorized update.
-- Never expose secrets in context, reports, descriptions, commands, or receipts.
+- Draft locally; update a remote proposal only on an explicit user or parent (e.g. sam-work) request, which is enough: never re-ask.
+- Never truncate the patch, read a sensitive path into context, or expose secrets in context, reports, descriptions, commands, or receipts.
+- Retain report, context, body, and referenced evidence for caller re-validation; remove only unused scratch.
 
 ## Resource Routing
 
-- Run `scripts/build_change_context.py` for every draft.
-- Read [references/template.md](references/template.md) before writing the body.
-- Read [references/output-contract.md](references/output-contract.md) before
-  creating the evidence report.
-- Run `scripts/validate_description.py` before returning or updating the body.
+| Reference | Read when |
+| --- | --- |
+| `references/output-contract.md` | Step 4 starts (body and report) |
+
+Substitute literal absolute paths: `<skill>` = this file's directory; `<work>` = one scratch directory outside the repository. Do not re-read a file already read in this context unless context was compacted since or you cannot quote the section you need.
 
 ## 1. Resolve the Exact Base
 
-Resolve in this order:
+In order: explicit user or parent target; the existing remote proposal's target; the repository or remote default branch proved by Git or platform metadata. Still unknown: `BLOCKED` with the exact gap under a parent, one concise question standalone. Resolve base and head to immutable commits before inspecting.
 
-1. Explicit user- or parent-workflow-provided target.
-2. Target of the existing remote proposal.
-3. Repository or remote default branch proved by Git or platform metadata.
-4. Under a parent workflow, if the base remains unknown after steps 1–3 return
-   `BLOCKED` with the exact gap (do not ask). When standalone, one concise
-   question when the base remains unknown.
+## 2. Build the Context
 
-Do not fall back to a conventional branch name. Resolve base and head to
-immutable commits before inspecting the change.
-
-## 2. Build the Change Context
-
-Use a safe local checkout containing both refs. Preserve unrelated dirty work;
-use an isolated temporary clone or worktree when needed.
+Use a safe local checkout holding both refs, preserving unrelated dirty work (isolated temporary clone or worktree when needed):
 
 ```bash
-SAM_PR_DESCRIPTION_DIR="<absolute directory containing this SKILL.md>"
-DESCRIPTION_TMP="$(mktemp -d)"
-python3 "$SAM_PR_DESCRIPTION_DIR/scripts/build_change_context.py" \
-  --repo "$DESCRIPTION_REPO" \
-  --base "$TARGET_REF" \
-  --head "$SOURCE_REF" \
-  > "$DESCRIPTION_TMP/context.json"
+python3 <skill>/scripts/build_change_context.py --repo <repo> --base <target-ref> --head <source-ref> --out <work>/desc-<short-head>
 ```
 
-Use `--comparison direct` only when the platform defines an exact base-to-head
-range. Never truncate an oversized patch or read a sensitive path into context.
+Add `--comparison direct` only when the platform defines an exact base-to-head range. Read the printed per-file summary and `patch.diff`, never `context.json` whole; `--out` also writes the `report.json` scaffold. A refusal (sensitive path, secret-like content, oversized patch) is final: report `BLOCKED`.
 
 ## 3. Reconstruct Scope and Evidence
 
-Read the complete manifest, commits, and relevant changed files. Record:
-
-- Problem, intended outcome, why the change exists, and who benefits.
-- Changed modules and every changed path.
-- Observable behavior before, after, and intentionally unchanged.
-- Business rules added, changed, or preserved by the diff.
-- User, API, data, configuration, operational, and compatibility impact when
-  relevant.
-- Concrete failure modes, mitigations, remaining risks, rollout, monitoring,
-  and recovery when relevant.
-- Tests added or changed.
-- Validation commands run with exact status.
-- Ticket or proposal references present in user context, metadata, branch, or
-  commits.
-
-Treat reference candidates as candidates, not verified links. A positive claim
-must cite one or more evidence IDs in the temporary report.
+Reuse a sam-review report as the ledger only if `python3 <skill>/../sam-review/scripts/validate_review.py --bundle <its bundle.json> <report>` passes now, that bundle has no `path_filters`, and its `target.merge_base_sha`..`head_sha` equals the context's `base_sha`..`head_sha`: take its intent, `file_coverage` reasons, and receipt-backed validations, and read only the `patch.diff` hunks the body details. Otherwise read `patch.diff`, commits, and relevant changed files. Establish what applies: problem, outcome, rationale, beneficiaries; behavior before/after/unchanged; business rules added/changed/preserved; user, API, data, configuration, operational, compatibility impact; failure modes, mitigations, residual risk, rollout, monitoring, recovery; tests changed; commands run with exact status; reference candidates from user context, metadata, branch, and commits (treat them as candidates, not verified links).
 
 ## 4. Draft the Body
 
-Follow [references/template.md](references/template.md) and the repository
-template when present. Start with Description and Validation; add sections only
-when they help explain the actual change:
+Write it once to `body.md` beside the scaffold (its `body_file`). Follow the repository's proposal template and its requirements when present, but always keep `## Description` (the concrete problem and resulting behavior, one or two sentences) and `## Validation` (checks actually run and results, or what was not verified and why). Add sections only when needed (business rules, compatibility, migrations, rollout/recovery, material risks, reviewer focus); omit empty sections and checklist boilerplate; scale detail to the change. Write for a reader who did not implement it: problem, outcome, and observable behavior first; business rules as conditions and outcomes; each material risk with its mitigation or "none proven"; reviewer notes on risk and behavior. Never invent endpoint or payload fields for non-API work, narrate files where a behavior summary is clearer, or check checklist items without evidence. Coverage and evidence IDs stay in the report.
 
-- Write for a reader who did not implement the change.
-- Lead with the problem, outcome, and observable behavior.
-- Express business rules as conditions and outcomes.
-- Pair each material risk with a mitigation or state that none is proven.
-- Do not invent endpoint or payload fields for non-API work.
-- Do not narrate files when a behavior-level summary is clearer.
-- Do not mark checklist items complete without evidence.
-- State unrun or blocked validation explicitly.
-- Keep reviewer instructions focused on risk and behavior.
+## 5. Report and Validate
 
-The body must be raw Markdown without an outer code fence, placeholders, HTML
-comments, or blank template instructions.
-
-## 5. Build and Validate the Evidence Report
-
-Create `report.json` using
-[references/output-contract.md](references/output-contract.md). Link concrete
-claims to evidence. Map every changed path to one body section.
+Complete `report.json` per the output contract, then:
 
 ```bash
-python3 "$SAM_PR_DESCRIPTION_DIR/scripts/validate_description.py" \
-  --context "$DESCRIPTION_TMP/context.json" \
-  "$DESCRIPTION_TMP/report.json"
+python3 <skill>/scripts/validate_description.py --context <work>/desc-<short-head>/context.json <work>/desc-<short-head>/report.json
 ```
 
-Fix the body or evidence mapping when validation fails. Do not weaken the
-validator, omit changed files, or relabel unverified claims to force success.
+Fix from the validator's error lines and patch the report or body in place; do not read validator source or rewrite the whole report. Never weaken the validator, omit changed files, or relabel unverified claims.
 
 ## 6. Update Remotely Only When Requested
 
-For an explicit update request (including `sam-work` proposal create/update):
-
-1. Set `remote_update.requested` to true.
-2. Re-read the current remote head before the first write.
-3. On head drift, set `BLOCKED`, record the error, and update nothing.
-4. Use the available platform capability to replace only the description.
-5. Record the confirmed receipt. On partial failure, preserve successful
-   receipts, set `PARTIAL`, and do not blindly retry.
-6. Revalidate the final report.
-
-A local drafting request must remain `NOT_REQUESTED` with no receipts.
+Set `remote_update.requested: true`; re-read the remote head immediately before the first write and write nothing on drift; replace only the description, from the validated `body.md` (the platform's body-from-file option); record the confirmed receipt; on partial failure keep successful receipts and never blindly retry; revalidate.
 
 ## 7. Return
 
-Return only the validated description body when drafting locally. When a remote
-update was explicitly requested, return the body plus the confirmed update
-status or exact blocker. Retain the report, context, and referenced evidence for caller re-validation;
-remove only unused scratch.
+Child mode (parent or phase worker), exactly:
+
+```
+RESULT sam-pr-description <READY|PARTIAL|BLOCKED>
+report: <absolute report path>
+validator: <exact last line of validate_description.py>
+head: <sha> fingerprint: <context fingerprint>
+open: <n>
+- <one line per open item, max 10>
+```
+
+No report yet (unresolved base or builder refusal): `report: none`, `validator: <builder refusal line or none>`, `fingerprint: n/a`.
+
+`READY` = validator PASS with `remote_update` `NOT_REQUESTED` or `UPDATED`; the parent reads the body from `body_file`. Standalone: the validated body from `body.md`, the report path, and, for a requested update, the confirmed status or exact blocker. Never repeat the JSON report.

@@ -24,7 +24,7 @@ Units: <N>
 
 | # | Unit | Files (mine) | Worker | Acceptance | Status |
 |---|------|--------------|--------|------------|--------|
-| 1 | <one line: what done looks like> | <paths, comma-separated> | worker-1 | <checkable: command / test / measure> | pending |
+<rows>
 | ... | ... | ... | ... | ... | ... |
 
 ## Rules of this ledger
@@ -63,7 +63,9 @@ Append-only.
 - plan written, contract fixed
 """
 
-BRIEF = """# Worker brief: <unit name>
+ROW = "| <n> | <one line: what done looks like> | <paths, comma-separated> | worker-<n> | <checkable: command / test / measure> | pending |"
+
+BRIEF = """# Worker brief: worker-<n>, <unit name>
 
 You own one unit. Finish it, verify it, report it. Do not touch anything outside your scope. Do not spawn subagents.
 
@@ -76,6 +78,7 @@ You own one unit. Finish it, verify it, report it. Do not touch anything outside
 - **You own:** <exact files>
 - **You must NOT touch:** <exact files/dirs>
 - New files: <allowed paths, or none>
+- New packages: <package the user named, or none>
 
 ## Context
 
@@ -83,7 +86,26 @@ You own one unit. Finish it, verify it, report it. Do not touch anything outside
 
 ## Acceptance
 
-- <checkable criterion>
+- <checkable criterion from the ledger row>
+- Gates file: <path, or none>
+
+## Method
+
+Read the code first. Then stop at the first rung that holds:
+
+1. Not needed? Skip it and say so.
+2. Reuse what the codebase already has.
+3. Standard library.
+4. Native platform feature.
+5. A dependency already present. Never add a new one unless Scope names it.
+6. One line.
+7. Otherwise the minimum that works.
+
+Less code, not the flimsier algorithm; between equal options take the one correct on edge cases. Mark a known ceiling with a `sam-goal:` comment naming the upgrade path.
+
+Never skip: trust-boundary validation, data-loss handling, security, accessibility, hardware calibration, anything this brief requests. Non-trivial logic leaves one runnable check. No placeholders.
+
+After implementing, run one review pass on your diff, limited to Acceptance: expert re-read plus defect hunt (edge cases, error paths, callers). Repeat it only when it changed code, at most two repeats.
 
 ## Verify (run these before reporting done)
 
@@ -98,8 +120,8 @@ You own one unit. Finish it, verify it, report it. Do not touch anything outside
 
 ## Report back
 
-- What you implemented
-- The output of your Verify commands
+- Files changed
+- Verify exit code and the deciding tail (at most 2 lines), not the full output
 - Anything you could not finish and why
 """
 
@@ -117,6 +139,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out", required=True, help="Goal directory")
     parser.add_argument("--mode", choices=("solo", "delegated"), default="solo")
     parser.add_argument("--tree", type=int, default=2)
+    parser.add_argument("--workers", type=int, help="Delegated only: briefs and ledger rows to write")
     parser.add_argument("--json", action="store_true")
     return parser.parse_args()
 
@@ -131,11 +154,20 @@ def main() -> int:
     if args.tree < 1:
         print("error: --tree must be >= 1", file=sys.stderr)
         return 2
+    if args.workers is not None and (args.mode != "delegated" or args.workers < 1):
+        print("error: --workers needs --mode delegated and N >= 1", file=sys.stderr)
+        return 2
+    workers = args.workers or 1
     goal_dir.mkdir(parents=True, exist_ok=True)
     created = {"GATES.md": write_new(goal_dir / "GATES.md", GATES)}
     if args.mode == "delegated":
-        created["DELEGATION.md"] = write_new(goal_dir / "DELEGATION.md", DELEGATION)
-        created["briefs/worker-1.md"] = write_new(goal_dir / "briefs" / "worker-1.md", BRIEF)
+        rows = "\n".join(ROW.replace("<n>", str(n)) for n in range(1, workers + 1))
+        created["DELEGATION.md"] = write_new(
+            goal_dir / "DELEGATION.md", DELEGATION.replace("<rows>", rows)
+        )
+        for n in range(1, workers + 1):
+            name = f"briefs/worker-{n}.md"
+            created[name] = write_new(goal_dir / name, BRIEF.replace("<n>", str(n)))
     if args.tree >= 4:
         created["PLAN.md"] = write_new(goal_dir / "PLAN.md", PLAN.replace("<N>", str(args.tree)))
         created["gates/leaf-1.1.md"] = write_new(goal_dir / "gates" / "leaf-1.1.md", GATES)

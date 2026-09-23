@@ -1,214 +1,173 @@
 ---
 name: sam-council
-description: "Rapidly triage or fully falsify consequential system-development plans through blind specialist reviews, explicit rebuttals, bounded revision rounds, and evidence-weighted decisions. Use for architecture, features, migrations, incidents, releases, security-sensitive work, expensive changes, or uncertain and hard-to-reverse technical decisions on any agent platform; use multi-provider confrontation only when explicitly requested."
+description: "Blind specialist council that triages or falsifies consequential software plans via rebuttal and evidence-weighted decisions. Use for architecture, features, migrations, incidents, releases, security, costly, uncertain, or hard-to-reverse decisions; multi-provider only on explicit request."
 ---
 
 # Sam Council
 
-## Purpose
-
-Turn a consequential software plan into a falsifiable thesis, expose its weakest
-assumptions through independent review, and issue a traceable result. Optimize
-for decisive evidence per model call. Remain independent of any vendor, model,
-CLI, agent API, or fixed concurrency limit.
-
 ## Non-Negotiable Contract
 
-Remain read-only in the target system. Use distinct workers for every seat and
-keep first-pass reviews blind. Answer every objection explicitly. Decide by
-evidence and risk, never by vote count. Never report full approval while a
-supported blocker, untreated high risk, unverified critical assumption, or
-unvalidated correction remains. Retain raw responses in scratch space until the
-machine report validates. Never invent an unavailable worker or provider.
+- Stay read-only in the target system. Never invent an unavailable worker or
+  provider, or simulate one in the controller context.
+- One distinct worker per seat. Blind first pass: no seat sees peer output
+  until every seat in the pass is terminal; seats return responses only in
+  their subagent result, never a file.
+- Answer every objection. Decide by evidence and risk, never by vote or
+  provider count; one supported blocker outweighs any number of passes.
+- Never report approval while a supported blocker, untreated high, unverified
+  critical assumption, or unvalidated correction remains, or call a blocked or
+  invalid result approved. `TRIAGE_PASS` is never approval and
+  `ESCALATE_TO_FULL` never implies it. Never accept a blocker as residual
+  risk, or a high on the user's behalf.
+- Keep every raw response (step 6) until the report validates. Only validator
+  `VALID` is machine proof.
+- **Token Saver:** Pass the host's content-free
+  `RC_TOKEN_SAVER_EXECUTION_RECEIPT_V1` and its capability/lane environment
+  unchanged to every controlled child (nested spawns, retries, resumes,
+  recovery); never reconstruct or widen admission. A missing, malformed,
+  denied, cross-user, or provider-mismatched receipt is raw fail-open input.
+  Never put skills, exact-output commands, prompts, transcripts, secrets, or
+  full responses in it. Skills and exact-output evidence stay lossless; claim
+  no billing or quota savings.
+- **Telemetry (lifetime only):** With
+  `T="${REMOTE_CODE_SUBAGENT_TELEMETRY_COMMAND:-distill}"`, bracket each
+  controlled child: `run=$("$T" subagent begin --node <stable-id> </dev/null)`
+  … `"$T" subagent end --run-id "$run" --status completed|failed|cancelled </dev/null`;
+  keep the run id across retries. If the run's first `begin` fails, record one
+  Subagents proof gap and skip brackets for the rest of the run. Telemetry
+  never invents a Done row or receives skill bodies or exact output. Begin a
+  wave's seats in one shell call, printing each run id; end them in one call
+  at the barrier, passing each run id literally.
 
-`fast` is a triage profile, not a weaker approval path. It may return only
-`TRIAGE_PASS`, `ESCALATE_TO_FULL`, or `BLOCKED`. Only `full` may return
-`APPROVED`, `APPROVED_WITH_CONDITIONS`, `REVISE`, or `BLOCKED`.
+## Resources
 
-**Token Saver inheritance:** when the host provides
-`RC_TOKEN_SAVER_EXECUTION_RECEIPT_V1`, every controlled seat and verifier must
-inherit that content-free receipt and its authorized capability/lane
-environment unchanged. Never reconstruct or widen admission. A missing,
-malformed, denied, cross-user, or provider-mismatched receipt is raw fail-open
-input. Never put Skills, exact-output commands, prompts, transcripts, secrets,
-or full reviewer responses into the receipt. Skills and exact-output evidence
-remain lossless. Do not claim billing or quota savings.
+Substitute real absolute paths: `<skill>` (this directory), `<run>`
+(`<scratch>/council/<run-id>`: report and raw responses, never given to a
+worker), and `<pkt>` (`<scratch>/council-packets/<run-id>`: the only files
+workers get). Do not re-read a file already read in this context unless
+context was compacted since or you cannot quote the section.
 
-Every controlled seat/verifier lifetime must be bracketed by the
-provider-neutral telemetry bridge:
+| Reference | Read when |
+| --- | --- |
+| `references/reviewer-lenses.md` | Step 1 |
+| `references/prompt-contract.md` | Steps 3-9 |
+| `references/output-contract.md` | Step 11 |
+| `references/provider-matrix.md` | Explicit multi-provider runs only |
 
-```bash
-telemetry_command="${REMOTE_CODE_SUBAGENT_TELEMETRY_COMMAND:-distill}"
-child_run="$("$telemetry_command" subagent begin --node '<stable-seat-id>')"
-# run the seat or verifier
-"$telemetry_command" subagent end --run-id "$child_run" --status completed
-```
+## Profile and topology
 
-Use `failed` or `cancelled` on the corresponding terminal path. Preserve the
-host receipt and returned child run id through retries. Bridge unavailability
-means raw execution plus an explicit Subagents proof gap — never invent a Done
-row. Do not require Distill to process Skill bodies or exact output; the bridge
-is lifetime telemetry only.
-
-## Required resources
-
-Read these files completely before running the council:
-
-1. [references/reviewer-lenses.md](references/reviewer-lenses.md) for profile
-   seats and conditional specialists.
-2. [references/provider-matrix.md](references/provider-matrix.md) for portable
-   runtime discovery, topology, effort, and scheduling.
-3. [references/prompt-contract.md](references/prompt-contract.md) for compact
-   packets and response limits.
-4. [references/output-contract.md](references/output-contract.md) before writing
-   the report.
-
-## Select profile and topology
-
-Choose the smallest valid profile before forming the thesis.
-
-| Profile | Use when | First pass | Verification | Rounds |
+| Profile | Use when | Blind seats | Verifiers | Rounds |
 | --- | --- | --- | --- | --- |
-| `fast` | Reversible, bounded work without a triggered specialist domain | 3 composite seats | 1 fresh triage arbiter | exactly 1 |
-| `full` | Explicitly requested, costly, irreversible, production-critical, security/privacy, migration, compliance, or cross-provider | 6 required seats plus applicable specialists | 3 fresh verifiers | 1 by default, at most 3 |
+| `fast` | Reversible, bounded work, no full trigger | 3 fast seats (reviewer-lenses.md) | Fresh `triage-arbiter` | 1 |
+| `full` | Explicit request for `full`; costly, irreversible, production-critical, security/privacy, migration, compliance, or multi-provider work; a specialist applies | 6 required + every applicable specialist | Fresh `closure-verifier`, `system-verifier`, `arbiter` | 1, max 3 |
 
-Default an explicit `sam-council` request to `fast` only when every full trigger
-is absent. Escalate before dispatch when uncertain. A `fast` result that finds a
-blocker, high risk, critical unknown, displaced material risk, or applicable
-conditional specialist returns `ESCALATE_TO_FULL`; do not imply approval.
+- Pick the smallest valid profile before forming the thesis; a plain
+  `sam-council` request gets `fast` only when every full trigger is absent.
+  When uncertain, pick `full`; never dispatch `fast` only to escalate.
+- Topology: `single-host` (default; the active host's distinct workers) or
+  `multi-provider`, only when the user explicitly names at least two
+  independent providers, never from "be thorough", "another opinion", an
+  incidental model name, or the controller's host; it forces `full`. One
+  named provider: `single-host` on it. Provider IDs are runtime-supplied
+  lowercase slugs, not an allowlist.
 
-Topology is independent of profile:
+## Execution policy
 
-- `single-host` is always the default and uses the active host runtime.
-- `multi-provider` is explicit opt-in only, requires at least two independent
-  providers, and forces `full`.
-- Provider identifiers are runtime-supplied lowercase slugs. Examples include
-  `codex`, `claude-code`, and `grok`; they are not an allowlist.
-- If exactly one provider is named, stay `single-host` on it.
-
-## Portable execution policy
-
-Discover and record the host's actual adapter, model label, supported effort
-controls, and maximum safe parallel workers. Never require a named model or
-vendor-specific command.
-
-- Request the host's closest available `medium` tier for blind reviewers,
-  conditional specialists, closure verification, and system verification.
-- Request the closest available `high` tier only for the arbiter or
-  meta-arbiter. If effort is not configurable, use `host-default` and record it.
-- Dispatch independent seats concurrently up to the discovered safe capacity.
-  Run one wave when capacity covers all seats; otherwise use the minimum number
-  of batches. Never serialize independent seats unnecessarily.
-- Evaluate conditional-seat applicability once in the controller. In `fast`,
-  any applicable specialist triggers escalation rather than another seat. In
-  `full`, dispatch every applicable specialist.
-- Use a relevant-only packet. Prefer exact file ranges, diffs, receipts, and
-  user constraints; exclude unrelated repository or conversation history.
-- Cap each reviewer at 3 material objections and 1,000 words. Prefer fewer
-  load-bearing objections. A reviewer may return `NO_MATERIAL_OBJECTION`.
-- Do not run the report validator or skill harness inside reviewer workers.
-
-Record the policy and actual runtime in the report. A host limitation is not a
-reason to fabricate compliance: use the nearest supported capability and make
-the deviation explicit.
-
-## Seats
-
-### Fast
-
-Create three blind workers:
-
-1. `frame-evidence`: problem frame, logic, and load-bearing assumptions.
-2. `delivery-failure`: execution, operations, abuse, edge cases, and failure.
-3. `simplification`: cheaper, smaller, reversible, or existing alternatives.
-
-After revision, use one fresh `triage-arbiter`. It checks closure and displaced
-risk, but cannot grant full approval.
-
-### Full
-
-Create six blind workers: `logic`, `assumptions`, `execution`, `adversarial`,
-`alternatives`, and `problem-frame`. Add every applicable conditional seat from
-`references/reviewer-lenses.md`.
-
-After revision, use fresh `closure-verifier`, `system-verifier`, and `arbiter`.
-In multi-provider mode, run the required blind panel per provider with
-`{provider}/{seat}` IDs and replace `arbiter` with `meta-arbiter`.
-
-## Evidence rules
-
-Assign stable IDs: evidence `E-###`, assumptions `A-###`, objections
-`O-R<round>-###`, and theses `T-###`. Classify evidence as `VERIFIED`,
-`OBSERVED`, `INFERRED`, `ASSUMED`, or `UNKNOWN`; repetition never upgrades it.
-
-Every objection must state a falsifiable claim, failure mode, severity,
-confidence, premise/evidence IDs, required proof, and smallest correction.
-Deduplicate by failure mechanism while preserving all
-`supporting_reviewer_ids`. A supported blocker outweighs any number of passes.
+- Never require a named model, CLI, API, tool schema, or effort vocabulary. A
+  host limitation never justifies fabricated compliance: use the nearest
+  supported capability and record the deviation. A missing effort control or
+  model label alone does not block.
+- Effort: closest `medium` for every seat except arbiters (closest `high`);
+  `host-default`, recorded, when not configurable. Never raise other seats to
+  look thorough.
+- Build all seat calls first; dispatch at maximum safe capacity in the minimum
+  number of batches; wait only at barriers (blind seats terminal, author
+  revision done, verifiers terminal). Never merge seats to fit capacity or
+  serialize seats the host can run together. Never run the validator or
+  harness in seat workers.
 
 ## Workflow
 
-1. Freeze the objective, decision, scope, invariants, constraints, no-go
-   surfaces, owner, evidence, assumptions, selected profile/topology, execution
-   policy, runtime capability, seat count, and batch plan.
-2. Write `T-001` as a concise falsifiable thesis with approach, interfaces,
+1. Freeze objective, decision, scope, invariants, constraints, no-go surfaces,
+   owner, evidence, assumptions, profile/topology, execution policy, runtime
+   capability, seats (with every conditional seat), and batch plan.
+2. Write `T-001`, a concise falsifiable thesis: approach, interfaces,
    state/failure boundaries, steps, alternatives, tests, rollout/recovery,
-   observability, risks, measurable success, and recheck triggers.
-3. Build one frozen relevant-only packet. Give every worker the same core plus
-   only its lens. Preserve each raw response.
-4. Dispatch blind seats at maximum safe concurrency. Do not reveal peer output
-   until every seat in the pass is terminal.
-5. Normalize and deduplicate objections without voting. Preserve unsupported
-   claims as `UNSUPPORTED` rather than silently dropping them.
-6. In explicit multi-provider runs, confront provider claims as described in
-   `references/provider-matrix.md`.
-7. Cross-examine the author. Use exactly one disposition per objection:
-   `ACCEPT`, `PARTIAL`, `REJECT`, `INVESTIGATE`, or `ACCEPT_RISK`.
-8. Publish the revised thesis and map every objection to its response, change,
-   validation, and status.
-9. Run the fresh verification panel at maximum safe concurrency.
-10. Stop after round one by default. Return a terminal result instead of
-    automatically starting another round. Continue to round two or three only
-    when the user, in this turn, explicitly asks to validate a revised thesis.
-    Set `continuation_authorized` true only for that user ask. An author
-    bumping `T-001` to `T-00N`, a `REVISE` result, or a verifier `REJECT` is
-    not authorization. Never exceed three rounds; stop after two rounds
-    without material progress.
-11. Validate the scratch report with
-    `python3 -B scripts/validate_council_report.py council-report.json`.
+   observability, risks, measurable success, recheck triggers. IDs: evidence
+   `E-###`, assumptions `A-###`, theses `T-###`, objections `O-R<round>-###`.
+   Classify evidence `VERIFIED`, `OBSERVED`, `INFERRED`, `ASSUMED`, or
+   `UNKNOWN`; repetition never upgrades it.
+3. Write the frozen packet once (prompt-contract.md), or a delta packet
+   (below).
+4. Run `python3 -B <skill>/scripts/scaffold_council_report.py init --out <run>/council-report.json --packet <pkt>/packet.md --profile <p> --provider <slug> --max-parallel <n> --model <label|host-default> [--adapter <label>] --reviewer-effort <medium|host-default> --arbiter-effort <high|host-default> --repo <target repo> --reuse-dir <scratch>/council [--select <specialist>]... [--base-report <prior>]`;
+   `--max-parallel` is the safe number of concurrent worker calls, excluding
+   the controller where the host distinguishes it. On
+   `REUSE <path> … validator: <line>`, dispatch nothing and return that report
+   (Output).
+5. Dispatch blind seats with only the seat ID, its lens, and the packet path
+   (paste the packet only if the worker cannot read files).
+6. After the barrier, keep each raw response as a locator (a path or ID from
+   which the host can re-open that exact response) or, if none exists, as
+   `<run>/raw/<seat>.md`. Normalize without voting; deduplicate by
+   failure mechanism, keeping all `supporting_reviewer_ids`; keep unsupported
+   claims as `UNSUPPORTED`. Multi-provider: confront per provider-matrix.md.
+7. Zero-objection fast pass (every seat `NO_MATERIAL_OBJECTION`, no `ESCALATE`
+   seat, no `UNRESOLVED` assumption): skip steps 8-10 and delete init's
+   triage-arbiter entry; the report records `TRIAGE_PASS` with no verification.
+8. Cross-examine the author (prompt-contract.md). Publish the revised thesis,
+   mapping every objection to response, change, validation, and status.
+9. Run the fresh verification panel.
+10. Stop after round one and return a terminal result; never start another
+    round automatically. Run round two or three only when the user explicitly
+    asks this turn to validate a revised thesis, and only then set
+    `continuation_authorized` true; an author bumping `T-001` to `T-00N`, a
+    `REVISE` result, or a verifier `REJECT` is not authorization. Max three
+    rounds; stop after two without material progress.
+11. Fill the report. After every edit run
+    `python3 -B <skill>/scripts/scaffold_council_report.py finalize <run>/council-report.json --repo <target repo>`
+    (derives mechanical fields, then runs `scripts/validate_council_report.py`).
+    Fix from the validator's error lines and patch the report in place; do not
+    read validator source or rewrite the whole report. Run
+    `python3 -B <skill>/scripts/test_council_harness.py` only when changing
+    this skill.
+
+**Delta packet.** When a parent re-runs council on a new commit after a fix
+and the prior report on the same thesis is VALID and passing, the packet keeps
+the charter, profile, topology, and verbatim seat mission but replaces the
+thesis, evidence, and excerpts with the prior final thesis, every prior
+objection with status, `git diff <prior packet_head> <new head>`, and fresh
+receipts; pass `--base-report <prior>` and run every seat. Use a full packet
+to change profile, or when the delta touches public contracts/APIs/schemas,
+auth/security/permissions, persistence/migrations, shared modules used
+outside the change, or risk-tagged paths, or exceeds the original change.
 
 ## Decision rules
 
-For `fast`:
+| Status | Only when |
+| --- | --- |
+| `TRIAGE_PASS` (fast) | No supported blocker/high, critical unknown, specialist trigger, or material displaced risk |
+| `ESCALATE_TO_FULL` (fast) | Any blocker/high, critical unknown, applicable specialist, multi-provider need, or displaced/new material risk |
+| `APPROVED` (full) | No supported blocker/high; critical assumptions and corrections verified |
+| `APPROVED_WITH_CONDITIONS` (full) | No blocker; every high mitigated or explicitly accepted by the decision owner, with owned gated conditions |
+| `REVISE` (full) | An actionable material objection or unknown remains after the authorized round |
+| `BLOCKED` | Distinct workers, required evidence, authority, provider, or runtime capability unavailable |
 
-- `TRIAGE_PASS`: no supported blocker/high, no critical unknown, no specialist
-  trigger, and the fresh triage arbiter found no material displaced risk.
-- `ESCALATE_TO_FULL`: any blocker/high, critical unknown, specialist trigger,
-  multi-provider requirement, or material new risk exists.
-- `BLOCKED`: distinct workers, evidence, runtime capability, or authority is
-  unavailable.
-
-For `full`:
-
-- `APPROVED`: no supported blocker/high remains; critical assumptions and
-  corrections are verified.
-- `APPROVED_WITH_CONDITIONS`: no blocker remains; every high is mitigated or
-  explicitly accepted by the decision owner, with owned gated conditions.
-- `REVISE`: an actionable material objection or unknown remains after the
-  current authorized round.
-- `BLOCKED`: required evidence, independence, authority, provider, or runtime
-  capability is unavailable.
-
-Never treat `TRIAGE_PASS` as approval. Never accept a blocker as residual risk
-or a high risk on the user's behalf.
+Each profile returns only the statuses tagged with it, or `BLOCKED`.
 
 ## Output
 
-Follow [references/output-contract.md](references/output-contract.md). Report
-the terminal result, confidence, profile, topology, providers, actual runtime
-bindings, batch plan, thesis, evidence, objections, responses, verification,
-conditions, residual uncertainty, and validator result. Disclose missing raw
-history in `historical_record_limitations`.
-
-Run `scripts/test_council_harness.py` only when changing this skill. Never call
-a blocked or invalid result approved.
+- Child mode (invoked by a parent skill or phase worker): the final message is
+  exactly this block; never restate the report.
+  ```
+  RESULT sam-council <STATUS>
+  report: <absolute path>
+  validator: <exact last line of the validator output>
+  head: <sha|none> fingerprint: <packet_fingerprint|n/a>
+  open: <n>
+  - <one line per open blocker, high, or condition, max 10>
+  ```
+  On `REUSE`, `report:` is the reused report and the next line is
+  `reused_from: <that path>`.
+- Standalone: at most 15 lines (status, confidence, profile, topology, material
+  objections and conditions, residual uncertainty, validator line, any
+  `reused_from`) plus the report path; never the JSON.

@@ -1,72 +1,50 @@
 # Output Contract
 
-Draft and validate JSON before rendering the final response.
+`scripts/scaffold_report.py` writes every key and derives fingerprints, `target`, `command_definitions.changed`, `commands[]` (not `test_ids`), wiring receipts, and `test_diff_audit`. `+` = non-empty; `*_ids` = resolving string IDs.
 
-Required fields:
+| Field | Contents |
+| --- | --- |
+| intent | summary+, invariants list, no_go list |
+| environment | kind unknown/local/test/dev/staging/production, identity+, real_data bool, evidence+ |
+| authorization | publish_requested bool (true for any UPLOADED artifact) |
+| command_definitions | inspected true and evidence+ when changed |
+| criteria | id, text+ |
+| behaviors | id, criterion_ids, description+, paths+ |
+| risks | id, criterion_ids, behavior_ids, level (step 2), evidence+ or description+ |
+| scenarios | id, criterion_ids, behavior_ids, risk_ids, status (step 2), layer (step 3) or MANUAL, sufficiency+, test_ids, artifact_ids, reason |
+| tests | id, scenario_ids, command_ids, path+, name+, regression_proof {status (step 4), evidence+} |
+| commands | id, test_ids, command+, status, classification, receipt, evidence+ |
+| artifacts | id, scenario_ids, status LOCAL/UPLOADED/NOT_CREATED, safety_review true, receipt and readback_verified true when UPLOADED |
+| cleanup | id, resource+, status CLEANED/RETAINED/BLOCKED, reason unless CLEANED |
+| test_diff_audit | status PASS/FAIL, evidence+, disproven [{id, kind, path, reason+}] |
+| test_wiring | status PROVEN/NOT_PROVEN/NOT_APPLICABLE, before_receipt, after_receipt, discovered_tests, reason unless PROVEN |
+| real_system_proof | status PROVEN/FALLBACK/NOT_PROVEN/NOT_APPLICABLE, evidence+, reason |
+| decision | FULL/PARTIAL/BLOCKED |
 
-- `baseline_fingerprint`, `bundle_fingerprint`
-- `target`: `base_sha`, `head_sha`
-- `intent`: `summary`, `invariants`, `no_go`
-- `environment`: `kind`, `identity`, `real_data`, `evidence`
-- `authorization`: `publish_requested`
-- `command_definitions`: `changed`, `inspected`, `evidence`
-- `criteria`, `behaviors`, `risks`, `scenarios`, `tests`, `commands`, `artifacts`, `cleanup`
-- `test_diff_audit`: `status`, `evidence`
-- `test_wiring`: `status`, plus receipts and names when `PROVEN`
-- `real_system_proof`: `status`, `evidence`
-- `decision`: `FULL`, `PARTIAL`, or `BLOCKED`
+- IDs are unique report-wide. Every ledger from criteria to cleanup is non-empty (nothing produced: one `NOT_CREATED` artifact linked to a scenario). Every `*_ids` list is non-empty except scenario `artifact_ids`, and scenario `test_ids` unless `AUTOMATED`. Trace every criterion through behaviors, risks, scenarios, tests, commands, and artifacts. Reciprocal links: scenario/test, test/command, scenario/artifact. `MANUAL_PROOF`/`REDUNDANT`/`NOT_COVERED` need `reason` or `evidence`.
+- Commands: `PASS`/`FAIL` match their cited absolute receipt, whose hashes and exit codes are recomputed; `NOT_RUN` has a reason and no receipt.
+- Wiring `PROVEN`: non-empty `discovered_tests`, each absent from the before log and present in the after log.
+- Audit: `PASS` over findings needs a `disproven` entry matching each finding's `id`, `kind`, and `path`.
 
-Use stable IDs `AC-###`, `B-###`, `R-###`, `S-###`, `T-###`, `CMD-###`,
-`ART-###`, and `CL-###`. Scenario layers are `UNIT`, `COMPONENT`,
-`INTEGRATION`, `API_CONTRACT`, `E2E`, or `MANUAL`. Every reference must be a
-string and every scenario/test, test/command, and scenario/artifact link must
-be reciprocal. Criteria require nonempty text; risks require evidence or
-description.
+## Decision
 
-Each test requires a nonempty path and name plus `regression_proof.status`:
-`RED_GREEN`, `MUTATION`, `CONTRACT`, or `NOT_PROVEN`, with evidence. Each
-command requires status `PASS`, `FAIL`, or `NOT_RUN` and classification
-`TARGET`, `BASELINE`, `ENVIRONMENT`, or `EXTERNAL`.
+`FULL` requires: no `PLANNED`/`NOT_COVERED` scenario except delegated E2E journeys (step 3); no `NOT_PROVEN` test; every `TARGET` `PASS`; no `FLAKY` command; audit `PASS`; wiring `PROVEN` or `NOT_APPLICABLE`; `RED_GREEN` or `MUTATION` for tests linked to `HIGH`/`CRITICAL` risk; no `BLOCKED` cleanup; `real_system_proof` `PROVEN` when an `AUTOMATED` E2E scenario exists, else `PROVEN` or `NOT_APPLICABLE`.
 
-## Execution receipts
+`PARTIAL`: honest residual gaps. `BLOCKED`: unsafe environment, scope, authorization, or execution conditions.
 
-Every command with status `PASS` or `FAIL` requires `receipt`: the absolute path
-of the `scripts/run_checked.py` receipt. `commands[].command` must equal the
-receipt argv joined by spaces, and status plus classification must match the
-receipt exactly. `NOT_RUN` carries a reason and no receipt.
+## Re-invocation
 
-The validator recomputes `receipt_sha256` and every captured `log_sha256`, so an
-edited receipt or log fails. A `PASS` whose receipt records a non-zero exit code
-fails. `TARGET` commands must record at least two runs; differing exit codes make
-the command `FLAKY`.
+Rebuild the final bundle. Same head and fingerprint: keep `<receipts>` and run only missing or `NOT_RUN` commands (a `FAIL` only per the step-7 rule); if none remain, re-run only the validator. Otherwise rebuild both bundles, take the next `<receipts>`, re-establish each test's regression proof, and re-run every `PASS`/`FAIL` command. Scaffold with `--previous <previous>`.
 
-## Test wiring
+## Return
 
-```json
-{
-  "test_wiring": {
-    "status": "PROVEN",
-    "before_receipt": "/abs/receipts/CMD-900.receipt.json",
-    "after_receipt": "/abs/receipts/CMD-901.receipt.json",
-    "discovered_tests": ["test_rejects_expired_token"],
-    "evidence": ["runner discovery before and after the change"]
-  }
-}
+Child mode (invoked by a parent or phase worker): the final message is exactly this block. Standalone: at most 15 lines plus the report path; never repeat the report.
+
 ```
-
-`status` is `PROVEN`, `NOT_PROVEN`, or `NOT_APPLICABLE`; the last two require a
-`reason`. For `PROVEN`, each name in `discovered_tests` must be absent from the
-before-log and present in the after-log.
-
-## Decision gates
-
-`FULL` is invalid with uncovered required scenarios, target failures, failed
-audit, any regression test marked `NOT_PROVEN`, unsafe real-data environment,
-unverified real-system claims, uninspected changed commands, unauthorized
-publication, blocked cleanup, any `FLAKY` command, a `TARGET` command that did not
-run repeatedly and stably, test wiring that is not `PROVEN` or `NOT_APPLICABLE`,
-or a test linked to `HIGH`/`CRITICAL` risk whose proof is not `RED_GREEN` or
-`MUTATION`.
-
-When the bundle carries a `security`, `data`, `contract`, or `concurrency` risk
-tag, at least one declared risk must be `HIGH` or `CRITICAL`.
+RESULT sam-create-test-coverage <FULL|PARTIAL|BLOCKED>
+report: <absolute path>
+validator: <exact last line of the validator output>
+head: <sha> fingerprint: <final bundle fingerprint>
+open: <n>
+- <one line per open required item, max 10>
+```

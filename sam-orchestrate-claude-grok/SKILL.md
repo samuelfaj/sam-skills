@@ -1,270 +1,175 @@
 ---
 name: sam-orchestrate-claude-grok
-description: "Claude-controller hybrid orchestration: Grok 4.6 workers for routine and deep slices (medium LIGHT / high STANDARD / xhigh DEEP), Claude opus high independent review, opus xhigh only for stall/multi-round capability escalation, and opus max for optional advisor. Use when the user runs /sam-orchestrate-claude-grok, wants Claude as orchestrator with Grok producers, or cross-host cost-aware multi-agent delivery under this profile."
+description: "Claude-controller orchestration with Grok 4.6 workers (medium/high/xhigh by tier), Opus high review, Opus xhigh only on stall or multi-round escalation, Opus max advisor. Use when the user runs /sam-orchestrate-claude-grok or wants Claude orchestrating Grok producers for cross-host multi-agent delivery."
 ---
 
 # Sam Orchestrate Claude–Grok
 
-Controller-only orchestration with a **fixed hybrid runtime profile**:
+Controller-only orchestration with a fixed hybrid profile: Claude Code controls
+(long tasks, test re-runs, integration, proof); Grok `grok-4.6` produces; Claude
+`opus` reviews, unsticks after multi-round Grok failure or stall, and advises.
 
-- **Controller host:** Claude Code (long tasks, test re-runs, integration, proof).
-- **Default producers:** Grok `grok-4.6` (`medium` LIGHT, `high` STANDARD, `xhigh` DEEP).
-- **Independent REVIEWER:** Claude `opus` / `high`.
-- **Unstick / genius:** Claude `opus` / `xhigh` only after multi-round Grok failure or stall.
-- **Advisor (optional):** Claude `opus` / `max` (read-only).
-
-Do not implement task artifacts on the main thread except controller integration,
-proof re-runs, conflict reconciliation, and final reporting.
-
-**Token posture:** thin controller, fat workers, progressive disclosure, cheap
-proof, selective review. Spend tokens on artifact verification — not on pasting
-this skill into every worker.
-
-**Token Saver inheritance:** when the host provides
-`RC_TOKEN_SAVER_EXECUTION_RECEIPT_V1`, every nested worker and advisor must
-inherit that content-free receipt and its authorized capability/lane
-environment unchanged. The host owns admission; workers must not reconstruct,
-widen, or replace those decisions. A missing, malformed, denied, cross-user,
-or provider-mismatched receipt is raw fail-open input. Never put Skills,
-exact-output commands, prompts, transcripts, secrets, or full advisor
-responses into the receipt. Skills and exact-output evidence remain lossless.
-Do not claim billing or quota savings.
+**Token Saver:** Pass the host's content-free `RC_TOKEN_SAVER_EXECUTION_RECEIPT_V1` and its capability/lane environment unchanged to every controlled child (nested spawns, retries, resumes, recovery); never reconstruct or widen admission. A missing, malformed, denied, cross-user, or provider-mismatched receipt is raw fail-open input. Never put skills, exact-output commands, prompts, transcripts, secrets, or full responses in it. Skills and exact-output evidence stay lossless; claim no billing or quota savings.
 
 ## Non-Negotiable Contract
 
 - Exclusive top pipeline: if this turn also named `sam-goal`, `sam-task`,
   or `sam-work` as the user request, do not run this controller pipeline;
-  that named method owns the turn. Precedence: `sam-goal` > `sam-task` >
-  `sam-work` > `sam-orchestrate`.
-- Keep the main agent controller-only. Delegate production code, tests, docs,
-  migrations, and other task artifacts.
-- **Profile is fixed:** `task.active_host` must be `claude-code` (controller).
-  Worker `runtime.host` may be `grok` or `claude-code` per
-  [references/host-runtime-matrix.md](references/host-runtime-matrix.md).
+  that named method owns the turn. Precedence: `sam-goal` > `sam-task` > `sam-work` > `sam-orchestrate`.
+- Stay controller-only: delegate production code, tests, docs, migrations, and
+  other task artifacts. Never produce task artifacts on the main thread except
+  controller integration, proof re-runs, conflict reconciliation, and final
+  reporting.
+- Profile is fixed: `task.active_host` is `claude-code`; worker `runtime.host`
+  is `grok` or `claude-code` per §3.
 - Give every worker one owner boundary, writable scope, no-go, dependencies,
-  pass criteria, required proof, and a bound runtime receipt.
-- Tell every worker that other agents may share the workspace; never revert or
-  overwrite unrelated work.
-- Treat every returned claim as unverified until the controller checks artifact,
-  scope, and proof (diff ⊆ writable paths; one real TARGET proof).
-- Bind model/effort **only** from this skill’s matrix. Never invent models,
-  never ask the user which model to pick, never put model/host names in owner IDs.
-- **Cheap-first:** never open on `DEEP` or `genius_worker`. Escalate only after
-  concrete capability failure, stall, or new risk evidence — never because a
+  pass criteria, required proof, a bound runtime receipt, and the warning that
+  other agents share the workspace and their work must never be reverted or
+  overwritten.
+- Claims are unverified until the controller checks artifact, scope, and proof
+  (diff ⊆ writable paths; one real TARGET proof per requirement).
+- Bind model and effort only from §3. Never invent models, never ask the user
+  which model to pick, never put model or host names in owner IDs.
+- Cheap-first: never open on `DEEP` or `genius_worker`. Escalate only after
+  concrete capability failure, stall, or new risk evidence, never because a
   task is large.
-- Spawn Grok EXECUTION nodes via `sam-grok-worker` with the matrix effort
-  (`--effort medium|high|xhigh`). Do not rely on the worker’s default when LIGHT
-  needs `medium` or DEEP needs `xhigh`.
-- Spawn Claude REVIEWER / genius via Claude Code with the matrix model and
-  effort. REVIEWER is read-only.
-- If Claude or Grok CLI / auth is unavailable, stop with an evidence-backed
+- Spawn Grok `EXECUTION` nodes via `sam-grok-worker` with the §3 effort
+  (`--effort medium|high|xhigh`), never the worker's default. Spawn the Claude
+  REVIEWER and genius via Claude Code with the §3 model and effort; the REVIEWER
+  is read-only.
+- If the Claude or Grok CLI or auth is unavailable, stop with an evidence-backed
   `EXTERNAL`/`ENVIRONMENT` blocker. No silent host fallback outside this profile.
 - Never expose secrets in prompts, reports, commands, or evidence.
 
-## Progressive Disclosure (read only what you need)
+## References
 
-| Path | Read now | Defer |
-| --- | --- | --- |
-| **Micro** (`T0` + certainty `absolute`/`high`) | This SKILL (this section + §1 micro) | full output-contract until report |
-| **Single** (`T1`) | + [routing-policy.md](references/routing-policy.md) + [prompt-contract.md](references/prompt-contract.md) | — |
-| **Multi** (`T2`) | + [host-runtime-matrix.md](references/host-runtime-matrix.md) | — |
-| **Critical** (`T3`) or any stall escalation | + [output-contract.md](references/output-contract.md) + run validator | — |
+Read nothing else up front. Do not re-read a file already read in this context
+unless context was compacted since or you cannot quote the section you need.
 
-Always run `scripts/validate_orchestration.py` before declaring completion when
-you produced a report JSON (Single/Multi/Critical). Micro may skip the formal
-report when no delegated workers ran and proof is a single local check — if you
-write a report, validate it.
-
-## Certainty Budget
-
-Record `task.controller_certainty`: `absolute` | `high` | `medium` | `low`.
-
-| Certainty | Meaning | Shape |
-| --- | --- | --- |
-| `absolute` | Zero residual doubt | Micro (`T0`) only |
-| `high` | Clear single-slice; ordinary residual risk | Micro or Single |
-| `medium` | Normal ambiguity / multi-touch | Single or Multi |
-| `low` | Unclear ownership, risk, or proof | Multi or Critical; do not skip review |
-
-Never invent `absolute`/`high` to save cost.
-
-## Orchestration Modes (T0–T3)
-
-| Mode | When | Shape |
-| --- | --- | --- |
-| **Micro** | `T0` + certainty `absolute`/`high` | Optional one `LIGHT` Grok worker; no REVIEWER if skip rules hold |
-| **Single** | `T1` | One `STANDARD` Grok worker (`LIGHT` if purely mechanical) |
-| **Multi** | `T2` | Min independent Grok workers (default parallel **2**, cap **3**); integration owner; review when multi-producer or risk |
-| **Critical** | `T3` | `DEEP` Grok only on the risky slice; serialize unsafe writes; **REVIEWER required** (Claude opus high) |
-
-Parallel fan-out: default max **2** concurrent execution workers; hard cap **3**.
-
-## 1. Freeze Goal and Constraints
-
-Record before delegation:
-
-- Goal and observable success criteria.
-- Constraints and no-go surfaces.
-- Certainty budget.
-- Risk flags, expected artifact classes, empty changed-file manifest.
-- User decisions that must not be inferred.
-- `task.active_host = "claude-code"`.
-
-Classify `T0`–`T3` per [routing-policy.md](references/routing-policy.md).
-
-### Micro path
-
-1. Controller-only only for pure integration; otherwise one short `LIGHT` Grok
-   worker (`grok-4.6` / `medium`) with a slice-only prompt.
-2. Proof: scope diff + at most one focused command.
-3. Skip REVIEWER when absolute/high certainty skip rules hold.
-4. Report: one table row or minimal validated JSON.
-
-## 2. Build the Task DAG
-
-Each node needs: stable ID; kind `EXECUTION` | `ORCHESTRATION` | `REVIEW`;
-neutral owner (`worker-N` / `controller-N` / `reviewer-N`); capability
-`LIGHT` | `STANDARD` | `DEEP` | `REVIEWER`; runtime binding for every delegated
-EXECUTION/REVIEW node; dependencies; objective; no-go; proof; writable or
-read-only scope; artifact classes; status; evidence IDs.
-
-Caps: `T0`/`T1` → ≤1 execution producer; `T2`/`T3` → ≤3.
-
-`DEEP` only when `T3` or non-empty `risk_flags`.
-
-## 3. Bind Runtime and Delegate
-
-Bind from [host-runtime-matrix.md](references/host-runtime-matrix.md) only:
-
-| Capability | Host | Model | Effort |
-| --- | --- | --- | --- |
-| `LIGHT` | `grok` | `grok-4.6` | `medium` |
-| `STANDARD` | `grok` | `grok-4.6` | `high` |
-| `DEEP` | `grok` | `grok-4.6` | `xhigh` |
-| `REVIEWER` | `claude-code` | `opus` | `high` |
-| `genius_worker` (rare) | `claude-code` | `opus` | `xhigh` |
-| advisor (optional) | `claude-code` | `opus` | `max` |
-
-Worker prompts: [prompt-contract.md](references/prompt-contract.md).
-
-### Grok spawn
-
-Use sibling skill `sam-grok-worker` with explicit effort from the matrix and an
-absolute `--prompt-file`. Pass only the slice; no full skill paste.
-
-### Claude REVIEWER / genius spawn
-
-Use Claude Code read-only for REVIEWER; writable only for genius when the
-controller already authorized those writes. Record runtime receipt before spawn.
-
-### Advisor spawn
-
-Optional read-only second opinion: `opus` / `max`. Never owns production nodes.
-
-Every controlled worker or advisor lifetime must be bracketed by the
-provider-neutral telemetry bridge:
-
-```bash
-telemetry_command="${REMOTE_CODE_SUBAGENT_TELEMETRY_COMMAND:-distill}"
-child_run="$("$telemetry_command" subagent begin --node '<stable-id>')"
-# run the delegated worker or advisor
-"$telemetry_command" subagent end --run-id "$child_run" --status completed
-```
-
-Use `failed` or `cancelled` on the corresponding terminal path. Preserve the
-host Token Saver receipt and the returned child run id through retries and
-recovery. Bridge unavailability means raw execution plus an explicit Subagents
-proof gap — never invent a Done row. Do not require Distill to process Skill
-bodies or exact output; the bridge is lifetime telemetry only.
-
-## 4. Track, Reconcile, Escalate
-
-1. Track node state; no overlapping writes without a dependency edge.
-2. Reconcile every changed file to one producer + artifact class.
-3. Before accepting claims: diff ⊆ writable_paths; one TARGET proof per
-   requirement.
-4. Prefer re-running the smallest proof over re-reading transcripts.
-5. Escalate capability only after capability failure, stall, or new risk evidence.
-6. Stop for required user decisions that expand scope.
-
-### Stall / multi-round → Opus xhigh
-
-Escalate a STANDARD/DEEP producer to `genius_worker` (`claude-code` /
-`opus` / `xhigh`) only when **any** trigger holds (record in
-`runtime.fallback_reason`):
-
-| Trigger | Minimum evidence |
+| File | Read when |
 | --- | --- |
-| `multi_round_fail` | ≥2 Grok attempts on the same objective with TARGET `FAIL` or capability blocker |
-| `stall` | 2× no material progress (no useful diff / same root cause loop) |
-| `deep_insufficient` | Node already `DEEP` Grok-xhigh and still unclosed |
-| `contradiction` | Worker claims contradict controller re-checked proof |
+| `references/prompt-contract.md` | Before the first worker, reviewer, genius, or advisor prompt or spawn |
+| `references/routing-policy.md` | After a failed or stalled attempt, before any re-prompt or escalation; before proof broader than scope diff + one focused command |
+| `references/host-runtime-matrix.md` | Only for a fallback or effort-policy doubt |
+| `references/output-contract.md` | When report authoring starts (§6) |
 
-**Caps:** max **2** Grok attempts per objective before Opus-xhigh; max **1**
-Opus-xhigh attempt per objective; then `BLOCKED` + user decision (or optional
-read-only advisor at `opus` / `max`). Max **1** active genius node; serial.
-Prefer one tighter re-prompt at the same tier before escalating.
+## Classes and Modes
 
-Do **not** escalate for task size, latency, preference, or CLI/auth failure.
+| Class | Definition | Mode |
+| --- | --- | --- |
+| `T0` | Mechanical or read-only, narrow scope, no material runtime, security, or data risk | **Micro** (certainty `absolute`/`high`; §1) |
+| `T1` | One bounded implementation area | **Single**: one `STANDARD` Grok worker (`LIGHT` if purely mechanical) |
+| `T2` | Multiple independent slices or cross-file coordination | **Multi**: fewest independent Grok workers; integration owner |
+| `T3` | Production, security, auth, privacy, payment, secrets, data loss, migration, release, large refactor, or uncertain cross-repo behavior | **Critical**: `DEEP` Grok only on the risky slice; serialize unsafe writes |
 
-Do **not** raise REVIEWER effort to `xhigh`/`max`; corrections return to
-producers (Grok, or Opus-xhigh if trigger already armed).
+`task.controller_certainty`: `absolute` = zero residual doubt (Micro only);
+`high` = clear single slice, ordinary residual risk (Micro or Single); `medium`
+= normal ambiguity or multi-touch, the default and the value when omitted
+(Single or Multi); `low` = unclear ownership, risk, or proof (Multi or Critical;
+never skip review). Never invent `absolute`/`high` to save cost.
+
+Execution producers: ≤ 1 for `T0`/`T1`, ≤ 3 for `T2`/`T3`; default 2
+concurrent, hard cap 3; split only on real ownership or dependency boundaries.
+
+## 1. Freeze
+
+Record before delegation: goal and observable success criteria, constraints and
+no-go surfaces, certainty, risk flags, expected artifact classes, an empty
+changed-file manifest, and user decisions that must not be inferred. Classify
+`T0`–`T3`. Create a run directory `<run>` outside the repo `<repo>` (`mktemp -d`)
+and snapshot the workspace (literal absolute paths; `<skill-dir>` holds this
+file):
+`python3 <skill-dir>/scripts/scaffold_report.py --freeze-out <run>/freeze.json --repo <repo>`;
+note its `tree=` id and run `chmod a-w <run>/freeze.json` (workers may write
+under `<run>`).
+If `<repo>` is not a git work tree, skip `--freeze-out`/`--freeze`/`--diff-out`/`--tree`
+and list changed files in the spec `files` field.
+
+Micro: controller-only only for pure integration, else one short slice-only
+`LIGHT` Grok worker. Proof is the scope diff plus at most one focused command.
+Skip the formal report only when no delegated worker ran and proof is one local
+check.
+
+## 2. DAG
+
+Build the smallest useful DAG: one node per owned slice with a stable ID, kind
+(`EXECUTION`, `ORCHESTRATION`, or `REVIEW`), capability (`LIGHT`, `STANDARD`,
+`DEEP`, or `REVIEWER`), the contract's worker fields, one objective, artifact
+classes, status, and evidence IDs. `DEEP` only for `T3` or non-empty
+`risk_flags`. Overlapping writes need a dependency edge.
+
+## 3. Bind and Delegate
+
+| Capability (role) | Host | Model | Effort | Notes |
+| --- | --- | --- | --- | --- |
+| `LIGHT` (`fast_scan`) | `grok` | `grok-4.6` | `medium` | mechanical / read-only / `T0` micro |
+| `STANDARD` (`routine_worker`) | `grok` | `grok-4.6` | `high` | bounded implementation and ordinary tests |
+| `DEEP` (`deep_worker`) | `grok` | `grok-4.6` | `xhigh` | `T3` / risk slice first attempt |
+| `REVIEWER` (`reviewer`) | `claude-code` | `opus` | `high` | read-only / plan mode; host ≠ Grok producers |
+| `genius_worker` (rare) | `claude-code` | `opus` | `xhigh` | unstick only; routing-policy.md trigger + `fallback_reason` |
+| advisor (optional) | `claude-code` | `opus` | `max` | read-only; never owns production nodes |
+
+Load `sam-grok-worker` once per run; every Grok node keeps its prompt
+requirements (no publish, push, remote proposals, messages, or other external
+writes unless the frozen request authorizes them; the Output field replaces its
+report line) and reconcile step; only re-reading its SKILL.md is skipped. Its
+resolver always grants workspace sandbox + always-approve: spawn Grok only
+where the parent authorized workspace writes, else the controller runs
+read-only scans itself; a read-only Grok node gets `No-go: any write`, and
+`--tree` (§4 step 3) run before and after it must print the same id, else the
+node fails. The Claude genius is writable only for the frozen scope the
+controller already authorized. Cross-host is intentional; still one producer
+per writable path.
+
+**Telemetry (lifetime only):** With `T="${REMOTE_CODE_SUBAGENT_TELEMETRY_COMMAND:-distill}"`, bracket each controlled child: `run=$("$T" subagent begin --node <stable-id> </dev/null)` … `"$T" subagent end --run-id "$run" --status completed|failed|cancelled </dev/null`; keep the run id across retries. If the run's first `begin` fails, record one Subagents proof gap and skip brackets for the rest of the run. Telemetry never invents a Done row or receives skill bodies or exact output.
+
+## 4. Track and Reconcile
+
+1. Track node state; reconcile every changed file to one producer and artifact
+   class. A changed path no run worker made is never reverted or absorbed by
+   widening a scope: stop for a `USER_DECISION`.
+2. Re-run the smallest proof instead of re-reading transcripts.
+3. Right after each TARGET `PASS`, run
+   `python3 <skill-dir>/scripts/scaffold_report.py --tree --repo <repo>` and put
+   its `tree=<id>` in that evidence `detail`. Before re-running a node's TARGET
+   proof, skip it (reuse its evidence IDs) while `--tree` still prints that id.
+   Report-only fixes never re-run proofs or review.
+4. Stop for required user decisions that expand scope.
 
 ## 5. Review Gate
 
-### Require REVIEWER when
+Require a REVIEWER when: `T3`; non-empty `risk_flags`; `DATA`/`RELEASE`
+artifacts; more than one execution producer; TARGET proof missing or not
+`PASS`; `review_requested: true`; or `CODE`/`TEST` changed without a certainty
+skip. Else record `NOT_REQUIRED` with the exact reason.
 
-- `T3`, non-empty `risk_flags`, or `DATA`/`RELEASE` artifacts.
-- More than one execution producer.
-- TARGET proof missing or not `PASS`.
-- `review_requested: true`.
-- `CODE`/`TEST` changed and certainty skip does not apply.
+A certainty skip needs one producer, empty `risk_flags`, all TARGET proof
+`PASS`, and `review_requested` false, plus:
 
-### Certainty skip (no REVIEWER)
+| `controller_certainty` | Class | Capability | Gate reason |
+| --- | --- | --- | --- |
+| `absolute` | `T0` only | any allowed | `micro_task_absolute_certainty` |
+| `high` | `T0` or `T1` | `LIGHT` or `STANDARD` only | `micro_task_high_certainty` |
 
-| | Absolute | High |
-| --- | --- | --- |
-| Class | `T0` only | `T0` or `T1` |
-| Producers | 1 | 1 |
-| Capability | any allowed | `LIGHT` or `STANDARD` only |
-| risk_flags | empty | empty |
-| TARGET proof | all PASS | all PASS |
-| review_requested | false | false |
-| Gate reason | `micro_task_absolute_certainty` | `micro_task_high_certainty` |
+The REVIEWER has a distinct owner, runs after all producers, gets only the
+prompt-contract.md intake, and has its own TARGET `PASS` proof. After
+corrections, re-gate on the delta per prompt-contract.md. Never raise REVIEWER
+effort to `xhigh`/`max`; corrections return to producers (Grok, or Opus `xhigh`
+if a trigger is already armed). Cap: 3 review rounds (initial + 2), recorded in
+`review_gate.rounds`; a third failing round stops with the review node `BLOCKED`
+on a `USER_DECISION` blocker.
 
-### Reviewer efficiency
+## 6. Report and Validate
 
-- Claude opus high; read-only; distinct owner; after all producers.
-- Feed combined diff/artifact + checklist + frozen scope + proof IDs only.
-- Dedicated TARGET/`PASS` proof for the review node.
+For Single/Multi/Critical, and any Micro run that writes a report:
 
-## 6. Validate Completion
+1. Write a judgment-only spec per output-contract.md, then run
+   `python3 <skill-dir>/scripts/scaffold_report.py --spec <run>/spec.json --out <run>/report.json --freeze <run>/freeze.json`.
+2. Run `python3 <skill-dir>/scripts/validate_orchestration.py <run>/report.json`.
+   Fix from the validator's error lines and patch the report in place; do not
+   read validator source or rewrite the whole report. Never weaken the validator.
 
-Write JSON per [output-contract.md](references/output-contract.md), then:
-
-```bash
-SAM_ORCHESTRATE_CLAUDE_GROK_DIR="<absolute directory containing this SKILL.md>"
-python3 "$SAM_ORCHESTRATE_CLAUDE_GROK_DIR/scripts/validate_orchestration.py" \
-  "$ORCHESTRATION_TMP/report.json"
-```
-
-Do not weaken the validator. Remove temp artifacts after validation.
-
-`COMPLETE` only when DAG + review gate satisfy the contract, every completed
-producer has dedicated TARGET/`PASS` proof, manifest reconciles, and no required
-correction remains. `BLOCKED` only with evidence-backed external/authority/
-user-decision/dependency provenance. Else `IN_PROGRESS`.
-
-## 7. Report (lean)
-
-| Field | Content |
-| --- | --- |
-| Class / certainty / mode | `T*`, certainty, micro/single/multi/critical |
-| Nodes | id · capability · host · model · effort · status |
-| Manifest | path · class · producer |
-| Proof | id · requirement · PASS/FAIL |
-| Escalation | any genius trigger + fallback_reason |
-| Review | required? reason / skip reason |
-| Decision | COMPLETE / BLOCKED / IN_PROGRESS + remaining IDs |
-
-Do not repeat unverified agent claims. Do not dump raw logs.
+Final response, ≤ 15 lines plus the report path (if written): class, certainty,
+mode; decision and remaining IDs; any genius trigger and `fallback_reason`; gate
+status and reason; validator last line; only `FAIL` or skipped proofs. Never
+repeat the JSON report, unverified claims, or raw logs.

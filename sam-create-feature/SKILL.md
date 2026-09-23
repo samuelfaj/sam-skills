@@ -1,143 +1,115 @@
 ---
 name: sam-create-feature
-description: "Implement a new codebase capability end-to-end with frozen requirements and scope, risk-calibrated test-first delivery, behavior proof, validated evidence, and optional publication only when explicitly requested. Use for new screens, endpoints, integrations, data flows, commands, or other functional additions; do not use for correcting broken existing behavior, plan-only analysis, or code review."
+description: "Implement a new capability end-to-end with frozen scope, test-first delivery, behavior proof, and validated evidence; publish only on request. Use for new screens, endpoints, integrations, data flows, commands, or other functional additions; not for bug fixes, plan-only work, or review."
 ---
 
 # Sam Create Feature
 
-Deliver the requested capability with the smallest safe diff. Remain stack-,
+Deliver the requested capability with the smallest safe diff. Stay stack-,
 provider-, host-, tool-, and model-neutral.
 
 ## Non-Negotiable Contract
 
-- Preserve unrelated staged, unstaged, and untracked work byte-for-byte.
-- Never reset, checkout, stash, clean, rebase, or broadly restore the workspace.
-- Do not stage, commit, push, publish, open a change request, or message an
-  external system unless the user or a parent workflow (for example `sam-work`)
-  explicitly requests that exact action. Parent authorization is enough; do not
-  re-ask.
+- Preserve unrelated staged, unstaged, and untracked work byte-for-byte. Never
+  reset, checkout, stash, clean, rebase, or broadly restore the workspace.
+- Stage, commit, push, publish, open a change request, or message an external
+  system only when the user or a parent workflow (e.g. `sam-work`) explicitly
+  requested that exact action; parent authorization is enough, never re-ask.
+- Child mode (a parent workflow or phase worker invoked you): never ask;
+  execute or return `BLOCKED` with receipts. Standalone: ask only questions
+  whose answers materially change product behavior, security, data, public
+  contracts, or scope.
 - Inspect changed commands, hooks, build definitions, and configuration before
   executing them. Never expose secrets in artifacts, commands, or output.
-- Treat mandatory gates as fail-closed. Never simulate a missing dependency or
-  convert missing proof into a pass.
-- Stop after two correction cycles unless new evidence appears.
+- A missing mandatory dependency, gate, or proof returns `BLOCKED`; never
+  simulate it or turn missing proof into a pass. Stop after two correction
+  cycles unless new evidence appears.
+- Return any change beyond the frozen goal, contract, or owner boundary to the
+  parent as the exact gap (standalone: ask). File or line counts alone neither
+  widen nor approve scope; justify each added path against the frozen goal.
 
-## Resource Routing
+## Resources
 
-- Read [references/evidence-policy.md](references/evidence-policy.md) before
-  mapping tests, behavior proof, gates, or external actions.
-- Read [references/risk-lenses.md](references/risk-lenses.md) after discovering
-  affected boundaries; load only applicable lenses.
-- Read [references/output-contract.md](references/output-contract.md) before
-  drafting the final structured report.
-- Run `scripts/capture_scope.py` before any edit and after all edits.
-- Run `scripts/validate_report.py` before declaring completion.
+Use literal absolute paths: `<skill>` is this directory; `<tmp>` is the
+parent's phase directory, else scratch outside `<repo>`. Re-read a file only
+after compaction or when you cannot quote the needed section; a copy of
+`evidence-policy.md` or `risk-lenses.md` already read from sam-fix-bug,
+sam-refine-task, or sam-simplify-task counts.
 
-## 1. Freeze Target, Intent, and Scope
+| Read | When |
+|---|---|
+| `references/output-contract.md` | Step 1, before freezing the report |
+| `references/evidence-policy.md` | Step 2, before planning proof |
+| `references/risk-lenses.md` | After discovering affected boundaries: only lenses the flow reaches |
 
-Set the skill directory to the directory containing this file. Create temporary
-artifacts outside the repository.
+## 1. Freeze
 
 ```bash
-SAM_FEATURE_DIR="<absolute directory containing this SKILL.md>"
-WORK_TMP="$(mktemp -d)"
-python3 "$SAM_FEATURE_DIR/scripts/capture_scope.py" --repo "$PWD" \
-  > "$WORK_TMP/baseline.json"
+python3 <skill>/scripts/capture_scope.py --repo <repo> > <tmp>/baseline.json
+python3 <skill>/scripts/validate_report.py --scaffold --baseline <tmp>/baseline.json <tmp>/report.json
 ```
 
-Add repeated `--path <repo-relative-path>` only for user-scoped paths. Reuse the
-exact arguments for the final capture.
+Repeat `--path <repo-relative-path>` only for user-scoped paths, with identical
+arguments in every capture. Never open `baseline.json` or `current.json`; the
+capture's stderr line summarizes them. Rewind (this skill already wrote a
+report for this task): capture and scaffold in a fresh `<tmp>` (under a parent,
+the handoff's phase dir) with `--from <prior report>`; never move, edit, or
+overwrite the prior report.
 
-Freeze in working notes and the report:
+Study relevant code, tests, contracts, schemas, migrations, and conventions,
+then freeze into the report: every `intent` field (goal: goal and target user;
+must_not_change: behavior and no-go paths), acceptance criteria as
+`requirements`, initial owned paths, and publication authorization
+(`external_actions[].requested`).
 
-- Goal, target user, and acceptance criteria.
-- Behavior that must not change and system invariants.
-- Owning boundary and user-visible effect.
-- Initial owned paths, explicit no-go paths, and baseline fingerprint.
-- Required proof and publication authorization state.
+## 2. Classify Risk and Plan Proof
 
-Study relevant code, tests, contracts, schemas, migrations, and conventions
-first. Under a parent workflow (for example `sam-work`), never ask—execute or
-return `BLOCKED` with receipts. When running standalone, ask only questions
-whose answers materially change product behavior, security, data, public
-contracts, or scope.
+Risk is `LIGHT`, `STANDARD`, or `HIGH_RISK` by affected behavior, not task
+size; authentication, authorization, money, destructive data, concurrency,
+public contracts, migrations, integrations, deployment, and critical user flows
+are high risk.
 
-## 2. Classify Risk and Build Scenarios
-
-Use `LIGHT`, `STANDARD`, or `HIGH_RISK` based on affected behavior, not task
-size alone. Treat authentication, authorization, money, destructive data,
-concurrency, public contracts, migrations, integrations, deployment, and
-critical user flows as high risk.
-
-Map success, negative, boundary, permission, persistence, partial-failure,
-compatibility, and user-state scenarios when applicable. Link every required
-scenario to a practical proof seam.
-
-Use test-first proof when the repository has a meaningful seam:
+Map scenarios per the evidence policy, including user states; link each
+required scenario to a practical proof seam and record the required proof as
+`gates` (`NOT_RUN` until run). Where a meaningful seam exists, work test-first
+(`RED_GREEN`):
 
 1. Add the smallest test that expresses the requirement and why it matters.
 2. Prove it fails for the missing behavior.
 3. Implement the smallest production change.
 4. Prove it passes.
 
-Use `ALTERNATIVE_PROOF` only when no practical established test seam exists.
-State the limitation, evidence, and closest safe validation. Never add a
-cosmetic test solely to satisfy process.
+Otherwise use `ALTERNATIVE_PROOF` per the evidence policy. Never add a cosmetic
+test solely to satisfy process.
 
 ## 3. Implement Within the Frozen Contract
 
-- Follow existing architecture, naming, types, and dependency patterns.
-- Keep logic in the owning layer and preserve public compatibility unless the
-  confirmed requirement explicitly changes it.
-- Avoid speculative abstractions, unrelated cleanup, N+1 work, unbounded
-  payloads, sensitive-data exposure, and duplicated business rules.
-- Account for loading, empty, error, disabled, permission, accessibility, and
-  recovery states for user-visible work when applicable.
-- Update `current_owned_paths` only for files required by the feature.
+- Follow existing architecture, naming, types, and dependency patterns; keep
+  logic in the owning layer.
+- Keep public compatibility unless a confirmed requirement changes it. No
+  speculative abstractions, unrelated cleanup, N+1 work, unbounded payloads,
+  sensitive-data exposure, or duplicated business rules.
+- Add to `current_owned_paths` only files the feature requires.
 
-If a necessary change exceeds the authorized goal, contract, or owner boundary,
-return the exact gap to the parent, or ask the user when standalone. More files
-alone do not imply broader scope; justify each added path against acceptance
-criteria and preserve unrelated work.
+## 4. Prove and Gate
 
-## 4. Prove the Result
+- Run the narrowest safe checks first, then broader ones proportional to risk.
+  If a gate changes code, rerun affected tests and any review this skill ran.
+- Run applicable dependent gates with their actual local instructions: require
+  local code review and coverage analysis for runtime changes, and browser
+  proof only for impacted browser flows. A gate the parent runs itself on the
+  final head (e.g. `sam-work` review, coverage, or browser proof) is recorded
+  parent-owned (output-contract `gates` row) and skipped; `behavior_proof` is
+  never parent-owned.
 
-Run the narrowest safe checks first, then broader checks proportional to risk.
-Record each command as `PASS`, `FAIL`, or `NOT_RUN`, and classify failures as
-`TARGET`, `INTRODUCED`, `BASELINE`, `ENVIRONMENT`, or `EXTERNAL`.
+## 5. Report and Decide
 
-For a user-visible UI, API, CLI, or generated artifact, record `PROVEN`,
-`NOT_PROVEN`, or `NOT_APPLICABLE`. Static inspection alone never proves
-user-visible behavior.
-
-Run applicable dependent gates using their actual local instructions. Require
-local code review and coverage analysis for runtime changes. Require browser
-proof only for impacted browser flows. A missing mandatory gate results in
-`BLOCKED`; an inapplicable gate must include a concrete reason.
-
-If any gate changes code, rerun affected tests and the final review. Stop after
-two non-converging correction cycles unless new evidence changes the diagnosis.
-
-## 5. Validate Scope and Decision
-
-Capture current scope with the exact baseline arguments:
+Capture `<tmp>/current.json` with the step 1 arguments, re-scaffold with
+`--current <tmp>/current.json`, fill the report, and validate:
 
 ```bash
-python3 "$SAM_FEATURE_DIR/scripts/capture_scope.py" --repo "$PWD" \
-  > "$WORK_TMP/current.json"
-python3 "$SAM_FEATURE_DIR/scripts/validate_report.py" \
-  --baseline "$WORK_TMP/baseline.json" \
-  --current "$WORK_TMP/current.json" "$WORK_TMP/report.json"
+python3 <skill>/scripts/validate_report.py --baseline <tmp>/baseline.json --current <tmp>/current.json <tmp>/report.json
 ```
 
-The file ledger must cover every path changed after the baseline exactly once.
-Do not weaken the report or validator to force completion.
-
-Return `COMPLETE` only when requirements, required scenarios, mandatory gates,
-validations, behavior proof, scope, and dirty-work preservation agree. Otherwise
-return `CHANGES_REQUIRED` or `BLOCKED` with exact remaining work.
-
-Draft publication text locally when useful. Publish it only after explicit user
-or parent-workflow authorization and record evidence of the authorized action;
-never re-ask when the parent already authorized. Retain the report and evidence
-needed by the caller; remove only unused scratch.
+Never weaken the report or validator to force completion. Keep the report and
+evidence the caller needs; remove only unused scratch.

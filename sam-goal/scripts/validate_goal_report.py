@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Validate a sam-goal report against the output contract."""
+"""Validate a sam-goal report against the output contract; --derive fills mechanical fields first."""
 
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from types import ModuleType
+from typing import Any, Mapping
 
 
 ACTIONS = {"execute", "review", "audit"}
@@ -18,6 +20,7 @@ RESULTS = {"COMPLETE", "IN_PROGRESS", "BLOCKED"}
 EVIDENCE_STATUSES = {"PASS", "FAIL", "BLOCKED", "NOT_RUN", "INFO"}
 HOST_KEYS = {"claude-code", "codex", "grok"}
 HOST_STATUSES = {"DETECTED", "OVERRIDE", "UNKNOWN", "CONFLICT", "INVALID"}
+DERIVED_EVIDENCE = {"gates-check", "ledger-check"}
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -229,15 +232,130 @@ def validate(report: dict[str, Any]) -> list[str]:
     return errors
 
 
+def sibling(name: str) -> ModuleType:
+    path = Path(__file__).resolve().parent / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(f"sam_goal_{name}", path)
+    if spec is None or spec.loader is None:
+        raise ValueError(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    sys.dont_write_bytecode = True
+    spec.loader.exec_module(module)
+    return module
+
+
+def derive(
+    report: dict[str, Any], report_path: Path, environ: Mapping[str, str] | None = None
+) -> dict[str, Any]:
+    """Overwrite host, gates, delegation, checks, and derived evidence from files and env."""
+    gates_mod = sibling("check_gates")
+    goal_dir = report_path.resolve().parent
+    raw_dir = report.get("goal_dir")
+    if isinstance(raw_dir, str) and raw_dir.strip():
+        typed = (Path.cwd() / Path(raw_dir.strip()).expanduser()).resolve()
+        if typed != goal_dir:
+            raise ValueError(f"goal_dir {typed} is not the report's directory {goal_dir}")
+    report["schema_version"] = 1
+    report["workflow"] = "goal"
+    report["goal_dir"] = str(goal_dir)
+
+    found = sibling("detect_host").detect_host(environ)
+    env_host = {"key": found["host"], "status": found["status"], "detected_from": found["detected_from"]}
+    host = report.get("host")
+    key = host.get("key") if isinstance(host, dict) else None
+    if (
+        isinstance(host, dict)
+        and host.get("status") == "OVERRIDE"
+        and key in HOST_KEYS
+        and host.get("detected_from") == f"override:{key}"
+    ):
+        report["host"] = {"key": key, "status": "OVERRIDE", "detected_from": f"override:{key}", "env": env_host}
+    else:
+        report["host"] = env_host
+
+    met: list[str] = []
+    unmet: list[str] = []
+    abandoned: list[str] = []
+    files = gates_mod.default_files(goal_dir)
+    for path in files:
+        try:
+            parsed = gates_mod.parse_gates(path.read_text(encoding="utf-8").splitlines())
+        except (OSError, UnicodeError) as error:
+            raise ValueError(f"cannot read gates file {path}: {error}") from error
+        label = "" if path == goal_dir / "GATES.md" else f"{path.name}:"
+        for bucket, ids in zip((met, unmet, abandoned), gates_mod.classify(parsed)):
+            bucket.extend(label + item for item in ids)
+    report["gates"] = {
+        "path": str(goal_dir / "GATES.md"),
+        "total": len(met) + len(unmet) + len(abandoned),
+        "met": len(met),
+        "abandoned": len(abandoned),
+        "unmet": unmet,
+        "abandoned_ids": abandoned,
+    }
+
+    evidence = report.get("evidence")
+    evidence = [] if evidence is None else evidence
+    derived: list[dict[str, Any]] = []
+    checks: dict[str, Any] = {"gates": None, "ledger": None}
+    if files:
+        code, line = gates_mod.summary_line(len(met), len(unmet), len(abandoned))
+        checks["gates"] = {"exit_code": code, "summary": line}
+        derived.append(
+            {"id": "gates-check", "status": "PASS" if code == 0 else "FAIL", "detail": f"gate files: {line}"}
+        )
+    elif report.get("action") == "execute":
+        checks["gates"] = {"exit_code": 2, "summary": "no gate files found (GATES.md or gates/*.md)"}
+
+    report["delegation"] = None
+    # A ledger on disk means the goal was delegated; a typed solo mode cannot hide it.
+    if (goal_dir / "DELEGATION.md").is_file() and report.get("mode") != "delegated":
+        raise ValueError("DELEGATION.md exists; mode must be delegated")
+    if report.get("mode") == "delegated":
+        ledger = goal_dir / "DELEGATION.md"
+        code, text, counts = sibling("check_ledger").analyze(ledger)
+        summary = text.strip().splitlines()[-1].strip().removeprefix("-> ")
+        report["delegation"] = {
+            "path": str(ledger),
+            "units": counts.get("units", 0),
+            "verified": counts.get("verified", 0),
+            "pending": counts.get("pending", 0),
+            "complete": code == 0,
+        }
+        checks["ledger"] = {"exit_code": code, "summary": summary}
+        derived.append(
+            {"id": "ledger-check", "status": "PASS" if code == 0 else "FAIL", "detail": f"{ledger.name}: {summary}"}
+        )
+    report["checks"] = checks
+    if isinstance(evidence, list):
+        kept = [
+            item
+            for item in evidence
+            if not (isinstance(item, dict) and item.get("id") in DERIVED_EVIDENCE)
+        ]
+        report["evidence"] = kept + derived
+    return report
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("report")
+    parser.add_argument(
+        "--derive",
+        action="store_true",
+        help="Fill host, gates, delegation, checks from files and env, rewrite, then validate",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
+    args = parse_args()
+    path = Path(args.report)
     try:
-        report = load_json(Path(parse_args().report))
+        report = load_json(path)
+        if args.derive:
+            report = derive(report, path.resolve())
+            path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         errors = validate(report)
     except ValueError as error:
         print(f"INVALID: {error}", file=sys.stderr)

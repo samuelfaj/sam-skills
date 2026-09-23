@@ -1,245 +1,54 @@
 # Output Contract (Codex–Grok profile)
 
-## Contents
+Scaffold the report from a spec, then validate; the validator enforces everything here.
 
-- Report shape
-- Allowed values
-- Runtime binding
-- Invariants
+## Report
 
-## Report Shape
-
-Create a temporary JSON report with this shape:
+No keys beyond these; `+` marks a non-empty list; lists hold unique non-empty strings.
 
 ```json
-{
-  "schema_version": 2,
-  "task": {
-    "classification": "T2",
-    "goal": "Deliver the requested change",
-    "success_criteria": ["Focused validation passes"],
-    "constraints": [],
-    "no_go": ["Do not change unrelated files"],
-    "risk_flags": [],
-    "active_host": "codex",
-    "changed_artifacts": ["CODE", "TEST"],
-    "changed_files": [
-      {"path": "src/service.py", "artifact_class": "CODE", "producer_task_id": "E1"},
-      {"path": "tests/test_service.py", "artifact_class": "TEST", "producer_task_id": "E2"}
-    ],
-    "review_requested": false,
-    "controller_certainty": "medium"
-  },
-  "dag": [
-    {
-      "id": "E1",
-      "kind": "EXECUTION",
-      "owner": "worker-1",
-      "capability": "STANDARD",
-      "runtime": {
-        "host": "grok",
-        "role": "routine_worker",
-        "model": "grok-4.6",
-        "effort": "high",
-        "fallback_reason": null
-      },
-      "depends_on": [],
-      "objective": "Implement the bounded service change",
-      "no_go": ["Do not edit tests"],
-      "proof_requirements": ["Runtime diff matches the assigned scope"],
-      "artifact_classes": ["CODE"],
-      "writable_paths": ["src/service.py"],
-      "direct_action_reason": null,
-      "status": "COMPLETE",
-      "evidence_ids": ["V1"],
-      "blocker": null
-    },
-    {
-      "id": "E2",
-      "kind": "EXECUTION",
-      "owner": "worker-2",
-      "capability": "STANDARD",
-      "runtime": {
-        "host": "grok",
-        "role": "routine_worker",
-        "model": "grok-4.6",
-        "effort": "high",
-        "fallback_reason": null
-      },
-      "depends_on": [],
-      "objective": "Add focused regression coverage",
-      "no_go": ["Do not edit runtime code"],
-      "proof_requirements": ["Focused regression tests pass"],
-      "artifact_classes": ["TEST"],
-      "writable_paths": ["tests/test_service.py"],
-      "direct_action_reason": null,
-      "status": "COMPLETE",
-      "evidence_ids": ["V2"],
-      "blocker": null
-    },
-    {
-      "id": "R1",
-      "kind": "REVIEW",
-      "owner": "reviewer-1",
-      "capability": "REVIEWER",
-      "runtime": {
-        "host": "codex",
-        "role": "reviewer",
-        "model": "gpt-5.6-sol",
-        "effort": "medium",
-        "fallback_reason": null
-      },
-      "depends_on": ["E1", "E2"],
-      "objective": "Review the combined result independently",
-      "no_go": ["Do not modify artifacts"],
-      "proof_requirements": ["Independent review finds no required correction"],
-      "artifact_classes": [],
-      "writable_paths": [],
-      "direct_action_reason": null,
-      "status": "COMPLETE",
-      "evidence_ids": ["V3"],
-      "blocker": null
-    }
-  ],
-  "evidence": [
-    {
-      "id": "V1",
-      "task_id": "E1",
-      "requirement": "Runtime diff matches the assigned scope",
-      "type": "DIFF",
-      "status": "PASS",
-      "classification": "TARGET",
-      "detail": "Inspected service diff stays within the assigned file"
-    },
-    {
-      "id": "V2",
-      "task_id": "E2",
-      "requirement": "Focused regression tests pass",
-      "type": "COMMAND",
-      "status": "PASS",
-      "classification": "TARGET",
-      "detail": "Focused regression command exited successfully"
-    },
-    {
-      "id": "V3",
-      "task_id": "R1",
-      "requirement": "Independent review finds no required correction",
-      "type": "OBSERVATION",
-      "status": "PASS",
-      "classification": "TARGET",
-      "detail": "Read-only reviewer found no required correction"
-    }
-  ],
-  "review_gate": {
-    "required": true,
-    "reasons": ["Code and tests changed", "Multiple producers contributed"],
-    "status": "PASS",
-    "review_task_id": "R1"
-  },
-  "decision": {
-    "result": "COMPLETE",
-    "remaining_task_ids": []
-  }
-}
+{"schema_version": 2,
+ "task": {"classification": "T0|T1|T2|T3", "goal": "...", "success_criteria": ["+"], "constraints": [], "no_go": ["+"],
+  "risk_flags": [], "active_host": "codex", "changed_artifacts": ["<class>"],
+  "changed_files": [{"path": "src/a.py", "artifact_class": "<class>", "producer_task_id": "E1"}],
+  "review_requested": false, "controller_certainty": "absolute|high|medium|low (optional; omitted = medium)"},
+ "dag": [{"id": "E1", "kind": "EXECUTION|ORCHESTRATION|REVIEW", "owner": "worker-N|controller-N|reviewer-N",
+  "capability": "LIGHT|STANDARD|DEEP|REVIEWER",
+  "runtime": {"host": "grok|codex", "role": "fast_scan|routine_worker|deep_worker|genius_worker|ultra_worker|reviewer",
+   "model": "...", "effort": "...", "fallback_reason": null},
+  "depends_on": [], "objective": "...", "no_go": ["+"], "proof_requirements": ["+"], "artifact_classes": ["<class>"],
+  "writable_paths": ["src"], "direct_action_reason": null, "status": "PENDING|RUNNING|COMPLETE|BLOCKED",
+  "evidence_ids": ["V1"], "blocker": {"kind": "EXTERNAL|AUTHORITY|USER_DECISION|DEPENDENCY", "source": "...", "evidence_ids": ["+"]}}],
+ "evidence": [{"id": "V1", "task_id": "E1", "requirement": "<a proof_requirements entry of task_id>",
+  "type": "COMMAND|DIFF|FILE|REMOTE|USER|OBSERVATION", "status": "PASS|FAIL|NOT_RUN|INFO",
+  "classification": "TARGET|BASELINE|ENVIRONMENT|EXTERNAL", "detail": "short summary (≤ ~500 chars), no raw logs"}],
+ "review_gate": {"required": true, "reasons": ["..."], "status": "PASS|FAIL|NOT_RUN|NOT_REQUIRED",
+  "review_task_id": "R1", "rounds": 1},
+ "decision": {"result": "COMPLETE|BLOCKED|IN_PROGRESS", "remaining_task_ids": []}}
 ```
 
-Allowed values:
+`<class>`: `CODE` `TEST` `DOCS` `CONFIG` `DATA` `RELEASE` `OTHER`. Paths are normalized and repo-relative. `runtime` is `null` on `ORCHESTRATION` nodes; `blocker` is `null` unless `BLOCKED`. Advisors are not DAG nodes.
 
-- Task: `T0`, `T1`, `T2`, `T3`.
-- `controller_certainty` (optional): `absolute`, `high`, `medium`, `low`.
-  Omitted/`null` is treated as `medium` for gate decisions.
-- Active host (controller): **`codex` only** for this profile.
-- Artifact: `CODE`, `TEST`, `DOCS`, `CONFIG`, `DATA`, `RELEASE`, `OTHER`.
-- Kind: `EXECUTION`, `ORCHESTRATION`, `REVIEW`.
-- Capability: `LIGHT`, `STANDARD`, `DEEP`, `REVIEWER`.
-- Runtime role: `fast_scan`, `routine_worker`, `deep_worker`, `genius_worker`,
-  `reviewer`.
-- Runtime host: `grok` (LIGHT/STANDARD/DEEP) or `codex` (REVIEWER / genius).
-- Node status: `PENDING`, `RUNNING`, `COMPLETE`, `BLOCKED`.
-- Blocker kind: `EXTERNAL`, `AUTHORITY`, `USER_DECISION`, `DEPENDENCY`.
-- Evidence type: `COMMAND`, `DIFF`, `FILE`, `REMOTE`, `USER`, `OBSERVATION`.
-- Evidence status: `PASS`, `FAIL`, `NOT_RUN`, `INFO`.
-- Evidence classification: `TARGET`, `BASELINE`, `ENVIRONMENT`, `EXTERNAL`.
-- Gate status: `PASS`, `FAIL`, `NOT_RUN`, `NOT_REQUIRED`.
-- Gate skip reasons: `micro_task_absolute_certainty`,
-  `micro_task_high_certainty`, or a short non-trigger explanation.
-- Decision: `COMPLETE`, `BLOCKED`, `IN_PROGRESS`.
+## Spec
 
-## Fan-out and DEEP invariants
+Write only judgment fields; `scripts/scaffold_report.py` derives the rest.
 
-- Execution producers: max 1 for `T0`/`T1`; max 3 for `T2`/`T3`.
-- `DEEP` capability only when `classification` is `T3` or `risk_flags` is
-  non-empty.
-- Evidence `detail` should be a short summary (prefer under ~500 characters for
-  COMMAND logs); do not paste multi-KB raw logs into the report.
-
-## Runtime binding
-
-`task.active_host` is required and must be `codex`. Every delegated `EXECUTION`
-and `REVIEW` node requires a `runtime` object matching
-[host-runtime-matrix.md](host-runtime-matrix.md) for the node capability.
-
-Standard Grok producer:
-
-```json
-{
-  "host": "grok",
-  "role": "routine_worker",
-  "model": "grok-4.6",
-  "effort": "high",
-  "fallback_reason": null
-}
-```
-
-Codex REVIEWER:
-
-```json
-{
-  "host": "codex",
-  "role": "reviewer",
-  "model": "gpt-5.6-sol",
-  "effort": "medium",
-  "fallback_reason": null
-}
-```
-
-Rare genius unstick (STANDARD or DEEP capability nodes only):
-
-```json
-{
-  "host": "codex",
-  "role": "genius_worker",
-  "model": "gpt-5.6-sol",
-  "effort": "high",
-  "fallback_reason": "stall after 2 grok attempts; evidence V4"
-}
-```
-
-`fallback_reason` is a non-empty string when the preferred Grok row was replaced
-by genius escalation or another in-matrix fallback; otherwise null.
-Controller-only `ORCHESTRATION` nodes may set `runtime` to null.
+- `task`: the report `task` without `changed_*` and `active_host` (always `codex`); `constraints`, `risk_flags` default `[]`, `review_requested` false.
+- `nodes`: `dag` entries without `owner`, `runtime`, `evidence_ids`. `status` defaults `PENDING`; `artifact_classes` defaults to the classes of assigned files; `"genius": true` binds the genius row; `fallback_reason` goes on the node; `blocker` (`kind`, `source`) only on `BLOCKED` nodes.
+- `evidence`: as in the report; omit `requirement` when the node has one.
+- `files`: `{"<path>": "<class>" | {"class": "<class>", "producer": "<id>"}}`. With `--freeze`, every path changed after the SKILL.md §1 snapshot is added, each assigned to the one producer whose writable scope holds it; a changed path outside every scope, or a listed path that did not change, is an error. For a changed path no run worker made, follow SKILL.md §4 step 1. Omit a class only when the producer declares one.
+- `review_rounds`: completed review rounds; with `--freeze` the scaffold counts `<run>/review-<n>.diff` files and a typed value must match.
 
 ## Invariants
 
-- Owner IDs are role-only: `worker-N`, `controller-N`, or `reviewer-N`.
-- Runtime bindings live only in structured `runtime` fields.
-- Cross-host is allowed: producers may be `grok` while `active_host` is `codex`
-  and REVIEWER/genius may be `codex`.
-- Every writable non-review node is a producer. A completed producer owns at
-  least one changed-file entry; manifest classes match `artifact_classes`.
-- `task.changed_artifacts` equals the distinct classes in `changed_files`.
-  Every changed path lies inside its producer's writable scope.
-- Every completed node proves every `proof_requirements` entry with dedicated
-  TARGET/`PASS` evidence.
-- `RUNNING` and `COMPLETE` nodes have only `COMPLETE` dependencies.
-- A `BLOCKED` node has a blocker object with source and evidence IDs.
-- Review gate follows the routing-policy cost guard.
-- Lean final user report: table of nodes/proof/review/decision — no essay.
-- A required reviewer is read-only, independent, depends on every producer, and
-  has dedicated passing target evidence.
-
-The validator checks the full schema, producer derivation, changed-file
-reconciliation, state transitions, blocker provenance, dependency acyclicity,
-overlapping writes, proof ownership, review triggers, hybrid runtime matrix
-binding, owner-identity hygiene, and decision consistency. Report validator
-`PASS` or its exact errors in the final response.
+- Runtime: `host`, role, model, effort = the SKILL.md §3 row for the capability; `runtime.host` may differ from `task.active_host`. `STANDARD`/`DEEP` nodes may bind the genius row only with a non-empty `fallback_reason`. Otherwise a non-empty `fallback_reason` allows any model, effort, and host from the §3 rows except the advisor row.
+- Owner prefix matches kind; only read-only `REVIEW` nodes use `REVIEWER`.
+- `T0`/`T1`: one execution node (`T0` `LIGHT`, `T1` `LIGHT`/`STANDARD`). `T2`/`T3`: 1-3; `T3` needs a `DEEP` one.
+- Writable non-review nodes are producers with `artifact_classes`; read-only nodes have none. Writable `ORCHESTRATION` needs `direct_action_reason`, else `null`.
+- Dependencies exist and are acyclic; `RUNNING`/`COMPLETE` nodes depend only on `COMPLETE` ones.
+- `changed_artifacts` = classes in `changed_files`. Each file is unique, inside its producer's writable scope, with a class that producer declares. A `COMPLETE` producer owns ≥ 1 file; its manifest classes equal its `artifact_classes`.
+- Evidence is referenced only by its own task. A `COMPLETE` node proves every requirement with its own `TARGET` `PASS` item.
+- Blocker `evidence_ids` are owned by the node and classified `ENVIRONMENT`/`EXTERNAL`. `DEPENDENCY` names a `BLOCKED` direct dependency; other kinds need `COMPLETE` dependencies.
+- Gate: required when a `REVIEW` node exists or a SKILL.md §5 trigger fires. Required gates have reasons, are never `NOT_REQUIRED`, and name a `REVIEW` node depending on every producer with a non-producer owner; `PASS` needs it `COMPLETE` with own `TARGET` `PASS` evidence and no unproven `TARGET` evidence. Skip reasons need SKILL.md §5 eligibility; certainty `absolute` only with the absolute skip. Non-required: `NOT_REQUIRED`, `review_task_id` `null`, `rounds` absent or 0.
+- Rounds: at most 3; `PASS`/`FAIL` gates record ≥ 1; 3 with `FAIL` enforces the SKILL.md §5 stop.
+- Decision: `COMPLETE` only when every node is `COMPLETE`, every completed producer has dedicated `TARGET` `PASS` proof, all `TARGET` evidence is `PASS`, the manifest reconciles, the gate passes or is not required, and no required correction or remaining id is left. Else `remaining_task_ids` = incomplete nodes; `BLOCKED` only with evidence-backed external, authority, user-decision, or dependency provenance: a `BLOCKED` node, nothing runnable (`RUNNING`, or `PENDING` on `COMPLETE` dependencies), every `PENDING` node under blocked work; else `IN_PROGRESS` (something runnable).

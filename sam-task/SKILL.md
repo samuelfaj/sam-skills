@@ -1,252 +1,99 @@
 ---
 name: sam-task
-description: "Run the full task pipeline: sam-plan, sam-refine-task, sam-work delivery, closure review/council, and a proposal-only learning audit. Use when the user runs /sam-task, wants plan-to-PR delivery with final adversarial cleanup, or asks to plan refine implement close findings and capture reusable lessons."
+description: "Full pipeline: sam-plan, sam-refine-task, sam-work delivery, closure review/council, and a proposal-only learning audit. Use when the user runs /sam-task or wants plan-to-PR delivery with adversarial closure and captured lessons."
 ---
 
 # Sam Task
 
-## Purpose
-
-Turn one user request into a planned, refined, delivered, adversarially closed,
-and learning-audited task. Orchestrate child skills fail-closed. Do not treat a
-child as done because it was invoked—capture and validate its terminal result.
+Turn one request into a planned, refined, delivered, adversarially closed, and learning-audited task.
 
 ## Non-Negotiable Contract
 
-- Exclusive top pipeline: if this turn also named `sam-goal`, do not run
-  this pipeline; `sam-goal` owns the turn. Precedence: `sam-goal` > `sam-task` > `sam-work` > `sam-orchestrate`.
-  Children this winner requires (`sam-plan`, `sam-refine-task`, `sam-work`,
-  `sam-review`, `sam-council`) remain allowed.
-- Run phases in order: `plan` → `refine` → `work` → `closure` → `learn`.
-  Never skip.
-- Never report `COMPLETE` while any phase is missing, stale, unvalidated, or
-  non-terminal, or while the closure loop still has material findings.
-- Invoking this skill authorizes plan-dir writes, task-branch delivery writes
-  allowed by `sam-work`, and in-scope corrections in refine/closure loops. It
-  does not authorize merge, deploy, production data access, or destructive
-  cleanup of unrelated user work.
-- Autonomous: never pause for permission, confirmation, or mid-run questions.
-  Prefer repo evidence and frozen prompt; otherwise `BLOCKED` with exact gaps.
-- Do not emulate missing children. Read each child `SKILL.md` and its required
-  resources when that phase starts.
-- Preserve unrelated dirty work. Keep secrets out of reports and plan HTML.
-- Child retry/exhaustion limits remain active; exhaustion is `BLOCKED`, never
-  silent success.
-- Learning is proposal-only. Never write a candidate into repository
-  instructions, a skill, or host memory without a later explicit user action.
-- Advisors are subordinate consults, never a phase and never a gate. An advisor
-  answer cannot close a phase, replace a validator receipt, or end this run.
+- Exclusive top pipeline: if this turn also named `sam-goal`, do not run this pipeline; `sam-goal` owns the turn. Precedence: `sam-goal` > `sam-task` > `sam-work` > `sam-orchestrate`. Children this winner requires (`sam-plan`, `sam-refine-task`, `sam-work`, `sam-review`, `sam-council`) remain allowed.
+- Phases run strictly in this order and are never skipped; never start one while an earlier one is open, stale, unvalidated, or non-terminal:
 
-## Required skills
+| id | skill | accepted terminal |
+| --- | --- | --- |
+| `plan` | `sam-plan` | `READY_TO_EXECUTE` |
+| `refine` | `sam-refine-task` | `HIGH_CONFIDENCE` |
+| `work` | `sam-work` | `COMPLETE` |
+| `closure` | `sam-review+sam-council` | `CLEAN` |
+| `learn` | `sam-task` | `LEARNING_AUDITED` |
 
-Before mutating the target repository for delivery, ensure these exist and
-follow them when their phase runs:
+- `COMPLETE` only when all five phases are terminal and current for one final head, closure has no material findings, and the validator prints `VALID`.
+- Invoking this skill authorizes plan-dir writes, read-only refine analysis, every write `sam-work` authorizes, and in-scope corrections in refine and closure, including re-running invalidated `sam-work` gates. It never authorizes merge, deploy, production data access, destructive cleanup of unrelated user work, or publishing review comments unless a later explicit user request adds that. Child "ask / confirm / publish only when authorized" rules are overridden for the run, exactly as in `sam-work`.
+- Autonomous: never pause for permission, confirmation, or mid-run questions. Use repo evidence and the frozen prompt; otherwise `BLOCKED` with exact gaps.
+- A child is done only through its terminal plus a validator receipt, never because it was invoked. Never emulate a missing child. Child retry and exhaustion limits stay active; exhaustion is `BLOCKED`, never silent success.
+- Preserve unrelated dirty work. Keep secrets out of reports and plan HTML. Planning artifacts never substitute for implementation receipts.
 
-1. `../sam-plan/SKILL.md`
-2. `../sam-refine-task/SKILL.md`
-3. `../sam-work/SKILL.md` (and every skill it requires)
-4. `../sam-review/SKILL.md`
-5. `../sam-council/SKILL.md`
+## Routing
 
-Also read:
+You are the controller. Use literal absolute paths; `<SAM_TASK_DIR>` is this skill's directory, and `../` resolves from it. Before delivery mutations confirm the five child skills exist; a missing one is `BLOCKED`.
 
-- [references/phase-contract.md](references/phase-contract.md)
-- [references/closure-loop.md](references/closure-loop.md)
-- [references/output-contract.md](references/output-contract.md)
+| You read | When |
+| --- | --- |
+| `../sam-work/SKILL.md` | at start: its § Phase isolation governs every phase you dispatch |
+| `references/closure-loop.md` | closure starts |
+| `references/output-contract.md` | closure starts |
+| `../sam-council/SKILL.md` | you run a council (plan `COUNCIL_REQUIRED`; closure after review `APPROVE`) |
+| `../sam-orchestrate/references/host-runtime-matrix.md`, the active host's advisor row only | an advisor consult |
+| `references/behavior-evals.md`, `assets/behavior-eval-scenarios.json` | periodic cross-version evaluation only (scored by `scripts/validate_behavior_eval.py`) |
 
-For periodic cross-version evaluation, read
-[references/behavior-evals.md](references/behavior-evals.md) and use the
-versioned catalog in `assets/behavior-eval-scenarios.json`.
+## Dispatch
 
-Runtime validation:
+- `<STATE>` = `$(git -C <repo> rev-parse --path-format=absolute --git-common-dir)/sam-task/<workflow_id>` (untracked, durable). `PLAN_DIR` (absolute, passed to `sam-plan`): the user- or host-named directory, else `<repo>/plan` if gitignored, else `<STATE>/plan`. `<RUN_DIR>` is `<PLAN_DIR>/run`, or `<STATE>/run` when `PLAN_DIR` is inside the repo and not gitignored.
+- Compute `<PROMPT_SHA256>` once (sha256 of the exact prompt bytes); pass it to `sam-plan` (`--prompt-hash`) and to `sam-work` `init --prompt-sha256`.
+- Your phase dirs: plan `<PLAN_DIR>` (updated in place), `<RUN_DIR>/refine-<k>/`, `<RUN_DIR>/closure-<n>/review/`, and `<RUN_DIR>/closure-<n>/council/`.
+- Flatten work: run the `sam-work` ledger yourself (no `sam-work` worker) and dispatch each of its phases.
+- `record` is for `sam-work` phases only. For plan, refine, closure review, and council, get your receipt with `python3 -B <SAM_TASK_DIR>/../<child>/scripts/<validator> <args from validator-args.json; none for plan and council> <report>`: `sam-plan` `validate_plan_report.py`, `sam-refine-task` `validate_report.py`, `sam-review` `validate_review.py`, `sam-council` `validate_council_report.py`.
 
-```bash
-SAM_TASK_DIR="<absolute directory containing this SKILL.md>"
-python3 -B "$SAM_TASK_DIR/scripts/validate_task_report.py" task-report.json
-```
+## Phases
 
-Behavior evaluation is a separate manual or scheduled gate:
+### 1. Plan (`sam-plan`)
 
-```bash
-python3 -B "$SAM_TASK_DIR/scripts/validate_behavior_eval.py" \
-  behavior-eval-run.json --require-complete-suite
-```
+- Run on the frozen prompt. Honor complexity routing (`simple` plans stay compact; never force deep ceremony). The light HTML is the human artifact, never the machine gate.
+- Advance only on `READY_TO_EXECUTE` with `<PLAN_DIR>/plan-report.json` and a `VALID` freeze receipt (hard core). `NOT_CONFIDENT` or `BLOCKED` → workflow `BLOCKED` with plan residuals.
+- `COUNCIL_REQUIRED`: run `sam-council` at controller level on `<PLAN_DIR>/council-packet.md` (you spawn the seats), then dispatch a plan worker with the validated council report path to fold, render, and validate.
+- Freeze plan dir, depth, thesis, acceptance, no-go, steps/DoD, and risk flags into the ledger; later phases consume this freeze and never renegotiate the goal silently.
 
-## Advisors (subordinate, non-phase)
+### 2. Refine (`sam-refine-task`)
 
-The provider-specific advisor skills (`sam-*-advisor`) are optional bounded
-consults **inside** a phase. This workflow owns the phase ledger, the terminals,
-and the final response at all times.
+- Refine the planned strategy and repo evidence, read-only on product code.
+- `HIGH_CONFIDENCE` with no open required item → continue. `NOT_CONFIDENT` → revise the plan (re-run `sam-plan` sections) or strategy, then refine again within child limits. `BLOCKED` or exhaustion → `BLOCKED`.
+- Record absolute `refine_report_path` = the last run's `<RUN_DIR>/refine-<k>/report.json`; a report only in child scratch space does not count. If refine changes the executable strategy, update the plan artifacts before work.
 
-Rules:
+### 3. Work (`sam-work`, flattened)
 
-- Allowed only inside `plan`, `refine`, or `closure`. Never inside `work`—that
-  phase is owned by the `sam-work` ledger.
-- At most 3 consults per run, one focused question each. Never delegate a phase,
-  an implementation, or the whole task to an advisor.
-- Bind `model` and `effort` in this workflow and pass both to the advisor skill.
-  Read **only the advisor row** for the active host from
-  `../sam-orchestrate/references/host-runtime-matrix.md`. That document's
-  capability ladder, delegation topology, and controller-only rules do **not**
-  apply here and must not replace these phases. Use a user-supplied effort
-  exactly when the user gives one.
-- The advisor's `## Output` block is an inline consult record returned to this
-  workflow. It never becomes the final response and never ends the run.
-- An advisor failure (CLI, model, effort, or auth unavailable) is a residual, not
-  a blocker. Record it and continue the phase on repo evidence.
-- Treat every advisor claim as analysis. A phase still closes only on its own
-  child terminal plus validator receipt.
+- Before handoff record `target.web_surface` from repo evidence: `true` when the repo serves a browser-reachable UI (HTTP/dev server script, web framework entrypoint, routed pages/components, or an existing browser test target); `false` only with concrete evidence of no browser surface; absent, unclear, or unchecked evidence is `true`.
+- Run the ledger with the frozen goal, acceptance, invariants, no-go, and plan path. Require `COMPLETE` with a validated `work-report.json`; any other terminal → `BLOCKED` with the work ledger.
+- `web_surface: true` makes the Playwright video mandatory (`sam-work` phase 7); `NOT_APPLICABLE`, zero videos, or "video not requested" is `BLOCKED`.
 
-Record every consult in `advisor_consults` per the output contract.
+### 4. Closure (`sam-review` then `sam-council`)
 
-## Canonical phases
+Run it per `references/closure-loop.md`.
 
-Every delegated phase inherits the host Token Saver decision through
-`RC_TOKEN_SAVER_EXECUTION_RECEIPT_V1` when present. Phase workers preserve the
-receipt and provider-neutral capability/lane environment across nested spawns,
-retries, resumes, and recovery; they never reconstruct or widen admission.
-Skills and exact-output evidence remain lossless.
+### 5. Learn (proposal-only)
 
-Before each controlled child spawn, record a provider-neutral Subagents row
-with `${REMOTE_CODE_SUBAGENT_TELEMETRY_COMMAND:-distill} subagent begin --node
-<stable-id>` and close that exact run id with the matching `subagent end
---status <completed|failed|cancelled>`. This bridge is telemetry only: it must
-inherit the host Token Saver receipt and must not invent capabilities,
-summarize exact output, or call an unobserved child done.
+After closure is `CLEAN`, inspect only the final run's evidence for reusable rules. Emit `LEARNING_AUDITED` even with no candidates. Propose a candidate only when current-run evidence supports a narrow rule, with every candidate field of output contract § Learning object. Never promote a one-off failure, an inference, or stale memory. Keep `writes_performed: []`: never edit repository instructions, a skill, or host memory; promotion needs a separate explicit user action.
 
-### 1. Plan — `sam-plan`
+## Advisors
 
-Run against the frozen user prompt. Honor complexity routing (`simple` plans
-stay compact; do not force deep ceremony). Prefer the child's compact freeze;
-do not treat HTML as the machine gate (sam-plan still emits light HTML for humans).
-
-- Require validated `READY_TO_EXECUTE` with `$PLAN_DIR/plan-report.json` and a
-  freeze validator receipt of `VALID` (hard core only). Light HTML from
-  sam-plan is the human artifact, not the machine plan-phase gate.
-- Record absolute `plan.freeze_path` for parent re-validation on COMPLETE.
-- `NOT_CONFIDENT` or `BLOCKED` → workflow `BLOCKED` (record plan residuals).
-- Freeze plan dir, depth, thesis, acceptance criteria, no-go, steps/DoD, and
-  risk flags into the task ledger from the plan report. Downstream phases
-  consume this freeze; they do not renegotiate goal silently.
-
-### 2. Refine — `sam-refine-task`
-
-Refine the **planned strategy** (and repo evidence), still read-only on product
-code.
-
-- `HIGH_CONFIDENCE` with no open required item → continue.
-- `NOT_CONFIDENT` → revise the plan (re-run `sam-plan` sections as needed) or
-  strategy notes, then refine again within child limits.
-- `BLOCKED` or exhaustion → workflow `BLOCKED`.
-- Copy the validated refine report to a durable path (default
-  `$PLAN_DIR/refine-report.json`) and record absolute `refine_report_path` for
-  parent re-validation on COMPLETE. Temp-only refine reports are not sufficient.
-
-If refine changes the executable strategy, update plan artifacts so work does
-not implement a stale thesis.
-
-### 3. Work — `sam-work`
-
-Hand off frozen goal, acceptance, invariants, no-go, and plan path. Run the
-full delivery workflow (implement through proposal, browser proof, demo video).
-Parent authorization covers every write `sam-work` requires.
-
-- Require child `COMPLETE` with validated `work-report.json`.
-- Any other terminal → workflow `BLOCKED` with the work ledger.
-
-Web-surface determination is a receipt, not a judgement call. Before handing off,
-decide `target.web_surface` from repository evidence and record that evidence:
-
-- `true` when the repo serves a browser-reachable UI (HTTP/dev server script,
-  web framework entrypoint, routed pages/components, or an existing browser
-  test target).
-- `false` only with concrete evidence of no browser surface. Absent, unclear, or
-  unchecked evidence is `true`.
-
-When `target.web_surface` is `true`, Playwright **video is mandatory**:
-
-- Require `sam-work` phase `playwright` = `COMPLETE` with at least one video
-  discovered, every discovered video uploaded, and rendered-player readback.
-- `NOT_APPLICABLE`, zero videos, or "video not requested" is a `BLOCKED`
-  workflow—never a passing run. Do not accept screenshots or a textual claim
-  as a substitute.
-- A demo video is required on every run regardless of `web_surface`.
-
-Pass `web_surface` into the handoff so the child sets `request.web_system` to the
-same value. The task validator cross-checks both and reads the child's
-`video_inventory`; `work: COMPLETE` alone is not video proof.
-
-### 4. Closure loop — `sam-review` + `sam-council`
-
-Follow [references/closure-loop.md](references/closure-loop.md).
-
-Each iteration on one frozen head:
-
-1. `sam-review` local-only (no publish, no questions).
-2. `sam-council` on delivered thesis + current diff/receipts (`fast` default;
-   escalate per council triggers).
-3. If both clean → closure `CLEAN`.
-4. If material **in-scope** findings (`BLOCKER`/`IMPORTANT` on the frozen
-   goal) → smallest in-scope fix, refresh stale `sam-work` gates for the
-   new head, then next iteration. `FOLLOW_UP`, suggestions, and newly
-   discovered items outside frozen acceptance are parked; they do not
-   start another iteration.
-5. Stop at max 5 iterations without cleanliness → `BLOCKED`. Fix forward
-   on the task branch. Do not replace the branch or worktree because a
-   gate failed or the integration base moved.
-
-Both gates must pass on the **same** final head. Review `APPROVE` alone is
-insufficient without an accepted council terminal; council pass alone is
-insufficient without review `APPROVE`.
-
-### 5. Learn — proposal-only audit
-
-After closure is clean, inspect only the final run's evidence for reusable
-rules. Follow [references/phase-contract.md](references/phase-contract.md).
-
-- Emit `LEARNING_AUDITED` even when `candidates` is empty.
-- Propose a candidate only when current-run evidence supports a narrow rule.
-- Record its scope, destination, sensitivity, and revalidation trigger.
-- Do not turn a one-off failure, an inference, or stale memory into a rule.
-- Keep `writes_performed: []`. Promotion is outside this workflow and requires
-  a separate explicit user action.
+- Optional bounded consults inside `plan`, `refine`, or `closure` only; never `work`. At most 3 per run, one focused question each. Never delegate a phase, an implementation, or the task.
+- Bind `model` and `effort` here and pass both: from the advisor row (Routing; the matrix's capability ladder, delegation topology, and controller-only rules do not apply here), or the user's exact effort when given.
+- The advisor's `## Output` block is an inline consult record, never the final response or the end of the run. Its claims are analysis; a phase closes only on its own child terminal plus validator receipt.
+- An advisor failure (CLI, model, effort, or auth unavailable) is a residual, not a blocker; continue on repo evidence.
+- Record each consult in `advisor_consults[]` when it happens: `id` (`A-###`, unique), `advisor` (`sam-<runtime>-advisor`), `phase` (`plan`/`refine`/`closure`), `model`, `effort` (`low`/`medium`/`high`/`xhigh`/`max`), `effort_source` (`MATRIX_DEFAULT`/`USER_SPECIFIED`), `question`, `status` (`ANSWERED`/`FAILED`; `FAILED` needs `failure_reason` and a `residuals` entry, never `blockers`), `caller_decision` (`ACCEPTED`/`REJECTED`/`UNRESOLVED`), `decision_reason`, `evidence[]`.
 
 ## Completion
 
-After the last mutation:
+At closure start run step 1 to create `<RUN_DIR>/task-report.json`; record each closure iteration and the `learning` object in it as they happen, and re-run step 1 after each edit. After the last mutation:
 
-1. Confirm `plan`, `refine`, `work`, `closure`, and `learn` are terminal and
-   current.
-2. Confirm `target.final_head_sha` matches work + closure proofs and proposal
-   remote head when a proposal exists.
-3. Re-read the child `video_inventory`: at least one uploaded demo video, plus at
-   least one uploaded Playwright video whenever `target.web_surface` is `true`.
-4. Write `task-report.json` per the output contract.
-5. Validate:
-
-```bash
-python3 -B "$SAM_TASK_DIR/scripts/validate_task_report.py" task-report.json
-```
-
-`COMPLETE` only if the validator prints `VALID`.
+1. `python3 -B <SAM_TASK_DIR>/scripts/scaffold_task_report.py <RUN_DIR>/task-report.json --workflow-id <workflow_id> --freeze <freeze_path> --refine <refine_report_path> --work <WORK_DIR>/work-report.json --web-surface true|false --web-surface-evidence "<evidence>"`.
+2. Fill the remaining `SCAFFOLD:` fields and `status`.
+3. `python3 -B <SAM_TASK_DIR>/scripts/validate_task_report.py <RUN_DIR>/task-report.json`; re-run it after every edit. Fix from the validator's error lines and patch the report in place; do not read validator source or rewrite the whole report.
 
 ## Final response
 
-Report:
+At most 15 lines plus the report path, never the JSON: terminal; plan depth/dir and refine result; proposal URL and classification; `web_surface` with evidence and the Playwright + demo video inventory; closure iterations and final review/council statuses; learning candidate count; advisor consults or `none`; final head and validator receipt; exact blockers or open findings.
 
-1. `COMPLETE`, `BLOCKED`, or `IN_PROGRESS`
-2. Plan depth/dir and refine result
-3. Work result (proposal URL, classification)
-4. `web_surface` with its evidence, and the Playwright + demo video inventory
-   (discovered/uploaded, player readback)
-5. Closure iterations used; final review and council statuses
-6. Learning candidate count and proposal-only receipt
-7. Advisor consults used (count, phase, decision) or `none`
-8. Final head and validator receipt
-9. Exact blockers or open findings if not complete
-
-This structure is the run's final response. An advisor's output format never
-replaces it.
-
-Run `scripts/test_task_harness.py` and
-`scripts/test_behavior_eval_harness.py` only when changing this skill.
+Maintainers: run `scripts/test_task_harness.py` and `scripts/test_behavior_eval_harness.py` only when changing this skill.

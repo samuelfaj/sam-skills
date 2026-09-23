@@ -1,254 +1,165 @@
 ---
 name: sam-orchestrate
-description: "Coordinate complex work as a controller-only orchestrator using cost- and risk-aware capability routing, explicit task dependencies and ownership, skeptical proof verification, and an independent review gate. Use when the user asks for delegated execution, parallel agents, controller-only operation, or rigorous multi-agent delivery."
+description: "Run complex work as a controller-only orchestrator: cost- and risk-aware routing, owned task dependencies, skeptical proof checks, and an independent review gate. Use when the user asks for delegated execution, parallel agents, controller-only operation, or rigorous multi-agent delivery."
 ---
 
 # Sam Orchestrate
 
-Coordinate execution without implementing task artifacts directly. Route work by
-capability and risk, then bind each delegated node to the active host’s fixed
-runtime matrix (Codex, Claude Code, or Grok). Remain stack-neutral outside that
-matrix.
+Stay stack-neutral outside the §3 runtime table.
 
-**Token posture:** thin controller, fat workers, progressive disclosure, cheap
-proof, selective review. Spend tokens on verification of artifacts — not on
-re-reading this skill or re-prompting full history into every worker.
-
-**Token Saver inheritance:** when the host provides
-`RC_TOKEN_SAVER_EXECUTION_RECEIPT_V1`, every nested worker and advisor must
-inherit that content-free receipt and its authorized capability/lane
-environment unchanged. The host owns admission; workers must not reconstruct,
-widen, or replace those decisions. A missing, malformed, denied, cross-user,
-or provider-mismatched receipt is raw fail-open input. Never put Skills,
-exact-output commands, prompts, transcripts, secrets, or full advisor
-responses into the receipt. Skills and exact-output evidence remain lossless.
-Do not claim billing or quota savings.
+**Token Saver:** Pass the host's content-free `RC_TOKEN_SAVER_EXECUTION_RECEIPT_V1` and its capability/lane environment unchanged to every controlled child (nested spawns, retries, resumes, recovery); never reconstruct or widen admission. A missing, malformed, denied, cross-user, or provider-mismatched receipt is raw fail-open input. Never put skills, exact-output commands, prompts, transcripts, secrets, or full responses in it. Skills and exact-output evidence stay lossless; claim no billing or quota savings.
 
 ## Non-Negotiable Contract
 
 - Exclusive top pipeline: if this turn also named `sam-goal`, `sam-task`,
   or `sam-work` as the user request, do not run this controller pipeline;
-  that named method owns the turn. Precedence: `sam-goal` > `sam-task` >
-  `sam-work` > `sam-orchestrate`.
-- Keep the main agent controller-only. Delegate production code, tests,
-  documentation, migrations, and other task artifacts.
-- Permit direct main-agent work only for task decomposition, agent coordination,
-  result inspection, proof reruns, conflict integration, and final reporting.
-- Give every worker one explicit owner boundary, writable scope, no-go scope,
-  dependencies, pass criteria, required proof, and a bound runtime receipt.
-- Tell every worker that other agents may share the workspace and that it must
-  not revert or overwrite unrelated work.
-- Treat every returned claim as unverified until the controller checks its
-  artifact, scope, and proof (diff vs writable paths; one real TARGET proof).
-- Select capability by task risk first. Bind model/effort only from
-  [references/host-runtime-matrix.md](references/host-runtime-matrix.md) for the
-  active host. Never invent models, never ask the user which model to pick, and
-  never put model or host names into owner IDs.
-- **Cheap-first:** never open on `DEEP` or `genius_worker`. Escalate only after
-  concrete capability failure or new risk evidence — never because a task is large.
+  that named method owns the turn. Precedence: `sam-goal` > `sam-task` > `sam-work` > `sam-orchestrate`.
+- Stay controller-only: delegate production code, tests, docs, migrations, and
+  other artifacts. Work directly only on decomposition, coordination, result
+  inspection, proof reruns, conflict integration, and final reporting.
+- Give every worker one owner boundary, writable scope, no-go scope,
+  dependencies, pass criteria, required proof, a bound runtime receipt, and the
+  warning that other agents share the workspace and their work must not be
+  reverted or overwritten.
+- Claims are unverified until you check artifact, scope, and proof: diff ⊆
+  writable paths and one real TARGET `PASS` proof per proof requirement. Reject
+  unrelated changes and unsupported completion claims.
+- Pick capability by risk first, then bind model and effort only from §3 for the
+  host detected once per run. Never invent models, never ask the user which
+  model to pick, never put model or host names in owner IDs.
+- Cheap-first: never open on `DEEP` or `genius_worker`; escalate only after
+  concrete capability failure or new risk evidence, never because a task is large.
 - If delegation is unavailable, stop before execution and report the exact
-  blocker. Do not silently abandon controller-only mode.
+  blocker; never silently leave controller-only mode.
 - Never expose secrets in prompts, reports, commands, or evidence.
 
-## Progressive Disclosure (read only what you need)
+## References
 
-Do **not** load every reference on every turn.
+Read nothing else up front. Do not re-read a file already read in this context
+unless context was compacted since or you cannot quote the section you need.
 
-| Path | Read now | Defer |
+| File | Read when |
+| --- | --- |
+| `references/prompt-contract.md` | Before the first worker or reviewer prompt or spawn |
+| `references/routing-policy.md` | After a failed or stalled attempt, before any re-prompt or escalation; before proof broader than scope diff + one focused command |
+| `references/host-runtime-matrix.md` | A bound model or effort is unavailable, an advisor, Codex agent config, or unclear host detection |
+| `references/output-contract.md` | When report authoring starts (§6) |
+
+## Classes and Modes
+
+| Class | Definition | Mode |
 | --- | --- | --- |
-| **Micro** (`T0` + certainty `absolute`/`high`) | This SKILL (this section + §1 micro) | matrix full tables, output-contract, validator until report |
-| **Single** (`T1`) | + [routing-policy.md](references/routing-policy.md) + [prompt-contract.md](references/prompt-contract.md) | full output-contract until drafting report |
-| **Multi** (`T2`) | + [host-runtime-matrix.md](references/host-runtime-matrix.md) | — |
-| **Critical** (`T3`) | + [output-contract.md](references/output-contract.md) + run validator | — |
+| `T0` | One mechanical or read-only task, narrow scope, no material runtime, security, data, release, or cross-file risk | **Micro** (certainty `absolute`/`high`; §1) |
+| `T1` | One bounded implementation area with ordinary validation | **Single**: one `STANDARD` worker (`LIGHT` if purely mechanical) |
+| `T2` | Multiple independent slices, meaningful test work, or cross-file coordination | **Multi**: fewest independent `LIGHT`/`STANDARD` workers; one integration owner |
+| `T3` | Production, security, authorization, privacy, payment, secrets, data loss, migration, release, deployment, large refactor, or uncertain cross-repo behavior | **Critical**: `DEEP` only on the risky slice; serialize unsafe writes |
 
-Always run `scripts/validate_orchestration.py` before declaring completion when
-you produced a report JSON (Single/Multi/Critical). Micro path may skip the
-formal report when no delegated workers ran and proof is a single local check —
-if you write a report, validate it.
+`task.controller_certainty`: `absolute` = zero residual doubt on scope, risk,
+ownership, proof (Micro only); `high` = clear single slice, ordinary residual
+risk (Micro or Single); `medium` = normal ambiguity or multi-touch, the default
+and the value when omitted (Single or Multi); `low` = unclear ownership, risk,
+or proof path (Multi or Critical; never skip review). Never invent
+`absolute`/`high` to save cost.
 
-## Certainty Budget
+Execution producers: ≤ 1 for `T0`/`T1`, ≤ 3 for `T2`/`T3`; default 2
+concurrent, hard cap 3. Prefer serial writes; split only on real ownership or
+dependency boundaries, never to add agents.
 
-Record `task.controller_certainty` as one of: `absolute` | `high` | `medium` |
-`low`.
+## 1. Freeze
 
-| Certainty | Meaning | Orchestration shape |
-| --- | --- | --- |
-| `absolute` | Zero residual doubt on scope, risk, ownership, proof | Micro path only (`T0`) |
-| `high` | Clear single-slice work; ordinary residual risk only | Micro or Single |
-| `medium` | Normal ambiguity or multi-touch | Single or Multi |
-| `low` | Unclear ownership, risk, or proof path | Multi or Critical; do not skip review |
+Record before delegation: goal and observable success criteria, constraints and
+no-go surfaces, certainty, risk flags, expected artifact classes, an empty
+changed-file manifest, and user decisions that must not be inferred. Classify
+`T0`–`T3`; pick the cheapest mode that keeps evidence quality. Create a run
+directory `<run>` outside the repo `<repo>` (`mktemp -d`) and snapshot the
+workspace (literal absolute paths; `<skill-dir>` holds this file):
+`python3 <skill-dir>/scripts/scaffold_report.py --freeze-out <run>/freeze.json --repo <repo>`;
+note its `tree=` id and run `chmod a-w <run>/freeze.json` (workers may write
+under `<run>`).
+If `<repo>` is not a git work tree, skip `--freeze-out`/`--freeze`/`--diff-out`/`--tree`
+and list changed files in the spec `files` field.
 
-Never invent `absolute`/`high` to save cost.
+Micro: work directly only for pure controller integration, else one short
+slice-only `LIGHT` worker. Proof is the scope diff plus at most one focused
+command; no full-suite runs, no raw logs. Skip the formal report only when no
+delegated worker ran and proof is one local check.
 
-## Orchestration Modes (T0–T3)
+## 2. DAG (Single / Multi / Critical)
 
-| Mode | When | Shape |
-| --- | --- | --- |
-| **Micro** | `T0` and certainty `absolute` or `high` | No subagent required; optional one `LIGHT` worker; **no REVIEWER** if absolute-certainty (or high) skip rules hold; no formal DAG theater |
-| **Single** | `T1` | One `STANDARD` worker (or `LIGHT` if purely mechanical); review only if triggers fire and skip rules fail |
-| **Multi** | `T2` | Minimum independent workers (default parallel **2**, hard cap **3**); one integration owner; review when multi-producer or risk |
-| **Critical** | `T3` | `DEEP` only on the risky slice; serialize unsafe writes; **REVIEWER required** |
+Build the smallest useful DAG: one node per owned slice with a stable ID, kind
+(`EXECUTION`, `ORCHESTRATION`, or `REVIEW`), capability (`LIGHT`, `STANDARD`,
+`DEEP`, or `REVIEWER`), the contract's worker fields, one objective, artifact
+classes, status, blocker provenance, and evidence IDs. `DEEP` only for `T3` or
+non-empty `risk_flags`. Overlapping writes need a dependency edge.
 
-Parallel fan-out: default max **2** concurrent execution workers; hard cap **3**.
-Split only on real ownership/dependency boundaries — never to increase agent count.
+## 3. Bind and Delegate
 
-## 1. Freeze Goal and Constraints
+Never mix host runtimes in one run unless the user explicitly asks for a
+cross-host second opinion; even then keep one producer host for writable work.
 
-Record before delegation:
+| Capability (role) | `codex` | `claude-code` | `grok` | Sandbox |
+| --- | --- | --- | --- | --- |
+| `LIGHT` (`fast_scan`) | `gpt-5.6-luna` / `medium` | `haiku` / `high` | `grok-4.6` / `medium` | read-only (Grok: prefer read-only) |
+| `STANDARD` (`routine_worker`) | `gpt-5.6-luna` / `xhigh` | `sonnet` / `high` | `grok-4.6` / `high` | parent permissions, writable scope only |
+| `DEEP` (`deep_worker`) | `gpt-5.6-luna` / `max` | `opus` / `medium` | `grok-4.6` / `xhigh` | as `STANDARD` |
+| `genius_worker` (rare) | `gpt-5.6-luna` / `max` | `opus` / `xhigh` | `grok-4.6` / `xhigh` | frozen scope; never a default |
+| `REVIEWER` (`reviewer`) | `gpt-6-astra` / `medium` | `opus` / `high` | `grok-4.6` / `high` | read-only / plan mode; Grok: no subagent fan-out |
 
-- Goal and observable success criteria.
-- Explicit constraints and no-go surfaces.
-- Certainty budget (`absolute`/`high`/`medium`/`low`).
-- Risk flags, expected artifact classes, empty changed-file manifest.
-- User decisions that must not be inferred.
+On Codex, the controller also runs on `gpt-6-astra`; if it cannot be selected,
+report that instead of claiming a switch. Run Grok workers headless with
+workspace sandbox and always-approve only when the node is writable and the
+parent already authorized those writes.
 
-Classify `T0`–`T3` per [routing-policy.md](references/routing-policy.md). Pick the
-**cheapest** mode that still preserves evidence quality.
+**Telemetry (lifetime only):** With `T="${REMOTE_CODE_SUBAGENT_TELEMETRY_COMMAND:-distill}"`, bracket each controlled child: `run=$("$T" subagent begin --node <stable-id> </dev/null)` … `"$T" subagent end --run-id "$run" --status completed|failed|cancelled </dev/null`; keep the run id across retries. If the run's first `begin` fails, record one Subagents proof gap and skip brackets for the rest of the run. Telemetry never invents a Done row or receives skill bodies or exact output.
 
-### Micro path (token-efficient)
+## 4. Track and Reconcile
 
-When mode is Micro:
-
-1. Do the work yourself only if it is pure controller integration; otherwise one
-   short `LIGHT` worker with a **slice-only** prompt (see prompt-contract).
-2. Proof: scope diff + at most one focused command. No full-suite runs. No raw
-   log dumps — summary + failing excerpt only.
-3. Skip REVIEWER when absolute/high certainty skip rules hold.
-4. Report: one table row (node / model / proof / status) or a minimal validated
-   JSON report. No narrative essay.
-
-## 2. Build the Task DAG (Single / Multi / Critical)
-
-Create the **smallest** useful DAG. Each node must contain:
-
-- Stable task ID and kind: `EXECUTION`, `ORCHESTRATION`, or `REVIEW`.
-- Neutral owner ID and capability: `LIGHT`, `STANDARD`, `DEEP`, or `REVIEWER`.
-- Runtime binding for every delegated `EXECUTION` and `REVIEW` node.
-- Dependencies, one objective, no-go, proof requirements.
-- Writable paths or explicitly read-only scope; artifact classes.
-- Status, blocker provenance, evidence IDs.
-
-Owner IDs: `worker-N`, `controller-N`, `reviewer-N` only.
-
-Caps by class: `T0`/`T1` → at most **1** execution producer; `T2`/`T3` → at most
-**3** execution producers.
-
-`DEEP` only when classification is `T3` or `risk_flags` is non-empty. Prefer a
-better `LIGHT`/`STANDARD` re-prompt over escalating model tier.
-
-## 3. Bind Runtime and Delegate
-
-Detect host once (`codex`, `claude-code`, `grok`). Bind matrix rows from
-[host-runtime-matrix.md](references/host-runtime-matrix.md).
-
-On Codex, use `gpt-6-astra` for the main planner/controller and independent
-review. Keep all execution workers on `gpt-5.6-luna`, including rare escalation.
-The planner/controller does not implement worker artifacts. If its model cannot
-be selected by the runtime, report that limitation rather than claiming a switch.
-
-| Capability | Codex | Claude Code | Grok |
-| --- | --- | --- | --- |
-| `LIGHT` | `gpt-5.6-luna` / `medium` | `haiku` / `high` | `grok-4.6` / `medium` |
-| `STANDARD` | `gpt-5.6-luna` / `xhigh` | `sonnet` / `high` | `grok-4.6` / `high` |
-| `DEEP` | `gpt-5.6-luna` / `max` | `opus` / `medium` | `grok-4.6` / `xhigh` |
-| rare escalate | `gpt-5.6-luna` / `max` | `opus` / `xhigh` | `grok-4.6` / `xhigh` |
-| `REVIEWER` | `gpt-6-astra` / `medium` | `opus` / `high` | `grok-4.6` / `high` |
-
-Worker prompts: [prompt-contract.md](references/prompt-contract.md) — **slice-only**,
-no full skill paste, no other workers’ conclusions into independent review.
-
-Every controlled worker or advisor lifetime must be bracketed by the
-provider-neutral telemetry bridge:
-
-```bash
-telemetry_command="${REMOTE_CODE_SUBAGENT_TELEMETRY_COMMAND:-distill}"
-child_run="$("$telemetry_command" subagent begin --node '<stable-id>')"
-# run the delegated worker or advisor
-"$telemetry_command" subagent end --run-id "$child_run" --status completed
-```
-
-Use `failed` or `cancelled` on the corresponding terminal path. Preserve the
-host Token Saver receipt and the returned child run id through retries and
-recovery. Bridge unavailability means raw execution plus an explicit Subagents
-proof gap — never invent a Done row. Do not require Distill to process Skill
-bodies or exact output; the bridge is lifetime telemetry only.
-
-## 4. Track and Reconcile (cheap skepticism)
-
-1. Track node state; prevent overlapping writes without a dependency edge.
-2. Reconcile every changed file to one producer + artifact class.
-3. **Before accepting claims:** check diff ⊆ writable_paths; require one real
-   TARGET proof per proof requirement.
-4. Prefer re-running the smallest proof over re-reading whole transcripts.
-5. Reject unrelated changes and unsupported completion claims.
-6. Escalate capability only after capability failure or new risk evidence.
-7. Stop for required user decisions that expand scope.
-8. Fix forward on the existing DAG and task branch. A failed proof, review
-   finding, or moved integration ref does not authorize a new worktree or
+1. Track node state; map every changed file to one producer and artifact class.
+   A changed path no run worker made is never reverted or absorbed by widening
+   a scope: stop for a `USER_DECISION`.
+2. Re-run the smallest proof instead of re-reading transcripts.
+3. Right after each TARGET `PASS`, run
+   `python3 <skill-dir>/scripts/scaffold_report.py --tree --repo <repo>` and put
+   its `tree=<id>` in that evidence `detail`. Before re-running a node's TARGET
+   proof, skip it (reuse its evidence IDs) while `--tree` still prints that id.
+   Report-only fixes never re-run proofs or review.
+4. Stop for required user decisions that expand scope.
+5. Fix forward on the existing DAG and task branch: a failed proof, review
+   finding, or moved integration ref never authorizes a new worktree or
    discarded producer receipts. Park out-of-scope findings.
 
 ## 5. Review Gate
 
-### Require REVIEWER when
+Require a REVIEWER when: class `T3`; non-empty `risk_flags`; `DATA`/`RELEASE`
+artifacts; more than one execution producer; TARGET proof missing or not
+`PASS`; `review_requested: true`; or `CODE`/`TEST` changed without a certainty
+skip. Else record `NOT_REQUIRED` with the exact reason.
 
-- Classification `T3`, or non-empty `risk_flags`, or `DATA`/`RELEASE` artifacts.
-- More than one execution producer.
-- TARGET proof missing or not `PASS`.
-- User set `review_requested: true`.
-- `CODE`/`TEST` changed **and** certainty skip does not apply.
+A certainty skip needs one producer, empty `risk_flags`, all TARGET proof
+`PASS`, and `review_requested` false, plus:
 
-### Certainty skip (no REVIEWER)
+| `controller_certainty` | Class | Capability | Gate reason |
+| --- | --- | --- | --- |
+| `absolute` | `T0` only | any allowed | `micro_task_absolute_certainty` |
+| `high` | `T0` or `T1` | `LIGHT` or `STANDARD` only | `micro_task_high_certainty` |
 
-| | Absolute | High |
-| --- | --- | --- |
-| Class | `T0` only | `T0` or `T1` |
-| Producers | 1 | 1 |
-| Capability | any allowed | `LIGHT` or `STANDARD` only |
-| risk_flags | empty | empty |
-| TARGET proof | all PASS | all PASS |
-| review_requested | false | false |
-| Record | `controller_certainty: "absolute"` | `controller_certainty: "high"` |
-| Gate reason | `micro_task_absolute_certainty` | `micro_task_high_certainty` |
+The REVIEWER has a distinct owner, runs after every producer, gets only the
+prompt-contract.md intake, and has its own TARGET `PASS` proof. Corrections
+return to producers, then re-gate on the delta per prompt-contract.md. Cap: 3
+review rounds (initial + 2), recorded in `review_gate.rounds`; a third failing
+round stops with the review node `BLOCKED` on a `USER_DECISION` blocker.
 
-### Reviewer efficiency
+## 6. Report and Validate
 
-- Read-only; distinct neutral owner; after all producers.
-- Feed **combined diff/artifact + checklist + frozen scope + proof IDs** — not
-  this entire SKILL and not expected findings.
-- Dedicated TARGET/`PASS` proof for the review node.
-- Corrections → re-gate until pass or concrete blocker.
+For Single/Multi/Critical, and any Micro run that writes a report:
 
-When skip applies or no trigger fires: `NOT_REQUIRED` + exact reason.
+1. Write a judgment-only spec per output-contract.md, then run
+   `python3 <skill-dir>/scripts/scaffold_report.py --spec <run>/spec.json --out <run>/report.json --freeze <run>/freeze.json`.
+2. Run `python3 <skill-dir>/scripts/validate_orchestration.py <run>/report.json`.
+   Fix from the validator's error lines and patch the report in place; do not
+   read validator source or rewrite the whole report. Never weaken the validator.
 
-## 6. Validate Completion
-
-For Single/Multi/Critical (and any Micro that wrote a report), write JSON per
-[output-contract.md](references/output-contract.md), then:
-
-```bash
-SAM_ORCHESTRATE_DIR="<absolute directory containing this SKILL.md>"
-python3 "$SAM_ORCHESTRATE_DIR/scripts/validate_orchestration.py" \
-  "$ORCHESTRATION_TMP/report.json"
-```
-
-Do not weaken the validator. Remove temp artifacts after validation.
-
-`COMPLETE` only when DAG + review gate satisfy the contract, every completed
-producer has dedicated TARGET/`PASS` proof, manifest reconciles, and no required
-correction remains. `BLOCKED` only with evidence-backed external/authority/
-user-decision/dependency provenance. Else `IN_PROGRESS`.
-
-## 7. Report (lean)
-
-Return a **table**, not an essay:
-
-| Field | Content |
-| --- | --- |
-| Class / certainty / mode | `T*`, certainty, micro/single/multi/critical |
-| Nodes | id · capability · model · effort · status |
-| Manifest | path · class · producer |
-| Proof | id · requirement · PASS/FAIL |
-| Review | required? reason / skip reason |
-| Decision | COMPLETE / BLOCKED / IN_PROGRESS + remaining IDs |
-
-Do not repeat unverified agent claims. Do not dump raw logs.
+Final response, ≤ 15 lines plus the report path (if written): class, certainty,
+mode; decision and remaining IDs; gate status and reason; validator last line;
+only `FAIL` or skipped proofs. Never repeat the JSON report, unverified claims,
+or raw logs.

@@ -2,26 +2,15 @@
 
 ## Fast seats
 
-### Frame and evidence
-
-Test the problem definition, causal logic, conclusions, load-bearing premises,
-evidence quality, success criteria, and what would disconfirm the thesis.
-
-### Delivery and failure
-
-Attack sequencing, ownership, dependencies, migrations, operations, abuse,
-privilege boundaries, concurrency, retries, partial failure, resource
-exhaustion, recovery, and second-order effects.
-
-### Simplification
-
-Find the smallest solution that meets the objective. Compare no change, manual
-operation, existing capability, feature flags, phased delivery, buy versus
-build, and reversible experiments.
-
-Fast seats only triage. Any applicable conditional domain, critical unknown,
-supported blocker/high, or material displaced risk requires
-`ESCALATE_TO_FULL`.
+- **`frame-evidence`:** problem definition, causal logic, conclusions,
+  load-bearing premises, evidence quality, success criteria, and what would
+  disconfirm the thesis.
+- **`delivery-failure`:** sequencing, ownership, dependencies, migrations,
+  operations, abuse, privilege boundaries, concurrency, retries, partial
+  failure, resource exhaustion, recovery, and second-order effects.
+- **`simplification`:** the smallest solution that meets the objective: no
+  change, manual operation, existing capability, feature flags, phased
+  delivery, buy versus build, and reversible experiments.
 
 ## Full required seats
 
@@ -41,8 +30,9 @@ supported blocker/high, or material displaced risk requires
 
 ## Conditional specialists
 
-Select every applicable domain in `full`. In `fast`, record `ESCALATE:` for an
-applicable domain and stop after triage.
+Evaluate all nine at freeze, each with a system-specific reason; in `full`,
+select every applicable one. In `fast`, record `ESCALATE:` for one that seat
+findings show applicable.
 
 - `security-privacy`: identity, authorization, tenancy, secrets, privacy,
   retention, audit, supply chain, and abuse.
@@ -62,17 +52,3 @@ applicable domain and stop after triage.
   accessibility, localization, and behavior change.
 - `compliance-governance`: policy, audit evidence, retention, segregation of
   duties, authority, and jurisdiction.
-
-Record every specialist as `SELECTED:`, `ESCALATE:`, or `NOT_APPLICABLE:` with
-a system-specific reason. `SELECTED:` is valid only in `full`; `ESCALATE:` is
-valid only in `fast`.
-
-## Reviewer discipline
-
-- Stay inside the assigned lens.
-- Return at most 3 material objections and at most 1,000 words.
-- Prefer one causal mechanism over multiple stylistic observations.
-- Separate fact, inference, assumption, and missing evidence.
-- State what would change the verdict and the smallest sufficient correction.
-- Return `NO_MATERIAL_OBJECTION` when honest.
-- Never approve by deference or vote count.

@@ -16,8 +16,12 @@ from typing import Any
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from build_review_bundle import file_patch_digests, risk_tags  # noqa: E402
 from verify_receipts import verify_commands  # noqa: E402
 
+REVIEW_MODES = {"FULL", "DELTA"}
+DELTA_TARGET_MODES = {"branch", "range", "proposal"}
+MAX_BASE_REVIEW_DEPTH = 8
 COVERAGE_CLASSES = {"REVIEWED", "GENERATED", "TYPE_ONLY", "TEST", "CONFIG", "EXCLUDED"}
 SEVERITIES = {"BLOCKER", "IMPORTANT", "SUGGESTION"}
 FINDING_STATUSES = {"ACCEPTED", "REJECTED", "FOLLOW_UP", "STOP_AND_ESCALATE"}
@@ -45,6 +49,9 @@ CONFIDENCE = {"LOW", "MEDIUM", "HIGH"}
 PUBLICATION_ACTIONS = {"NONE", "COMMENT", "REQUEST_CHANGES", "APPROVE"}
 PUBLICATION_STATUSES = {"NOT_REQUESTED", "PLANNED", "PUBLISHED", "PARTIAL", "BLOCKED"}
 SHA_RE = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
+# Fail-safe DELTA gate: the pre-precision substring hints (lock, sign, notar,
+# public, export) still force a FULL review; over-matching here only costs a FULL.
+DELTA_RISK_HINTS = re.compile(r"(lock|sign|notar|public|export)", re.I)
 
 
 def load_json(path: Path, label: str) -> dict[str, Any]:
@@ -223,7 +230,282 @@ def validate_bundle(
     return target, files
 
 
-def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
+def load_cited(raw_path: Any, label: str, errors: list[str]) -> dict[str, Any] | None:
+    if not isinstance(raw_path, str) or not raw_path:
+        errors.append(f"{label} must be an absolute file path")
+        return None
+    path = Path(raw_path)
+    if not path.is_absolute():
+        errors.append(f"{label} must be an absolute file path")
+        return None
+    try:
+        return load_json(path, label)
+    except ValueError as exc:
+        errors.append(str(exc))
+        return None
+
+
+def open_required_ids(report: dict[str, Any]) -> list[str]:
+    """Accepted BLOCKER/IMPORTANT and STOP_AND_ESCALATE finding ids."""
+    ids: list[str] = []
+    for finding in report.get("findings") or []:
+        if not isinstance(finding, dict) or not isinstance(finding.get("id"), str):
+            continue
+        status = finding.get("status")
+        if status == "STOP_AND_ESCALATE" or (
+            status == "ACCEPTED" and finding.get("severity") in {"BLOCKER", "IMPORTANT"}
+        ):
+            ids.append(finding["id"])
+    return ids
+
+
+def changed_line_total(bundle: dict[str, Any]) -> int:
+    return sum(
+        (item.get("added_lines") or 0) + (item.get("deleted_lines") or 0)
+        for item in bundle.get("files") or []
+        if isinstance(item, dict)
+    )
+
+
+def target_mismatches(base_bundle: dict[str, Any], bundle: dict[str, Any]) -> list[str]:
+    """A base review must target the same mode, base SHA, and path filters."""
+    reasons: list[str] = []
+    base_target = base_bundle.get("target") or {}
+    target = bundle.get("target") or {}
+    for key in ("mode", "base_sha"):
+        if base_target.get(key) != target.get(key):
+            reasons.append(f"target {key} changed since the base review")
+    if base_bundle.get("path_filters") != bundle.get("path_filters"):
+        reasons.append("path filters changed since the base review")
+    return reasons
+
+
+def delta_identity_errors(
+    delta: dict[str, Any], bundle: dict[str, Any], base_report: dict[str, Any]
+) -> list[str]:
+    """A delta bundle is exactly range BASE_REVIEW_HEAD..HEAD with the bundle's filters."""
+    reasons: list[str] = []
+    delta_target = delta.get("target") or {}
+    if delta_target.get("mode") != "range":
+        reasons.append("review_basis.delta_bundle must be a range bundle")
+    if delta_target.get("base_sha") != (base_report.get("target") or {}).get("head_sha"):
+        reasons.append("review_basis.delta_bundle base must equal the base review head")
+    if delta_target.get("head_sha") != (bundle.get("target") or {}).get("head_sha"):
+        reasons.append("review_basis.delta_bundle head must equal the reviewed head")
+    if delta.get("path_filters") != bundle.get("path_filters"):
+        reasons.append("review_basis.delta_bundle path filters must match the bundle")
+    return reasons
+
+
+def delta_blockers(
+    base_bundle: dict[str, Any], bundle: dict[str, Any], delta_bundle: dict[str, Any]
+) -> list[str]:
+    """Mechanical full-review triggers; an empty list means DELTA is allowed."""
+    reasons: list[str] = []
+    target = bundle.get("target") or {}
+    if target.get("mode") not in DELTA_TARGET_MODES:
+        reasons.append(f"target mode {target.get('mode')} cannot be delta-reviewed")
+    reasons.extend(target_mismatches(base_bundle, bundle))
+    tagged = sorted(
+        {
+            path
+            for item in delta_bundle.get("files") or []
+            if isinstance(item, dict)
+            for path in (item.get("path"), item.get("old_path"))
+            if isinstance(path, str)
+            and (risk_tags(path) or DELTA_RISK_HINTS.search(path))
+        }
+    )
+    if tagged:
+        reasons.append("delta touches risk-tagged paths: " + ", ".join(tagged))
+    if changed_line_total(delta_bundle) > changed_line_total(base_bundle):
+        reasons.append("delta is larger than the original change")
+    return reasons
+
+
+def receipt_dirs(report: dict[str, Any]) -> set[Path]:
+    """Directories holding the receipts a report and its base-review chain cite."""
+    dirs: set[Path] = set()
+    current: dict[str, Any] | None = report
+    for _ in range(MAX_BASE_REVIEW_DEPTH + 1):
+        if current is None:
+            break
+        for row in current.get("validations") or []:
+            receipt = row.get("receipt") if isinstance(row, dict) else None
+            if isinstance(receipt, str) and Path(receipt).is_absolute():
+                dirs.add(Path(receipt).resolve().parent)
+        basis = current.get("review_basis")
+        raw = basis.get("base_review") if isinstance(basis, dict) else None
+        current = None
+        if isinstance(raw, str) and Path(raw).is_absolute():
+            try:
+                current = load_json(Path(raw), "base review")
+            except ValueError:
+                current = None
+    return dirs
+
+
+def validate_review_basis(
+    report: dict[str, Any],
+    bundle: dict[str, Any],
+    coverage_rows: dict[str, dict[str, Any]],
+    finding_ids: set[str],
+    review_cycle: int | None,
+    errors: list[str],
+    depth: int,
+) -> None:
+    """FULL or DELTA review provenance; absence means a FULL review with no base."""
+    basis = report.get("review_basis")
+    if basis is None:
+        return
+    if not isinstance(basis, dict):
+        errors.append("review_basis must be an object")
+        return
+    keys = {
+        "mode",
+        "base_review",
+        "base_bundle",
+        "delta_bundle",
+        "carried_forward",
+        "resolved_findings",
+    }
+    require_keys(basis, keys, keys, "review_basis", errors)
+    mode = basis.get("mode")
+    if mode not in REVIEW_MODES:
+        errors.append("review_basis.mode must be FULL or DELTA")
+        return
+    carried = string_list(
+        basis.get("carried_forward"), "review_basis.carried_forward", errors
+    )
+    resolved_ids: list[str] = []
+    for index, item in enumerate(
+        object_list(
+            basis.get("resolved_findings"), "review_basis.resolved_findings", errors
+        )
+    ):
+        label = f"review_basis.resolved_findings[{index}]"
+        require_keys(item, {"id", "evidence"}, {"id", "evidence"}, label, errors)
+        resolved_id = nonempty_string(item.get("id"), f"{label}.id", errors)
+        nonempty_string(item.get("evidence"), f"{label}.evidence", errors)
+        if resolved_id:
+            resolved_ids.append(resolved_id)
+    for resolved_id in resolved_ids:
+        if resolved_id in finding_ids:
+            errors.append(f"resolved finding {resolved_id} must not remain in findings")
+    if basis.get("base_review") is None:
+        # FULL without a usable base: prior findings fixed by the correction may be
+        # recorded as resolved; without a base their openness cannot be checked.
+        if mode == "DELTA":
+            errors.append("DELTA review requires review_basis.base_review")
+        for key in ("base_bundle", "delta_bundle"):
+            if basis.get(key) is not None:
+                errors.append(f"review_basis.{key} requires base_review")
+        if carried:
+            errors.append("review_basis.carried_forward requires base_review")
+        return
+    if mode == "FULL":
+        if basis.get("delta_bundle") is not None:
+            errors.append("FULL review must not cite review_basis.delta_bundle")
+        if carried:
+            errors.append("FULL review must not carry coverage forward")
+    base_bundle = load_cited(
+        basis.get("base_bundle"), "review_basis.base_bundle", errors
+    )
+    base_report = load_cited(
+        basis.get("base_review"), "review_basis.base_review", errors
+    )
+    if base_bundle is None or base_report is None:
+        return
+    if depth >= MAX_BASE_REVIEW_DEPTH:
+        errors.append("review_basis.base_review chain is too deep")
+        return
+    base_errors = validate(base_bundle, base_report, depth + 1)
+    if base_errors:
+        errors.append(
+            "review_basis.base_review is not VALID: " + "; ".join(base_errors[:3])
+        )
+        return
+    mismatches = target_mismatches(base_bundle, bundle)
+    for reason in mismatches:
+        errors.append(f"review_basis.base_review targets another review ({reason})")
+    prior_dirs = receipt_dirs(base_report)
+    for index, row in enumerate(report.get("validations") or []):
+        receipt = row.get("receipt") if isinstance(row, dict) else None
+        if isinstance(receipt, str) and Path(receipt).is_absolute():
+            if Path(receipt).resolve().parent in prior_dirs:
+                errors.append(
+                    f"validations[{index}].receipt is in a base review's receipts "
+                    "directory; rerun it into a fresh receipts directory for this bundle"
+                )
+    base_cycle = (base_report.get("scope") or {}).get("review_cycle")
+    if isinstance(review_cycle, int) and isinstance(base_cycle, int):
+        if review_cycle <= base_cycle:
+            errors.append("scope.review_cycle must exceed the base review cycle")
+    prior_open = open_required_ids(base_report)
+    for finding_id in prior_open:
+        if finding_id not in finding_ids and finding_id not in resolved_ids:
+            errors.append(
+                f"prior open finding {finding_id} must be re-adjudicated in findings "
+                "or review_basis.resolved_findings"
+            )
+    for resolved_id in resolved_ids:
+        if resolved_id not in prior_open:
+            errors.append(
+                f"resolved finding {resolved_id} is not an open base review finding"
+            )
+    if mode != "DELTA":
+        return
+
+    delta = load_cited(basis.get("delta_bundle"), "review_basis.delta_bundle", errors)
+    if delta is None:
+        return
+    delta_errors: list[str] = []
+    validate_bundle(delta, delta_errors)
+    if delta_errors:
+        errors.append(
+            "review_basis.delta_bundle is invalid: " + "; ".join(delta_errors[:3])
+        )
+        return
+    errors.extend(delta_identity_errors(delta, bundle, base_report))
+    for reason in delta_blockers(base_bundle, bundle, delta):
+        if reason not in mismatches:
+            errors.append(f"DELTA review not allowed ({reason}); run a FULL review")
+    current_digests = file_patch_digests(
+        bundle.get("patch") or "", object_list(bundle.get("files"), "bundle.files", [])
+    )
+    base_digests = file_patch_digests(
+        base_bundle.get("patch") or "",
+        object_list(base_bundle.get("files"), "base bundle.files", []),
+    )
+    base_rows = {
+        row.get("path"): row
+        for row in base_report.get("file_coverage") or []
+        if isinstance(row, dict)
+    }
+    for path in carried:
+        current, previous = current_digests.get(path), base_digests.get(path)
+        if current is None or previous is None or current != previous:
+            errors.append(
+                f"review_basis.carried_forward {path}: patch changed since the base "
+                "review or cannot be matched"
+            )
+            continue
+        row, base_row = coverage_rows.get(path), base_rows.get(path)
+        if (
+            row is None
+            or base_row is None
+            or row.get("classification") != base_row.get("classification")
+            or row.get("reason") != base_row.get("reason")
+        ):
+            errors.append(
+                f"review_basis.carried_forward {path}: file_coverage row must equal "
+                "the base review row"
+            )
+
+
+def validate(
+    bundle: dict[str, Any], report: dict[str, Any], depth: int = 0
+) -> list[str]:
     errors: list[str] = []
     bundle_target, bundle_files = validate_bundle(bundle, errors)
     require_keys(
@@ -253,6 +535,7 @@ def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
             "behavior_proof",
             "decision",
             "publication",
+            "review_basis",
         },
         "report",
         errors,
@@ -831,6 +1114,18 @@ def validate(bundle: dict[str, Any], report: dict[str, Any]) -> list[str]:
         if action == "REQUEST_CHANGES" and result != "CHANGES_REQUIRED":
             errors.append("REQUEST_CHANGES action requires CHANGES_REQUIRED decision")
 
+    coverage_rows = {
+        item["path"]: item for item in coverage if isinstance(item.get("path"), str)
+    }
+    validate_review_basis(
+        report,
+        bundle,
+        coverage_rows,
+        set(findings_by_id),
+        review_cycle,
+        errors,
+        depth,
+    )
     return errors
 
 

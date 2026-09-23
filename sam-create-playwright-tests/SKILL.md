@@ -1,269 +1,107 @@
 ---
 name: sam-create-playwright-tests
-description: "Create and validate risk-based Playwright browser tests for changed or reported user flows, including real linked UI/backend proof, exact route and network assertions, permissions, persistence, and video evidence (mandatory under a parent workflow, local-only otherwise). Use when asked for Playwright, browser E2E, UI regression tests, cross-browser flows, route or CORS verification, or explicitly requested PR/MR test evidence."
+description: "Create and validate risk-based Playwright E2E tests with real UI/backend proof, exact route and network assertions, permissions, persistence, and video evidence. Use when asked for Playwright, browser E2E, UI regression, cross-browser, route/CORS checks, or PR/MR test evidence."
 ---
 
 # Sam Create Playwright Tests
 
-Create browser tests that prove the intended user and API contract. Keep the
-workflow stack-, host-, provider-, and model-agnostic except for Playwright itself.
-
 ## Non-Negotiable Contract
 
-- Honor the exact repository, path, branch, commit, diff range, and acceptance
-  criteria supplied by the user.
-- Preserve existing work. Do not reset, checkout, stash, clean, rebase, or rewrite history.
-- Keep generated media and reports local until a remote proposal target is
-  authorized. Publish only when the user or a parent workflow (for example
-  `sam-work`) explicitly requests publication and the exact target is known.
-  Parent-workflow authorization is sufficient; do not re-ask the user.
-- **Never commit** generated videos, screenshots, traces, or reports to the
-  task branch, LFS, or product-tree history.
-- When publication is authorized, **always upload** via the host CLI (`gh` /
-  `glab` platform uploads) and place media in the PR/MR **description** or a
-  **comment/note** using player/image embed markup. Follow
-  [references/evidence-publishing.md](references/evidence-publishing.md).
-- **Video → inline/native player. Image → inline image. Never a hyperlink.**
-  Forbid Markdown download links, “Download MP4” anchors, blob/raw repo URLs,
-  and HTML download anchors.
-- Never use production credentials, production services, customer tenants, or
-  private data for automated browser tests.
-- Fail closed when real data is requested and the environment identity is unknown
-  or is not a verified local, test, or development target.
-- Inspect every changed command definition, hook, script, container file, and test
-  configuration before executing it.
-- Do not add `.only`, `.skip`, retries, broad timeouts, snapshot refreshes, weaker
-  assertions, or mocks that bypass the contract under test.
-- **Real product UI first.** Drive the actual application pages, routes, and
-  components users hit in production-like local/dev/test. Prefer the real linked
-  UI + backend over any substitute.
-- **Do not create a new page, route, component, story, harness shell, or fixture
-  UI solely to host a browser test** when the real product surface can exercise
-  the behavior. Add only the smallest stable selector or test-id seam on the
-  existing product UI when needed.
-- Tests must be as faithful to reality as possible: real navigation, real
-  auth/session helpers already used by the app, real network to the intended
-  backend, real persistence, and user-visible assertions—not isolated component
-  mounts that bypass routing, layout, providers, or API wiring.
-- **Fallback only when the real UI is not reasonably reachable** after serious
-  attempts (boot, auth, data seed, port/config, linked backend). Document each
-  attempt and blocker, label proof `FALLBACK`, and only then use a minimal
-  isolated harness or test-only surface. Never present fallback as real-UI proof.
-- Limit production changes to the in-scope correction or the smallest stable
-  selector/test seam required by an accepted scenario on the real product UI.
-- Track all started processes, containers, ports, data, overrides, and temporary
-  files. Clean them before completion or report the exact retained resource.
+- Honor the exact repository, path, branch, commit, diff range, and acceptance criteria. Preserve existing work: never reset, checkout, restore, stash, clean, rebase, or rewrite history.
+- **Real product UI first.** Drive the real pages and routes users hit, with the app's own auth/session path, real navigation, real network to the intended linked backend, real persistence, and user-visible assertions, not isolated mounts that bypass routing, layout, providers, or API wiring. Never create a page, route or route stub, component, story, mini-app, harness shell, or fixture UI solely to host a test when the real surface can exercise the behavior. `FALLBACK` only after recorded serious attempts (boot, auth, seed, port/config, linked backend) with the exact blocker, never presented as real-UI proof.
+- Never use production credentials, services, customer tenants, or private data. Fail closed when real data is requested and the environment is unknown or not a verified `local`, `test`, or `dev` target; never infer safety from a hostname.
+- Inspect every changed command definition, hook, script, container file, and test configuration before executing it.
+- Never add `.only`, `.skip`, retries, broad timeouts, arbitrary sleeps, snapshot refreshes, weaker assertions (truthiness, existence, or non-throwing checks), or mocks that bypass the contract under test.
+- Report only results backed by a `scripts/run_checked.py` receipt; never edit a receipt or its log.
+- Change production code only for the in-scope correction or the smallest selector/test seam on the real product UI. Fix in-scope product defects at the owning boundary, never by changing tests; record unrelated defects as follow-up evidence.
+- Evidence stays local unless the user or a parent workflow explicitly requests publication and the exact target is known. **Never stage or commit** videos, screenshots, traces, recordings, or reports to the branch, LFS, release assets, or product history.
+- Register every process, container, port, record, override, temporary file, and artifact in the cleanup ledger when created; clean it or report the exact retained resource.
+- Under a parent workflow never ask; execute or fail closed with receipts. Standalone, ask one question only when the target or a safety-critical environment cannot be discovered; never silently choose a remote, database, or tenant.
 
-## Resource Routing
+## Run Rules
 
-- Read [references/environment-safety.md](references/environment-safety.md)
-  before starting services or using persistent data.
-- Read [references/scenario-policy.md](references/scenario-policy.md) while
-  building the scenario ledger.
-- Read [references/playwright-quality.md](references/playwright-quality.md)
-  before implementing or changing browser tests.
-- Read [references/evidence-publishing.md](references/evidence-publishing.md)
-  **before the first run** whenever a parent workflow is active (`sam-work` and
-  `sam-task` always require video) or when video or external publication is
-  explicitly requested. Under a parent workflow, enable video capture up front—
-  video is mandatory there, not optional.
-- Read [references/output-contract.md](references/output-contract.md) before
-  drafting the final report.
+- Use literal absolute paths: `<repo>` the repository root; `<skill>` this directory; `<work>` the parent's phase dir when given, else one `mktemp -d` outside the repository, reused on re-invocation; `<receipts>` is `<work>/receipts-<n>`; `<previous>` this skill's prior report (parent-named, else `<work>/report.json`), if any.
+- Do not re-read a file already read in this context unless context was compacted or you cannot quote the section you need.
+- When a parent workflow is active or the user asked for video or publication, enable video capture before the first run with a temporary config or override outside tracked files. Under `sam-work` or `sam-task` (web system) publication is mandatory; in any publishing run, zero videos is a failed phase.
 
-## 1. Resolve and Freeze the Target
+| Reference | Read when |
+| --- | --- |
+| [references/evidence-publishing.md](references/evidence-publishing.md) | step 7, only when publishing |
+| [references/output-contract.md](references/output-contract.md) | step 8 or an early `BLOCKED` exit; before step 1 if `<previous>` exists (§ Re-invocation) |
 
-Set the skill directory to the directory containing this file. Build the bundle
-without fetching or changing refs:
+## 1. Resolve and Freeze
 
 ```bash
-SAM_PLAYWRIGHT_DIR="<absolute directory containing this SKILL.md>"
-WORK_TMP="$(mktemp -d)"
-python3 "$SAM_PLAYWRIGHT_DIR/scripts/build_e2e_bundle.py" \
-  --repo "$PWD" --environment-kind unknown \
-  --environment-id "unverified" > "$WORK_TMP/baseline-bundle.json"
+python3 <skill>/scripts/build_e2e_bundle.py --repo <repo> --environment-kind unknown --environment-id unverified --out <work>/baseline
 ```
 
-Pass `--base`, `--head`, and repeated `--path` arguments when the user specifies
-them. Rebuild with the verified environment identity before using real data.
+Add `--base`, `--head`, and repeated `--path` when given. Read only the one-line stderr summary and `bundle.patch`, never `bundle.json`. Before editing, freeze: base/head SHAs, target mode, fingerprint; intended behavior, invariants, acceptance criteria, no-go surfaces; changed files and command definitions; environment kind, identity, UI URL, API URL, database/tenant identity.
 
-Freeze these fields before editing:
+## 2. Traceability Ledger
 
-- Base SHA, head SHA, target mode, and bundle fingerprint.
-- Intended behavior, invariants, acceptance criteria, and explicit no-go surfaces.
-- Changed-file ledger and command definitions.
-- Environment kind, identity, endpoints, database/tenant identity, and evidence.
-- Cleanup ledger initialized with every resource that may be created.
+IDs look like `AC-001`: `AC` criterion, `R` risk, `S` scenario, `T` test, `CMD` command, `ART` artifact, `CL` cleanup.
 
-Under a parent workflow that already froze the target and environment (for
-example `sam-work`), never ask any permission, confirmation, or clarifying
-question—execute or fail closed with receipts. When running standalone, ask one
-concise question only when the target or a safety-critical environment identity
-cannot be discovered. Do not silently choose a remote, database, or tenant.
+Risk: `CRITICAL` authorization, destructive data, money, irreversible migration, secret exposure, production delivery; `HIGH` public contract, persistence, cross-service wiring, concurrency, primary user journey; `MEDIUM` realistic validation, recovery, compatibility, accessibility; `LOW` contained local behavior.
 
-## 2. Build the Traceability Ledger
+Build scenarios from reachable changed behavior: cover success, negative, boundary, permission, validation, persistence, cache, loading, error, recovery, navigation, compatibility, exact browser/API route, and cross-origin cases only where the code path reaches them; omit other classes with a reason and never write checklist-only tests. Do not duplicate a scenario per browser or viewport unless behavior can differ.
 
-Use stable IDs throughout the run:
+Scenario status: `AUTOMATED`; `MANUAL_PROOF` only when automation is less reliable or safe and the proof is reproducible; `REDUNDANT` when another scenario exercises the same branch and contract (link it); `NOT_COVERED` with blocker, residual risk, next action.
 
-- `AC-###`: acceptance criterion.
-- `R-###`: reachable risk linked to one or more criteria.
-- `S-###`: scenario linked to criteria and risks.
-- `T-###`: test linked to scenarios.
-- `CMD-###`: command linked to tests and results.
-- `ART-###`: local or explicitly published artifact linked to scenarios.
-- `CL-###`: cleanup resource.
+## 3. Counterfactual Proof
 
-For each changed behavior, cover applicable success, negative, boundary,
-permission, validation, persistence, cache, loading, error, recovery, navigation,
-compatibility, exact browser/API route, and cross-origin cases. Mark irrelevant
-classes as omitted with a reason; do not create checklist-only tests.
-
-Assign each scenario one status: `AUTOMATED`, `MANUAL_PROOF`, `REDUNDANT`, or
-`NOT_COVERED`. Give `REDUNDANT` an equivalent scenario and `NOT_COVERED` a
-blocker, residual risk, and next action.
-
-## 3. Plan Counterfactual Proof
-
-For every new regression test, record one proof status:
-
-- `RED_GREEN`: safely observed failure before the correction and pass after it.
-- `MUTATION`: a focused reversible mutation made the test fail.
-- `CONTRACT`: an authoritative boundary and targeted assertion prove discrimination.
-- `NOT_PROVEN`: counterfactual proof was unsafe or unavailable, with the exact reason.
-
-Never mutate the user's working tree solely to manufacture proof. Use an isolated
-temporary copy only when safe. Do not claim complete confidence while required
-high-risk regression proof remains `NOT_PROVEN`.
+Each new regression test gets one status: `RED_GREEN` (safely observed failure before the correction, pass after); `MUTATION` (a focused reversible mutation fails it); `CONTRACT` (an authoritative boundary and targeted assertion prove discrimination); `NOT_PROVEN` (unsafe or unavailable, with the exact reason; never claim protection without discrimination). Prefer red/green, then mutation, then contract. Never mutate the user's working tree to manufacture proof; use an isolated temporary copy only when safe.
 
 ## 4. Start the Real Linked System Safely
 
-Inspect changed command definitions first. Then use repository-supported direct,
-container, or compose workflows. Prefer temporary environment overrides and
-unused ports over tracked configuration changes.
+Prove each step-1 environment field with evidence; aliases, proxies, tunnels, copied production snapshots, and unknown targets stay unknown until proven. For user-facing behavior:
 
-For user-facing behavior, **default and preferred path is the real running app**:
+1. Boot the product UI and intended backend with repository-supported direct, container, or compose workflows and lockfiles; prefer temporary environment overrides outside the repository and unused ports over tracked config changes; confirm the UI calls the intended backend.
+2. Authenticate through the app's normal session path or shared auth fixtures that exercise it.
+3. Navigate the real route/page that owns the changed behavior.
+4. Act as a person would: click, type, submit, open menus.
+5. Confirm the browser-requested method, path, payload, response, and visible outcome against the linked backend.
 
-1. Boot the product UI and the intended backend with repo-supported commands.
-2. Authenticate through the app’s normal session path (or existing shared auth
-   fixtures that exercise that path)—not a test-only fake page.
-3. Navigate the real product route/page that owns the changed behavior.
-4. Perform the same user actions a person would (click, type, submit, open menus).
-5. Confirm browser-requested method, path, payload, response, and visible outcome
-   against the linked backend.
+Data: isolated factories, seeds, test accounts, and deterministic identifiers; only records a scenario needs. Never log secrets, cookies, authorization headers, tokens, or private fields. Prove read-after-write before cleanup when persistence is in scope.
 
-**Forbidden as the first choice:** new throwaway components, mini-apps,
-Storybook-only mounts, component-test wrappers, or route stubs created only so
-Playwright has something to open. Prefer extending an existing e2e against the
-real page.
-
-**Fallback** (mocked page, request-only check, component shell, new test-only
-surface) is allowed only after recording each serious real-system attempt and
-exact blocker. Mark behavior proof `FALLBACK`. Prefer the thinnest fallback that
-still proves useful contract pieces; still do not invent product UI permanently
-if a temporary local seed or config fix would unlock the real page.
-
-Register every process, container, port, test record, override, and artifact in
-the cleanup ledger when it is created.
+Extend an existing e2e on the real page. A fallback sets `behavior_proof` `FALLBACK`; use the thinnest one that still proves useful contract pieces, and apply a temporary local seed or config fix (outside tracked files) or the smallest selector seam instead when that unlocks the real page.
 
 ## 5. Implement Without Weakening the Suite
 
-Follow repository fixtures, factories, selectors, authentication helpers, and
-cleanup conventions on the **existing product tree**. Prefer accessible
-user-facing locators and observable state on real pages. Avoid sleeps,
-execution-order dependencies, shared mutable records, framework internals, and
-assertions that merely repeat fixture literals.
+Before changing any spec, capture the runner's own test list as `CMD-900` (`--classification ENVIRONMENT`, step-6 form) unless `<previous>` or an earlier `<receipts>` has one.
 
-When a selector is unstable, add the smallest production-safe test seam on the
-real component already shipping in the app. Do not replace that component with a
-parallel test-only implementation.
+- Prefer existing fixtures, page objects, factories, authenticated session helpers, and cleanup conventions on the existing product tree; `getByRole`, `getByLabel`, `getByText`, and stable meaningful test IDs on shipping UI; assertions on visible state, URL, response, persistence, cache, permission, navigation, and accessibility outcomes; `waitForResponse`, locator and URL assertions, and app readiness signals; exact method, path, query, payload, status, and body; console and network evidence for preflight, CORS, opaque failures, and masked errors.
+- Reject unless justified: fixmes and expected failures; broad snapshots that obscure the contract; order dependencies and shared mutable records; mocks replacing a backend that can run safely on a verified target; mock call counts where visible behavior can prove intent; framework internals; assertions that repeat fixture literals.
 
-Rerun the exact builder command with the same target arguments and verified
-environment into `$WORK_TMP/bundle.json`. Preserve `baseline-bundle.json`; the
-final bundle must include the newly changed tests. Audit that final patch:
+Then rerun the step-1 builder (same target arguments, verified environment) with `--out <work>/final`; the final bundle must include the new specs. Audit it; every finding blocks until disproven from the exact diff:
 
 ```bash
-python3 "$SAM_PLAYWRIGHT_DIR/scripts/audit_test_diff.py" \
-  "$WORK_TMP/bundle.json" > "$WORK_TMP/test-diff-audit.json"
+python3 <skill>/scripts/audit_test_diff.py <work>/final/bundle.json > <work>/test-diff-audit.json
 ```
 
-Treat every audit finding as blocking until disproven from the exact diff.
-
-## 6. Run and Classify Validation
-
-Every reported result must come from an execution receipt. A typed `PASS` is not
-a result. Run each command through the wrapper:
+## 6. Run and Classify
 
 ```bash
-python3 "$SAM_PLAYWRIGHT_DIR/scripts/run_checked.py" \
-  --id CMD-001 --receipts-dir "$WORK_TMP/receipts" \
-  --classification TARGET --repeat 3 -- <command and arguments>
+python3 <skill>/scripts/run_checked.py --id CMD-001 --receipts-dir <receipts> --classification TARGET --repeat 3 -- <command and arguments>
 ```
 
-Run the narrowest new tests first, then affected tests and broader validation
-proportional to risk. Record each command exactly once as `PASS`, `FAIL`, or
-`NOT_RUN`, classified as `TARGET`, `BASELINE`, `ENVIRONMENT`, or `EXTERNAL`,
-exactly as its receipt states.
-
-Browser tests are the most flake-prone layer in the pack, so determinism is part
-of the proof:
-
-- **`TARGET` commands require `--repeat` of at least 2** (prefer 3). Differing
-  exit codes mark the command `FLAKY`, which blocks `COMPLETE`.
-- Never convert flake into green with runner retries, longer timeouts, or
-  `.skip`. Diagnose the race or report the residual risk.
-- Copy `commands[].command` from the receipt argv and set `commands[].receipt` to
-  the receipt path. Never edit a receipt or its captured log.
-
-Prove that each new spec actually runs. Capture the runner's own test list before
-and after adding the spec, then record `test_wiring` with both receipts and the
-exact new test titles; each title must be absent from the before-log and present
-in the after-log.
-
-Do not hide product failures by changing tests. Fix an in-scope product defect
-only at its owning boundary. Record unrelated defects as follow-up evidence.
-
-For user-visible behavior, declare `PROVEN`, `NOT_PROVEN`, or `FALLBACK` and cite
-the browser, network, trace, screenshot, or local video evidence. `PROVEN`
-requires the real product UI and linked backend path. `FALLBACK` requires the
-attempt/blocker ledger and must not be reported as full real-UI confidence.
+- Run the narrowest new tests first, then affected tests and broader validation proportional to risk; record each command once. Classify `TARGET`, `BASELINE`, `ENVIRONMENT`, or `EXTERNAL`.
+- `TARGET` needs `--repeat` ≥ 2 (prefer 3); differing exit codes, or a fail then pass with nothing fixed, mean `FLAKY`. Never convert flake into green or re-run an id with a `FAIL` receipt: fix the cause (rebuild the final bundle if files changed) and re-run every command but `CMD-900` in the next `<receipts>`, or report the residual risk.
+- After the specs exist, capture the test list again as `CMD-901`; read listings from `<receipts>/<id>.run1.log`.
+- Cite browser, network, trace, screenshot, or local video evidence for `behavior_proof`.
 
 ## 7. Handle Evidence
 
-Keep Playwright traces, screenshots, reports, and recordings local and safe when
-running standalone without a publication request. Never `git add` / commit them.
-
-Publication is required whenever the user or a parent workflow requests it, and
-`sam-work` and `sam-task` always require Playwright video for a web system. In
-those runs, enable video capture, run the suite, and publish without asking
-again; zero videos is a failed phase, not a quiet pass. Follow
-[references/evidence-publishing.md](references/evidence-publishing.md):
-
-Confirm the authorized proposal and current head, upload the validated media,
-embed it using the platform's native markup, and verify the rendered player or
-image. Record hashes, upload receipts, and rendered readback. Never commit media
-or treat a download link as player proof. Stop on target drift or partial failure.
+When publishing, follow `references/evidence-publishing.md`.
 
 ## 8. Validate, Clean, and Return
 
-Draft `report.json` using [references/output-contract.md](references/output-contract.md),
-then validate it:
+Scaffold, fill the empty fields and decision (never retype derived ones), and validate. Omit `--wiring` when no spec was added (`test_wiring` `NOT_APPLICABLE` with a reason).
 
 ```bash
-python3 "$SAM_PLAYWRIGHT_DIR/scripts/validate_e2e_report.py" \
-  --baseline "$WORK_TMP/baseline-bundle.json" \
-  --bundle "$WORK_TMP/bundle.json" "$WORK_TMP/report.json"
+python3 <skill>/scripts/scaffold_report.py --baseline <work>/baseline/bundle.json --bundle <work>/final/bundle.json --receipts-dir <receipts> --wiring CMD-900 CMD-901 --out <work>/report.json
+python3 <skill>/scripts/validate_e2e_report.py --baseline <work>/baseline/bundle.json --bundle <work>/final/bundle.json <work>/report.json
 ```
 
-The validator re-verifies every execution receipt through
-`scripts/verify_receipts.py`, so it fails when a status disagrees with its
-receipt, a log hash does not recompute, a `TARGET` command ran once, or a claimed
-new test is not discovered by the runner. Retain the report, bundles,
-receipts, and referenced logs at their recorded paths for caller re-validation.
-Mark these as retained evidence in the cleanup ledger. Stop only resources
-created by this run, remove temporary test data and overrides, update the ledger,
-and revalidate. Delete only scratch that no returned evidence references.
+Fix from the validator's error lines (it runs `scripts/verify_receipts.py`) and patch the report in place; do not read validator source or rewrite the whole report.
 
-Return `COMPLETE` only when all required scenarios and validations pass, required
-counterfactual proof exists, behavior is proven, no command is flaky, test wiring
-is proven, and cleanup succeeds. Return
-`PARTIAL` for honest residual gaps. Return `BLOCKED` for unsafe environment,
-scope, authorization, or execution conditions.
+Stop only processes and containers this run started; remove created data, temporary environment files, raw recordings that no `ART` record references, and generated runner reports unless the user explicitly asked to retain them; delete only scratch that no returned evidence references; never use broad cleanup commands; update the cleanup ledger and revalidate. Decide by the output-contract gates and return in its § Return format.

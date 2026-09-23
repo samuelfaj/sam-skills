@@ -1,177 +1,43 @@
 # Evidence Publishing
 
-Read this file when media must leave the local machine for a PR/MR.
+## Rules
 
-## Contents
+- Forbidden media forms: `[Download](url)`, `[video](url)`, reference-style `[x][1]` links, `[![thumb](img)](video)`, "click here" or HTML `<a>` download anchors, HTML `<video>` tags, repository blob/raw/LFS URLs (`raw.`/`media.githubusercontent.com`). A downloadable link alone is a failed publication.
+- Prefer the PR/MR **description** when the media is primary proof; use a **comment/note** to append after the description is settled or when description edits are unsafe.
+- Immediately before upload, reconfirm host, repository, proposal ID, and expected head SHA; stop on drift.
+- Put a scenario title above each embed. Keep a video or image extension on every uploaded filename.
 
-1. Non-negotiable rules
-2. Embed markup
-3. Upload procedure
-4. Body composition checklist
-5. Verification
-6. Failure modes
+## Per Host
 
-## Non-negotiable rules
+| Host | Upload | Video embed | Image embed |
+| --- | --- | --- | --- |
+| GitLab | `glab api --method POST "projects/<urlencoded-ns%2Fproject>/uploads" --form "file=@/abs/demo.mp4"`; paste the response `markdown` verbatim; `url`/`full_path` is the receipt | returned `![alt](/uploads/<hash>/demo.mp4)` — GLFM plays `.mp4 .m4v .mov .webm .ogv`; `{width=100%}` optional | `![alt](/uploads/<hash>/shot.png)` |
+| GitHub | `gh image --repo <owner/repo> /abs/file`, or another host path yielding a rendering `https://github.com/user-attachments/assets/<id>` URL | bare attachment URL alone on its own line (`.mp4 .mov .webm`); never wrapped in `[..](..)` or `![..](..)` | `![alt](https://github.com/user-attachments/assets/<id>)` (`.png .jpg .jpeg .gif .webp .svg`) |
 
-1. **Never commit** generated videos, screenshots, contact sheets, traces, or
-   recordings into the git branch, working tree commit, LFS, or release assets
-   that land on the product branch. Host them only as platform uploads.
-2. **Never publish media as a hyperlink.** Forbidden patterns include
-   `[Download](url)`, `[video](url)`, `[![thumb](img)](video)`, raw
-   “click here” anchors, and repository blob/raw URLs.
-3. **Videos must render as an inline/native player.** Images must render as
-   **inline images**. A downloadable file link alone is a failed publication.
-4. Prefer **PR/MR description** when the media is primary proof for the change.
-   Use a **PR/MR comment/note** when appending evidence after the description is
-   already settled, or when the host makes description edits unsafe.
-5. Reconfirm host, repository, proposal ID, and expected head SHA immediately
-   before upload. Stop on drift.
-6. Privacy-scan every frame first. Do not upload secrets, tokens, cookies,
-   private customer data, or production identifiers.
-
-## Embed markup (required)
-
-### GitLab (GLFM)
-
-Upload returns markdown of the form `![alt](/uploads/<hash>/<file>)`.
-
-Use that image syntax for **both** videos and images. GitLab converts video
-extensions (`.mp4`, `.m4v`, `.mov`, `.webm`, `.ogv`) into a video player and
-image extensions into an image.
-
-```markdown
-### Demo — void refreshes family ledger
-
-![void refreshes family ledger](/uploads/<hash>/demo.mp4)
-
-### Screenshot — ledger after restore
-
-![ledger after restore](/uploads/<hash>/after.png)
-```
-
-**Do not** use HTML `<video>` tags, HTML `<a>` download links, or
-`[label](url)` link syntax for evidence.
-
-Optional width control (still player/image, not a link):
-
-```markdown
-![demo](/uploads/<hash>/demo.mp4){width=100%}
-```
-
-### GitHub
-
-Host-uploaded attachment URLs under `https://github.com/user-attachments/assets/`
-(or the host-issued equivalent) are required.
-
-| Media | Required body form | Renders as |
-| --- | --- | --- |
-| Video (`.mp4`, `.mov`, `.webm`) | Bare attachment URL alone on its own line (no markdown link wrapper) | Inline video player |
-| Image (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`) | `![descriptive alt](https://github.com/user-attachments/assets/<id>)` | Inline image |
-
-```markdown
-### Demo — void refreshes family ledger
-
-https://github.com/user-attachments/assets/<uuid>
-
-### Screenshot — ledger after restore
-
-![ledger after restore](https://github.com/user-attachments/assets/<uuid>)
-```
-
-**Do not** wrap video URLs in `[text](url)` or `![alt](url)` unless the host
-readback proves a player still renders. Prefer the bare attachment URL for
-video. Repository `raw.githubusercontent.com` / blob URLs are not valid evidence
-embeds.
-
-## Upload procedure
-
-### GitLab — `glab`
+Publish the composed body:
 
 ```bash
-# Upload one file; response includes markdown + url
-glab api --method POST \
-  "projects/<urlencoded-namespace%2Fproject>/uploads" \
-  --form "file=@/absolute/path/to/demo.mp4"
+glab mr update <iid> -R <ns/project> --description "$(cat <tmp>/body.md)"   # or: glab mr note <iid> -R <ns/project> --message "$(cat <tmp>/body.md)"
+gh pr edit <number> --repo <owner/repo> --body-file <tmp>/body.md          # or: gh pr comment <number> --repo <owner/repo> --body-file <tmp>/body.md
 ```
-
-Response fields:
-
-- `markdown` — use this string verbatim in the description or note (already
-  `![alt](/uploads/...)`).
-- `url` / `full_path` — record as the upload receipt identifier.
-
-Publish into the proposal:
-
-```bash
-# Description (preferred for primary demo)
-glab mr update <iid> -R <namespace/project> --description "$(cat body.md)"
-
-# Or comment/note
-glab mr note <iid> -R <namespace/project> --message "$(cat body.md)"
-```
-
-Ensure the uploaded filename keeps a video or image extension so GLFM chooses
-player vs image correctly.
-
-### GitHub — `gh`
-
-Prefer session-backed user-attachment upload so URLs render as native players:
-
-```bash
-# Images and videos via user-attachments (prints ![alt](url) for images;
-# for video, place the bare user-attachments URL alone on its own line)
-gh image --repo <owner/repo> /absolute/path/to/file.mp4
-# or
-gh image --repo <owner/repo> /absolute/path/to/shot.png
-```
-
-If `gh image` is unavailable, use another host path that still yields a
-`user-attachments` (or equivalent) URL proven to render a player—not a branch
-commit and not a raw blob URL.
-
-Publish:
-
-```bash
-# Description
-gh pr edit <number> --repo <owner/repo> --body-file body.md
-
-# Or comment
-gh pr comment <number> --repo <owner/repo> --body-file body.md
-```
-
-When composing `body.md` for GitHub videos, insert the attachment URL as a
-standalone line so the UI shows a player. For images, keep `![alt](url)`.
-
-## Body composition checklist
-
-Before writing the remote body:
-
-- [ ] No media path is staged or committed on the task branch.
-- [ ] Every video uses host player markup (GL: `![alt](…mp4)`; GH: bare
-      user-attachments URL).
-- [ ] Every image uses `![alt](url)`.
-- [ ] Zero `[label](media-url)` download links for evidence.
-- [ ] Zero raw/blob/repository file URLs for evidence.
-- [ ] Scenario titles sit above each embed so reviewers know what they prove.
 
 ## Verify (mandatory)
 
-1. Read the remote description or note back via API/CLI.
-2. Confirm the body contains the required player/image markup (not a link).
-3. Open or render-check the proposal surface when possible and confirm a native
-   player (video) or image (screenshot) appears.
-4. Record under `ART-###`: local path, SHA-256, host, proposal ID, upload
-   receipt, embedded markup, comment/description ID, and `player_verified` /
-   `image_verified` with readback evidence.
+Read the body back through the API into a file and count embeds. Never print the whole body, fetch the rendered page, or take screenshots.
 
-## Failure modes
+```bash
+gh pr view <number> --repo <owner/repo> --json body -q .body > <tmp>/readback.md          # comment: gh api repos/<owner/repo>/issues/comments/<id> -q .body
+glab api "projects/<urlencoded-ns%2Fproject>/merge_requests/<iid>" \
+  | python3 -c 'import json,sys;print(json.load(sys.stdin)["description"])' > <tmp>/readback.md   # note: .../notes/<id>, key "body"
+python3 <skill>/scripts/count_embeds.py <tmp>/readback.md --video-url <url> --image-url <url>
+```
 
-Return `BLOCKED` (do not claim `PUBLISHED`) when:
+Pass every uploaded URL from its upload receipt (GitLab: the response `url`), repeating the flag per file. `PASS` (each URL in its host's player/image form outside code and comments, zero media links) sets `readback_verified: true`. Record per artifact: local path, SHA-256, host, proposal ID, upload receipt (a local path is never one), embed markup, description/comment ID, and the `count_embeds.py` line.
 
-- Upload, description update, or comment creation fails.
-- Head or proposal identity drifted.
-- Readback shows only a hyperlink, blob URL, or missing attachment.
-- Media was committed to the branch.
-- Privacy review failed.
+## BLOCKED, never `PUBLISHED`, when
 
-A local filesystem path is never a remote receipt.
+- upload, description update, or comment creation fails;
+- head or proposal identity drifted;
+- `count_embeds.py` prints `FAIL` for the readback;
+- media was committed to the branch;
+- privacy review failed.

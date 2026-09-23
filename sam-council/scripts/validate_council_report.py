@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -72,9 +74,77 @@ VERDICTS = {
     "NO_MATERIAL_OBJECTION",
 }
 REVIEWER_VERDICTS = {"OBJECTIONS", "NO_MATERIAL_OBJECTION", "BLOCKED"}
+PASSING_STATUSES = {"TRIAGE_PASS", "APPROVED", "APPROVED_WITH_CONDITIONS"}
+PACKET_SCOPES = {"FULL", "DELTA"}
+MAX_BASE_DEPTH = 8
 EVIDENCE_ID = re.compile(r"^E-\d{3}$")
 ASSUMPTION_ID = re.compile(r"^A-\d{3}$")
 THESIS_ID = re.compile(r"^T-\d{3}$")
+COMMIT_SHA = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+
+
+def packet_fingerprint(
+    profile: str, providers: list[str], head: str, packet: bytes
+) -> str:
+    """Identity of a council input: profile, providers, head, and packet bytes."""
+    digest = hashlib.sha256()
+    for part in ("sam-council-packet-v1", profile, ",".join(providers), head):
+        digest.update(part.encode("utf-8") + b"\0")
+    digest.update(packet)
+    return digest.hexdigest()
+
+
+def resolve(path_text: str, base_dir: Path | None) -> Path:
+    path = Path(path_text)
+    return path if path.is_absolute() else (base_dir or Path.cwd()) / path
+
+
+def validate_packet(
+    root: dict[str, Any], base_dir: Path | None, errors: list[str]
+) -> None:
+    """Recompute a recorded packet fingerprint instead of trusting it."""
+    head = root.get("packet_head")
+    if head is not None and head != "none" and not (
+        isinstance(head, str) and COMMIT_SHA.fullmatch(head)
+    ):
+        errors.append("packet_head: expected none or a full commit SHA")
+    if "packet_fingerprint" not in root:
+        return
+    packet_text = text(root.get("packet_path"), "packet_path", errors)
+    if not packet_text:
+        return
+    try:
+        packet = resolve(packet_text, base_dir).read_bytes()
+    except OSError as error:
+        errors.append(f"packet_path: cannot read packet: {error}")
+        return
+    independence = root.get("independence")
+    providers = (
+        independence.get("providers") if isinstance(independence, dict) else None
+    )
+    expected = packet_fingerprint(
+        str(root.get("profile")),
+        [str(item) for item in providers] if isinstance(providers, list) else [],
+        str(head if head is not None else "none"),
+        packet,
+    )
+    if root.get("packet_fingerprint") != expected:
+        errors.append(
+            "packet_fingerprint: does not match packet, profile, providers, and head"
+        )
+
+
+def is_ancestor(base_head: str, head: str) -> bool | None:
+    """True/False when the current repository knows both commits, else None."""
+    try:
+        result = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", base_head, head],
+            capture_output=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    return {0: True, 1: False}.get(result.returncode)
 
 
 def mapping(value: Any, path: str, errors: list[str]) -> dict[str, Any]:
@@ -173,7 +243,101 @@ def expected_required_verifiers(profile: str, mode: str) -> set[str]:
     return set(REQUIRED_VERIFIERS_SINGLE)
 
 
-def validate_report(report: Any) -> list[str]:
+def is_zero_objection_pass(root: dict[str, Any]) -> bool:
+    """Fast TRIAGE_PASS whose seats all returned NO_MATERIAL_OBJECTION.
+
+    It has nothing to revise or close, so it may skip the triage-arbiter by
+    recording an empty verification list.
+    """
+    rounds = root.get("rounds")
+    if (
+        root.get("profile") != "fast"
+        or root.get("status") != "TRIAGE_PASS"
+        or not isinstance(rounds, list)
+        or len(rounds) != 1
+        or not isinstance(rounds[0], dict)
+    ):
+        return False
+    round_item = rounds[0]
+    results = round_item.get("reviewer_results")
+    return (
+        round_item.get("verification") == []
+        and round_item.get("objections") == []
+        and isinstance(results, list)
+        and bool(results)
+        and all(
+            isinstance(result, dict)
+            and result.get("verdict") == "NO_MATERIAL_OBJECTION"
+            for result in results
+        )
+    )
+
+
+def validate_base_report(
+    root: dict[str, Any],
+    profile: str,
+    base_dir: Path | None,
+    depth: int,
+    errors: list[str],
+) -> None:
+    """A DELTA packet is valid only on a VALID passing base of the same thesis.
+
+    The base must share the profile and objective, end at the thesis this
+    report's first round takes as input, and sit on an earlier commit.
+    """
+    base_text = text(root.get("base_report"), "base_report", errors)
+    if not base_text:
+        return
+    if depth >= MAX_BASE_DEPTH:
+        errors.append("base_report: chain exceeds maximum depth")
+        return
+    base_path = resolve(base_text, base_dir)
+    try:
+        base = json.loads(base_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        errors.append(f"base_report: cannot read {base_path}: {error}")
+        return
+    base_errors = validate_report(base, base_path.parent, depth + 1)
+    if base_errors:
+        first = base_errors[0]
+        errors.append(
+            first
+            if first.startswith("base_report: ")
+            else f"base_report: not VALID ({len(base_errors)} error(s)); first: {first}"
+        )
+        return
+    if base.get("status") not in PASSING_STATUSES:
+        errors.append("base_report: DELTA requires a passing base status")
+    if base.get("profile") != profile:
+        errors.append("base_report: DELTA profile must equal the base profile")
+    head, base_head = root.get("packet_head"), base.get("packet_head")
+    if not all(
+        isinstance(item, str) and COMMIT_SHA.fullmatch(item)
+        for item in (head, base_head)
+    ):
+        errors.append("base_report: DELTA requires commit SHAs in both packet_head")
+    elif head == base_head:
+        errors.append("base_report: DELTA requires a new packet_head")
+    elif is_ancestor(str(base_head), str(head)) is False:
+        errors.append("base_report: base packet_head is not an ancestor of packet_head")
+    rounds = root.get("rounds")
+    first_round = rounds[0] if isinstance(rounds, list) and rounds else None
+    input_thesis_id = (
+        first_round.get("input_thesis_id") if isinstance(first_round, dict) else None
+    )
+    if input_thesis_id != base["decision"]["final_thesis_id"]:
+        errors.append(
+            "base_report: rounds[0].input_thesis_id must equal the base final_thesis_id"
+        )
+    thesis = root.get("thesis")
+    objective = thesis.get("objective") if isinstance(thesis, dict) else None
+    if objective != base["thesis"]["objective"]:
+        errors.append("base_report: thesis.objective must equal the base objective")
+
+
+def validate_report(
+    report: Any, base_dir: Path | None = None, depth: int = 0
+) -> list[str]:
     errors: list[str] = []
     root = mapping(report, "report", errors)
     if root.get("schema_version") != 2:
@@ -203,6 +367,14 @@ def validate_report(report: Any) -> list[str]:
         "BLOCKED",
     }:
         errors.append("status: full profile cannot return a triage status")
+
+    validate_packet(root, base_dir, errors)
+    packet_scope = root.get("packet_scope", "FULL")
+    if packet_scope not in PACKET_SCOPES:
+        errors.append(f"packet_scope: expected one of {sorted(PACKET_SCOPES)}")
+    elif packet_scope == "DELTA":
+        validate_base_report(root, profile, base_dir, depth, errors)
+    zero_objection_pass = is_zero_objection_pass(root)
 
     policy = mapping(root.get("execution_policy"), "execution_policy", errors)
     expected_hard_limit = 1 if profile == "fast" else 3
@@ -632,7 +804,12 @@ def validate_report(report: Any) -> list[str]:
             errors.append(f"{path}.output_thesis_id: expected T-###")
         if index > 0 and input_thesis_id != previous_output_thesis_id:
             errors.append(f"{path}.input_thesis_id: must equal prior round output")
-        if input_thesis_id and input_thesis_id == last_output_thesis_id:
+        if zero_objection_pass:
+            if input_thesis_id != last_output_thesis_id:
+                errors.append(
+                    f"{path}: zero-objection fast pass cannot revise the thesis"
+                )
+        elif input_thesis_id and input_thesis_id == last_output_thesis_id:
             errors.append(f"{path}: input and output thesis IDs must differ")
         round_reviewers = text_list(
             round_item.get("reviewer_ids"),
@@ -846,7 +1023,7 @@ def validate_report(report: Any) -> list[str]:
         verifications = sequence(
             round_item.get("verification"), f"{path}.verification", errors
         )
-        if status != "BLOCKED" and not verifications:
+        if status != "BLOCKED" and not verifications and not zero_objection_pass:
             errors.append(f"{path}.verification: must not be empty")
         round_panel_ids: set[str] = set()
         round_verification_verdicts: list[str] = []
@@ -1123,10 +1300,14 @@ def validate_report(report: Any) -> list[str]:
             errors.append(
                 f"fast profile requires exactly reviewers {sorted(expected_reviewers)}"
             )
-        if set(verifier_ids) != FAST_VERIFIERS:
-            errors.append("fast profile requires exactly fresh triage-arbiter")
-        if final_panel_ids != FAST_VERIFIERS:
-            errors.append("fast final panel requires triage-arbiter")
+        if zero_objection_pass:
+            if verifier_ids:
+                errors.append("zero-objection fast pass records no verifier_ids")
+        else:
+            if set(verifier_ids) != FAST_VERIFIERS:
+                errors.append("fast profile requires exactly fresh triage-arbiter")
+            if final_panel_ids != FAST_VERIFIERS:
+                errors.append("fast final panel requires triage-arbiter")
         if set(reviewer_ids) & set(verifier_ids):
             errors.append("fast profile requires a fresh triage-arbiter")
         if blind is not True or peer_leak is not False:
@@ -1168,7 +1349,7 @@ def main() -> int:
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         print(f"ERROR: cannot read report: {error}", file=sys.stderr)
         return 1
-    errors = validate_report(report)
+    errors = validate_report(report, path.resolve().parent)
     if errors:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)

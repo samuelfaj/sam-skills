@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -14,15 +16,69 @@ RESOLVER = SCRIPT_DIR / "resolve_advisor.py"
 SKILL = SCRIPT_DIR.parent / "SKILL.md"
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 SAMPLE_MODEL = "gpt-5.6-sol"
+# Stands in for the real CLI: streams a noisy transcript and writes the final
+# message to the --output-last-message file, echoing how the prompt arrived.
+FAKE_CLI = """
+import os, sys
+prompt = sys.stdin.read()
+argv = sys.argv[1:]
+leak = any("SECRET-QUESTION" in arg for arg in argv)
+print("TRANSCRIPT-NOISE exec rg ...")
+print("TRANSCRIPT-NOISE tokens used", file=sys.stderr)
+if os.environ.get("FAKE_MODE") == "fail":
+    raise SystemExit(1)
+target = argv[argv.index("--output-last-message") + 1]
+with open(target, "w", encoding="utf-8") as handle:
+    handle.write(f"FINAL stdin={len(prompt)} leak={leak} last={argv[-1]}\\n")
+"""
 
 
-def resolve(*args: str) -> subprocess.CompletedProcess[str]:
+def resolve(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-B", str(RESOLVER), *args],
         text=True,
         capture_output=True,
         check=False,
+        env=env,
     )
+
+
+def check_last_message_and_run() -> None:
+    """The final message goes to a file (flag before the stdin '-'); --run
+    must feed the prompt via stdin and surface only that final message."""
+    with tempfile.TemporaryDirectory(prefix="sam-advisor-") as temporary:
+        root = Path(temporary)
+        prompt = root / "prompt.md"
+        prompt.write_text("SECRET-QUESTION: is the cache safe?\n", encoding="utf-8")
+        base = ("--model", SAMPLE_MODEL, "--effort", "high")
+
+        command = json.loads(resolve(*base, "--prompt-file", str(prompt)).stdout)["command"]
+        flag = command.index("--output-last-message")
+        if command[-1] != "-" or command[flag + 1] != f"{prompt}.last.md":
+            raise RuntimeError("last-message capture must precede the final stdin '-'")
+
+        fake = root / "codex"
+        fake.write_text(f"#!{sys.executable}\n{FAKE_CLI}", encoding="utf-8")
+        fake.chmod(0o755)
+        env = {**os.environ, "PATH": f"{root}{os.pathsep}{os.environ.get('PATH', '')}"}
+        ok = resolve(*base, "--run", "--prompt-file", str(prompt), env=env)
+        lines = ok.stdout.splitlines()
+        expected = f"FINAL stdin={len(prompt.read_text(encoding='utf-8'))} leak=False last=-"
+        if ok.returncode != 0 or not lines or not lines[0].startswith("ADVISOR status=ok"):
+            raise RuntimeError(f"--run did not succeed: {ok.stdout}{ok.stderr}")
+        if lines[1:] != [expected]:
+            raise RuntimeError(f"--run did not print only the final message: {lines}")
+        log = Path(f"{prompt}.log").read_text(encoding="utf-8")
+        if "TRANSCRIPT-NOISE" in ok.stdout or log.count("TRANSCRIPT-NOISE") != 2:
+            raise RuntimeError("--run must keep the transcript in the log, not stdout")
+
+        failed = resolve(*base, "--run", "--prompt-file", str(prompt), env={**env, "FAKE_MODE": "fail"})
+        if failed.returncode == 0 or "status=failed" not in failed.stdout:
+            raise RuntimeError("--run did not surface a failed invocation as a blocker")
+        if resolve(*base, "--run", env=env).returncode == 0:
+            raise RuntimeError("--run without --prompt-file did not fail closed")
+        if resolve(*base, "--run", "--prompt-file", "prompt.md", env=env).returncode == 0:
+            raise RuntimeError("relative --prompt-file did not fail closed")
 
 
 def main() -> int:
@@ -66,6 +122,8 @@ def main() -> int:
     empty_model = resolve("--model", "   ", "--effort", "high")
     if empty_model.returncode == 0:
         raise RuntimeError("empty model was accepted")
+
+    check_last_message_and_run()
 
     text = SKILL.read_text(encoding="utf-8")
     for fragment in (

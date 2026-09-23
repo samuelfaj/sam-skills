@@ -1,69 +1,35 @@
 # Output Contract
 
-Draft a JSON report and validate it against `context.json`.
+Keys are exact (missing or extra keys fail); `schema_version` is `1`. Keep the scaffold's *derived* values.
 
-```json
-{
-  "schema_version": 1,
-  "target": {
-    "base_sha": "<sha>",
-    "head_sha": "<sha>",
-    "context_fingerprint": "<sha256>"
-  },
-  "language": "EN-US",
-  "change_types": ["BUG_FIX"],
-  "file_coverage": [
-    {"path": "src/example.ts", "section": "Description", "summary": "Updates behavior"}
-  ],
-  "evidence": [
-    {
-      "id": "E1",
-      "type": "DIFF",
-      "reference": "src/example.ts",
-      "status": "INFO",
-      "detail": "The changed branch implements the stated behavior"
-    }
-  ],
-  "claims": [
-    {
-      "id": "C1",
-      "category": "IMPLEMENTATION",
-      "text": "The service now applies the new rule.",
-      "evidence_ids": ["E1"]
-    }
-  ],
-  "body": "## Description\n...",
-  "remote_update": {
-    "requested": false,
-    "expected_head_sha": "<sha>",
-    "observed_head_sha": "<sha>",
-    "status": "NOT_REQUESTED",
-    "receipts": [],
-    "error": null
-  }
-}
-```
+| Field | Rule |
+| --- | --- |
+| `target` `{base_sha, head_sha, context_fingerprint}` | *derived* from the context |
+| `language` | non-empty; `EN-US` unless another language was explicitly requested |
+| `change_types` | non-empty, unique: `BUG_FIX`, `NEW_FEATURE`, `REFACTOR`, `DOCUMENTATION`, `OTHER` |
+| `file_coverage[]` `{path, section, summary}` | exactly one row per context path; `section` names the body's `## ` heading that explains its effect; non-empty summary |
+| `evidence[]` `{id, type, reference, status, detail}` | unique id; non-empty fields; see Evidence |
+| `claims[]` `{id, category, text, evidence_ids}` | ≥ 1; unique id; category `SCOPE`, `IMPLEMENTATION`, `TEST`, `SAFETY`, `ARCHITECTURE`, `BUSINESS_RULE`, `REFERENCE`; `text` appears verbatim in the body; cites ≥ 1 known evidence id |
+| `body_file` or `body` | exactly one: absolute path to the UTF-8 Markdown body (preferred) or the inline string |
+| `remote_update` | see Remote Update |
 
-Change types: `BUG_FIX`, `NEW_FEATURE`, `REFACTOR`, `DOCUMENTATION`, `OTHER`.
+## Evidence
 
-Evidence types:
+| Type | Reference | Status |
+| --- | --- | --- |
+| `DIFF`, `FILE` | a changed path | `INFO` |
+| `COMMIT` | a full commit SHA from the context | `INFO` |
+| `VALIDATION` | the exact command; detail gives the result | `PASS`, `FAIL`, or `NOT_RUN` |
+| `USER` | an explicit user fact, without private content | `INFO` |
+| `REMOTE` | proposal metadata read from the platform | `INFO` |
 
-- `DIFF` or `FILE`: reference a changed path.
-- `COMMIT`: reference a commit SHA in context.
-- `VALIDATION`: record `PASS`, `FAIL`, or `NOT_RUN` and exact command/detail.
-- `USER`: reference an explicit user fact without embedding private content.
-- `REMOTE`: reference proposal metadata read from the platform.
+## Body
 
-Other evidence uses status `INFO`. Claim categories are `SCOPE`,
-`IMPLEMENTATION`, `TEST`, `SAFETY`, `ARCHITECTURE`, `BUSINESS_RULE`, and
-`REFERENCE`. Positive test, safety, business-rule, and reference claims require
-evidence.
+Raw Markdown: no outer code fence or blank template instructions; no `<!--`, `-->`, `TODO`, `TBD` (case-insensitive, whole word), four or more underscores, `<specific type>`, `<module or path>`, or `<command>`; no repeated `## ` heading.
 
-Remote statuses are `NOT_REQUESTED`, `PLANNED`, `UPDATED`, `PARTIAL`, and
-`BLOCKED`. Receipts contain non-empty `kind`, `id`, `url`, and `status` fields.
+## Remote Update
 
-The validator checks target fingerprint, complete one-time file coverage,
-evidence references, claim/body linkage, Description and Validation headings,
-placeholders, outer code fences, and remote head drift. File coverage stays in
-the report; paths and ledger summaries need not be repeated in the body. Each
-coverage section must name a heading actually present in the body.
+`{requested, expected_head_sha, observed_head_sha, status, receipts, error}`: boolean `requested`; *derived* `expected_head_sha` (context head); non-empty `observed_head_sha` (re-read head; the frozen head for a draft); `receipts[]` `{kind, id, url, status}` non-empty; `error` null or non-empty.
+
+- `requested: false`: `NOT_REQUESTED`, no receipts, no error.
+- `requested: true`: never `NOT_REQUESTED`; `PLANNED`: no receipts, no error; `UPDATED`: receipts, no error; `PARTIAL`: receipts and error; `BLOCKED` (forced on head drift): no receipts, error.

@@ -25,6 +25,35 @@ and orchestration.
   winner (`sam-goal` > `sam-task` > `sam-work` > `sam-orchestrate`). Failures
   fix forward on the same branch; they do not restart from a moving base.
 
+## Shared Mechanisms
+
+- **Child mode.** Under a parent (`sam-task`, `sam-work`, `sam-orchestrate`,
+  `sam-goal`, or a phase worker) a skill never asks and ends with a six-line
+  `RESULT <skill> <TERMINAL>` block: report path, the validator's last line,
+  head and fingerprint, and at most ten open items. Standalone runs answer in
+  15 lines or fewer plus the report path, never the JSON report.
+  Implementation children leave review, coverage, and browser proof to the
+  parent's own phases.
+- **Phase isolation.** `sam-task` and `sam-work` dispatch each phase to a fresh
+  worker, or run it inline when the host has no subagents. Phases run one at a
+  time, every run writes to its own directory, and the controller re-runs the
+  child validator for its receipt instead of reading the worker transcript.
+- **Reuse and delta review.** Identical input reuses a prior valid report after
+  re-running only its validator. Carrying proof to a new head needs a
+  mechanical check that the phase's inputs did not change, such as a test-only
+  delta. `sam-review` re-reviews corrections as a delta against a valid base
+  review, and runs a full review when the delta touches contracts, security,
+  persistence, shared modules, or risk paths, or outgrows the original change.
+- **Scaffolds.** Skills with large reports ship a scaffold that fills hashes,
+  heads, fingerprints, receipts, file coverage, and fail-closed placeholders
+  from real files. Validators recompute derived fields where cheap and reject
+  typed values that disagree.
+- **Compact script output.** Captures and builders print a one-line summary
+  (`--out` writes the full bundle and patch). `run_checked.py` prints one JSON
+  line and, on failure, a capped, best-effort redacted log tail. Validators
+  print `VALID`/`PASS` or error lines, and reports are fixed in place from
+  those lines.
+
 ## Skills
 
 - `sam-work`: deliver a bug or feature through mandatory implementation,
@@ -52,10 +81,11 @@ and orchestration.
 - `sam-create-test-coverage`: select and implement the smallest reliable mix of
   unit, component, integration, contract, and browser tests.
 - `sam-create-task-demo-video`: record and validate a privacy-reviewed local MP4
-  tied to acceptance criteria.
+  tied to acceptance criteria; only when authorized, publish it and verify its
+  player embed from the proposal body markup read back through the API.
 - `sam-review`: review an immutable local change or remote proposal through one
-  evidence-backed decision workflow; ask before publishing when no action was
-  explicitly authorized.
+  evidence-backed decision workflow, re-reviewing corrections as a delta when
+  safe; ask before publishing when no action was explicitly authorized.
 - `sam-pr-description`: generate a traceable pull/merge-request description from
   the real base, commits, diff, and validation evidence.
 - `sam-orchestrate`: coordinate complex work through capability- and risk-based
@@ -102,9 +132,10 @@ python3 -B scripts/run_skill_harnesses.py
 ```
 
 The first command checks package structure, metadata, resource routing,
-portability, executable permissions, and forbidden operational coupling. The
-second discovers and runs every skill harness, including adversarial failure
-fixtures.
+portability, executable permissions, byte-identical shared copies, and
+forbidden operational coupling. The second discovers and runs every skill
+harness, including adversarial failure fixtures, and prints only failures plus
+a summary line (`--verbose` lists every harness).
 
 `sam-task` also ships a provider-neutral behavioral evaluation pack with twelve
 versioned scenarios. Run it manually or periodically to compare real task

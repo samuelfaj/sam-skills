@@ -125,6 +125,14 @@ def evidence_ready(evidence: str | None) -> bool:
     return bool(evidence) and not re.fullmatch(r"pending", evidence, re.I)
 
 
+def set_evidence(lines: list[str], gate: Gate, value: str) -> None:
+    if gate.evidence_line != -1:
+        indent = re.match(r"^\s*", lines[gate.evidence_line])
+        prefix = indent.group(0) if indent else ""
+        lines[gate.evidence_line] = f"{prefix}EVIDENCE: {value}"
+    gate.evidence = value
+
+
 def run_check(command: str, timeout: int) -> tuple[int, str]:
     try:
         result = subprocess.run(
@@ -146,7 +154,31 @@ def run_check(command: str, timeout: int) -> tuple[int, str]:
     return result.returncode, f"{result.stdout}\n{result.stderr}"
 
 
-def process_file(path: Path, *, status_only: bool, timeout: int) -> tuple[int, int, int]:
+def classify(parsed: ParsedGates) -> tuple[list[str], list[str], list[str]]:
+    """Return (met, unmet, abandoned) gate ids from file state; runs nothing."""
+    met: list[str] = []
+    unmet: list[str] = []
+    abandoned: list[str] = []
+    for gate in parsed.gates:
+        if gate.id in parsed.abandoned:
+            abandoned.append(gate.id)
+        elif gate.checked and evidence_ready(gate.evidence):
+            met.append(gate.id)
+        else:
+            unmet.append(gate.id)
+    return met, unmet, abandoned
+
+
+def summary_line(met: int, unmet: int, abandoned: int) -> tuple[int, str]:
+    extra = f", {abandoned} abandoned" if abandoned else ""
+    if unmet == 0:
+        return 0, f"ALL MET ({met} met{extra})"
+    return 1, f"UNMET: {unmet} (met: {met}{extra})"
+
+
+def process_file(
+    path: Path, *, status_only: bool, timeout: int, recheck: bool = False
+) -> tuple[int, int, int]:
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as error:
@@ -166,22 +198,27 @@ def process_file(path: Path, *, status_only: bool, timeout: int) -> tuple[int, i
             abandoned += 1
             continue
         pending = not evidence_ready(gate.evidence)
-        needs_run = not status_only and bool(gate.check) and (not gate.checked or pending)
+        needs_run = not status_only and bool(gate.check) and (
+            recheck or not gate.checked or pending
+        )
         if needs_run and gate.check is not None:
             code, output = run_check(gate.check, timeout)
             ok = expect_matches(gate.expect, output) if gate.expect else code == 0
             if ok:
                 lines[gate.line] = re.sub(r"^- \[ \]", "- [x]", lines[gate.line], count=1)
-                if gate.evidence_line != -1:
-                    indent = re.match(r"^\s*", lines[gate.evidence_line])
-                    prefix = indent.group(0) if indent else ""
-                    lines[gate.evidence_line] = f"{prefix}EVIDENCE: {tail(output)}"
+                set_evidence(lines, gate, tail(output))
                 gate.checked = True
-                gate.evidence = tail(output)
                 changed = True
                 print(f"  PASS {gate.id}: {gate.title}")
             else:
                 print(f"  FAIL {gate.id}: {gate.title}\n       {tail(output)}")
+                if recheck and gate.checked:
+                    lines[gate.line] = re.sub(r"^- \[[xX]\]", "- [ ]", lines[gate.line], count=1)
+                    set_evidence(lines, gate, "pending")
+                    gate.checked = False
+                    changed = True
+        elif recheck and not gate.check and gate.checked:
+            print(f"  MANUAL {gate.id}: not re-run; re-measure by hand")
         if gate.checked and evidence_ready(gate.evidence):
             met += 1
             continue
@@ -198,7 +235,13 @@ def process_file(path: Path, *, status_only: bool, timeout: int) -> tuple[int, i
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("files", nargs="*", help="Gate files or directories")
-    parser.add_argument("--status", action="store_true", help="Report only")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--status", action="store_true", help="Report only")
+    mode.add_argument(
+        "--recheck",
+        action="store_true",
+        help="Re-run every CHECK, including met gates; uncheck any that fail",
+    )
     parser.add_argument("--timeout", type=int, default=120, help="Per-check seconds")
     return parser.parse_args(argv)
 
@@ -217,17 +260,17 @@ def main(argv: list[str] | None = None) -> int:
             print(f"gate-check: cannot read {path}: not a file", file=sys.stderr)
             return 2
         met, unmet, abandoned = process_file(
-            path, status_only=args.status, timeout=max(1, args.timeout)
+            path,
+            status_only=args.status,
+            timeout=max(1, args.timeout),
+            recheck=args.recheck,
         )
         total_met += met
         total_unmet += unmet
         total_abandoned += abandoned
-    extra = f", {total_abandoned} abandoned" if total_abandoned else ""
-    if total_unmet == 0:
-        print(f"ALL MET ({total_met} met{extra})")
-        return 0
-    print(f"UNMET: {total_unmet} (met: {total_met}{extra})")
-    return 1
+    code, line = summary_line(total_met, total_unmet, total_abandoned)
+    print(line)
+    return code
 
 
 if __name__ == "__main__":

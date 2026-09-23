@@ -17,6 +17,7 @@ CAPTURE = HERE / "capture_scope.py"
 CLASSIFY = HERE / "classify_latency.py"
 RUN_CHECKED = HERE / "run_checked.py"
 VALIDATOR = HERE / "validate_perceived_report.py"
+SCAFFOLD = HERE / "scaffold_perceived_report.py"
 
 
 def run(
@@ -315,6 +316,93 @@ def build_report(
     }
 
 
+def verify_scaffold(
+    root: pathlib.Path,
+    temporary: pathlib.Path,
+    baseline_path: pathlib.Path,
+    current_path: pathlib.Path,
+    receipts_dir: pathlib.Path,
+    valid: dict[str, Any],
+    check: Any,
+) -> None:
+    """The scaffold copies receipt and scope facts exactly and fails closed elsewhere."""
+    out = temporary / "scaffold.json"
+    base = (
+        sys.executable,
+        str(SCAFFOLD),
+        "--baseline",
+        str(baseline_path),
+        "--current",
+        str(current_path),
+        "--receipts-dir",
+        str(receipts_dir),
+    )
+    # Code changed since the cited measurement: re-measure, and write nothing.
+    stale = run(*base, "--measured-scope", str(baseline_path), "--out", str(out), expected=1)
+    if "after_reuse=REMEASURE" not in stale.stderr or out.exists():
+        raise AssertionError("a measurement from an older scope was accepted as `after`")
+    # A capture taken after the measurement with no edits since allows reuse.
+    measured = temporary / "measured.json"
+    measured.write_text(
+        run(sys.executable, str(CAPTURE), "--repo", str(root)).stdout, encoding="utf-8"
+    )
+    result = run(*base, "--measured-scope", str(measured), "--out", str(out))
+    if "after_reuse=ALLOWED" not in result.stdout:
+        raise AssertionError("an unchanged scope did not allow reusing the measurement")
+
+    scaffold = json.loads(out.read_text(encoding="utf-8"))
+    if scaffold["target"] != valid["target"]:
+        raise AssertionError("scaffold target does not match the scope bundles")
+    exact = ("id", "classification", "status", "command", "receipt")
+    if [{key: item[key] for key in exact} for item in scaffold["evidence"]] != [
+        {key: item[key] for key in exact} for item in valid["evidence"]
+    ]:
+        raise AssertionError("scaffold evidence does not copy the receipts exactly")
+    # A receipt cannot say whether it measured or tested: kind stays for the agent.
+    if any(not str(item["kind"]).startswith("TODO:") for item in scaffold["evidence"]):
+        raise AssertionError("scaffold guessed an evidence kind")
+    if sorted(item["path"] for item in scaffold["file_coverage"]) != sorted(
+        item["path"] for item in valid["file_coverage"]
+    ):
+        raise AssertionError("scaffold file_coverage is not the scope delta")
+    if [gate["name"] for gate in scaffold["gates"]] != [gate["name"] for gate in valid["gates"]]:
+        raise AssertionError("scaffold must list the four mandatory gates")
+    if scaffold["scope"]["current_owned_paths"] or scaffold["scope"]["initial_owned_paths"]:
+        raise AssertionError("owned paths must come from the freeze, never the delta")
+    # Unfilled placeholders never validate.
+    check(scaffold, 1)
+
+    # Filling only the semantic fields validates: the copied facts are exact.
+    completed = copy.deepcopy(scaffold)
+    for key in ("intent", "environment", "interactions", "techniques", "scope", "gates", "decision"):
+        completed[key] = copy.deepcopy(valid[key])
+    semantic = {item["id"]: item for item in valid["evidence"]}
+    for item in completed["evidence"]:
+        item["kind"] = semantic[item["id"]]["kind"]
+        item["detail"] = semantic[item["id"]]["detail"]
+    reasons = {item["path"]: item["reason"] for item in valid["file_coverage"]}
+    for item in completed["file_coverage"]:
+        item["reason"] = reasons[item["path"]]
+    check(completed, 0)
+
+    # A report being patched in place is never overwritten.
+    run(*base, "--measured-scope", str(measured), "--out", str(out), expected=2)
+    # Rerunning only the guard before validation writes nothing, stale or fresh.
+    written = out.read_bytes()
+    recheck = run(*base, "--measured-scope", str(baseline_path), "--check", expected=1)
+    if "after_reuse=REMEASURE" not in recheck.stderr or out.read_bytes() != written:
+        raise AssertionError("--check accepted a stale measurement or touched the report")
+    if "after_reuse=ALLOWED" not in run(*base, "--measured-scope", str(measured), "--check").stdout:
+        raise AssertionError("--check refused an unchanged scope")
+    # Skipping the guard needs an explicit statement that no `after` is cited.
+    run(*base, "--out", str(temporary / "unguarded.json"), expected=2)
+    if (temporary / "unguarded.json").exists():
+        raise AssertionError("scaffold wrote a report without --measured-scope or --no-after")
+    blocked = run(*base, "--no-after", "--out", str(temporary / "all-blocked.json"))
+    if "after_reuse=NONE" not in blocked.stdout:
+        raise AssertionError("--no-after must report that no measurement is reused")
+
+
 def main() -> int:
     verify_classification()
     with tempfile.TemporaryDirectory(prefix="sam-perceived-") as temporary:
@@ -322,8 +410,15 @@ def main() -> int:
         root.mkdir()
         bundles = build_fixture(root)
         receipts_dir = pathlib.Path(temporary) / "receipts"
+        # BASELINE runs once; only TARGET and INTRODUCED proof must repeat.
         receipts = {
-            evidence_id: make_receipt(receipts_dir, evidence_id, classification, "exit 0")
+            evidence_id: make_receipt(
+                receipts_dir,
+                evidence_id,
+                classification,
+                "exit 0",
+                repeat=1 if classification == "BASELINE" else 2,
+            )
             for evidence_id, classification in (
                 ("E-001", "BASELINE"),
                 ("E-002", "TARGET"),
@@ -339,7 +434,12 @@ def main() -> int:
         report_path = pathlib.Path(temporary) / "report.json"
         valid = build_report(bundles, receipts)
 
-        def check(report: dict[str, Any], expected: int, needle: str | None = None) -> None:
+        def check(
+            report: dict[str, Any],
+            expected: int,
+            needle: str | None = None,
+            current: pathlib.Path = current_path,
+        ) -> None:
             report_path.write_text(json.dumps(report), encoding="utf-8")
             result = run(
                 sys.executable,
@@ -347,7 +447,7 @@ def main() -> int:
                 "--baseline",
                 str(baseline_path),
                 "--current",
-                str(current_path),
+                str(current),
                 str(report_path),
                 expected=expected,
             )
@@ -355,6 +455,9 @@ def main() -> int:
                 raise AssertionError(f"expected {needle!r} in:\n{result.stderr}")
 
         check(valid, 0)
+        verify_scaffold(
+            root, pathlib.Path(temporary), baseline_path, current_path, receipts_dir, valid, check
+        )
 
         # Synthetic percentages are the canonical perceived-performance lie.
         fake_progress = copy.deepcopy(valid)
@@ -517,6 +620,53 @@ def main() -> int:
         no_change["decision"] = {"result": "NO_CHANGE", "remaining": []}
         check(no_change, 1, "NO_CHANGE contradicts applied techniques")
 
+        # Before and after are separate runs: the single BASELINE run cannot be
+        # relabelled, overwritten, or reused as the repeat-verified TARGET proof.
+        target_as_baseline = copy.deepcopy(valid)
+        target_as_baseline["evidence"] = [
+            item for item in target_as_baseline["evidence"] if item["id"] != "E-001"
+        ]
+        target_as_baseline["interactions"][0]["baseline"]["evidence_ids"] = ["E-002"]
+        check(target_as_baseline, 1, "I-001.baseline.evidence_ids must cite BASELINE evidence")
+
+        baseline_as_after = copy.deepcopy(valid)
+        baseline_as_after["interactions"][0]["after"]["evidence_ids"] = ["E-001"]
+        check(baseline_as_after, 1, "I-001.after.evidence_ids must cite TARGET evidence")
+
+        untargeted_gate = copy.deepcopy(valid)
+        untargeted_gate["gates"][0]["evidence_ids"] = ["E-003"]
+        check(untargeted_gate, 1, "gate honest-feedback must cite the TARGET measurement")
+
+        # "Budgets already met" (NO_CHANGE) still rests on a repeated TARGET run.
+        met = {"feedback_ms": 40, "meaningful_ms": 120, "settled_ms": 1830, "dead_time_ms": 0}
+        already_met = copy.deepcopy(valid)
+        already_met["target"]["current_fingerprint"] = bundles["baseline"]["fingerprint"]
+        already_met["file_coverage"] = []
+        already_met["interactions"][0].update(
+            {
+                "status": "UNCHANGED",
+                "reason": "first feedback already within budget",
+                "baseline": {**met, "samples": 7, "evidence_ids": ["E-001"]},
+                "after": {**met, "samples": 7, "evidence_ids": ["E-002"]},
+            }
+        )
+        already_met["techniques"][0].update({"status": "REJECTED", "reason": "budgets already met"})
+        for gate in already_met["gates"][2:]:
+            gate.update({"status": "NOT_APPLICABLE", "reason": "no technique applied"})
+            gate.pop("evidence_ids")
+        already_met["decision"] = {"result": "NO_CHANGE", "remaining": []}
+        check(already_met, 0, current=baseline_path)
+        single_run_after = copy.deepcopy(already_met)
+        single_run_after["interactions"][0]["after"]["evidence_ids"] = ["E-001"]
+        for gate in single_run_after["gates"][:2]:
+            gate["evidence_ids"] = ["E-001"]
+        check(
+            single_run_after,
+            1,
+            "I-001.after.evidence_ids must cite TARGET evidence",
+            current=baseline_path,
+        )
+
         blocked_but_instant = copy.deepcopy(valid)
         blocked_but_instant["interactions"].append(
             {
@@ -556,6 +706,16 @@ def main() -> int:
             if item["id"] == "E-002":
                 item.update({"receipt": single["path"], "command": single["command"]})
         check(unrepeated, 1, "must run at least")
+
+        # Introduced tests keep the repeat rule even though BASELINE runs once.
+        single_test = make_receipt(
+            receipts_dir / "single-test", "E-004", "INTRODUCED", "exit 0", repeat=1
+        )
+        unrepeated_test = copy.deepcopy(valid)
+        for item in unrepeated_test["evidence"]:
+            if item["id"] == "E-004":
+                item.update({"receipt": single_test["path"], "command": single_test["command"]})
+        check(unrepeated_test, 1, "must run at least")
 
         flake_flag = receipts_dir / "flake.flag"
         flaky = make_receipt(

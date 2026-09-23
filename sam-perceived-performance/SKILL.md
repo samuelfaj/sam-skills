@@ -1,207 +1,110 @@
 ---
 name: sam-perceived-performance
-description: "Make a requested interaction feel instantaneous while the real work is still running, using measured immediate feedback, optimistic updates with proven rollback, layout-stable placeholders, streaming, prefetch, and backgrounding — without faking progress, success, or freshness. Use when an action, screen, list, form, upload, search, or navigation feels slow, laggy, janky, or stuck behind a spinner, and real backend or network latency cannot be removed."
+description: "Make slow UI interactions feel instant: measured feedback, reversible optimistic updates, stable placeholders, streaming, prefetch; no fake progress, success, or freshness. Use when an action, screen, list, form, upload, search, or navigation feels slow, laggy, janky, or spinner-bound and latency is irreducible."
 ---
 
 # Sam Perceived Performance
 
-Analyze what was asked, then make the named interactions feel instantaneous while
-the real work continues behind them. Remain stack-, provider-, host-, tool-, and
-model-neutral.
+Make the named interactions feel instantaneous while the real work continues behind them. Stay stack-, provider-, host-, tool-, and model-neutral.
 
-Perceived performance is measured, not asserted. The deliverable is a first
-feedback inside 100 ms with no unacknowledged pending time — proven by before and
-after measurements, not by the presence of a spinner.
+**Instant** = `feedback_ms <= 100` and `dead_time_ms == 0` (`feels_instantaneous` in classify_latency output), proven by receipted before/after measurements — never by a spinner's presence or a lower `settled_ms`.
 
 ## Non-Negotiable Contract
 
-- Never expose secrets, credentials, private data, or sensitive paths in diffs,
-  commands, reports, artifacts, or returned evidence.
-- Never fake progress: a determinate bar or percentage must come from a real
-  signal. Never fake success: an optimistic outcome requires a reversible effect,
-  a proven rollback, and a visible failure surface. Never fake freshness.
-- Never make the real interaction slower to make it feel faster. An increase in
-  settled latency beyond `max(25ms, 5%)` is a regression to revert.
-- Never suppress or delay an error to protect the illusion.
-- Never add artificial delay beyond a 200 ms anti-flicker floor, and state why.
-- Never claim a timing improvement without a receipted measurement of the same
-  interaction, in the same environment, before and after.
-- Preserve public contracts, security, permissions, data integrity, and
-  observability. Preserve unrelated staged, unstaged, and untracked work
-  byte-for-byte.
-- Never reset, checkout, stash, clean, rebase, or broadly restore the workspace.
-  Undo only the exact patch this work introduced.
-- Do not stage, commit, publish, or message an external system unless the user or
-  a parent workflow explicitly requests it. Parent authorization is enough; do
-  not re-ask.
-- Stop after two cycles unless new measured evidence appears.
+- Never expose secrets, credentials, private data, or sensitive paths in diffs, commands, reports, artifacts, or returned evidence.
+- Never fake progress (a determinate bar or percentage needs a real signal), success (an optimistic outcome needs a reversible effect, a proven rollback, and a visible failure surface), or freshness.
+- Never make the real interaction slower to feel faster: a `settled_ms` increase beyond `max(25ms, 5% of baseline)` is a regression to revert.
+- Never suppress or delay an error. Artificial delay is capped at a 200 ms anti-flicker floor and needs a stated reason.
+- No timing claim without receipted measurements of the same interaction in the same environment, before and after. An unmeasurable interaction is `BLOCKED`: never estimate, infer from a similar interaction, or reason from code to a number.
+- Preserve public contracts, security, permissions, data integrity, observability, and unrelated staged, unstaged, and untracked work byte-for-byte. Never reset, checkout, stash, clean, rebase, or broadly restore; undo only this work's exact patch.
+- Do not stage, commit, publish, or message an external system unless the user or a parent workflow explicitly requests it. Parent authorization is enough; never re-ask.
+- Stop after two cycles unless new measured evidence appears. Never weaken the validator, the budget table, or a test to reach a status.
 
-## Resource Routing
+## Paths and Reads
 
-- Read [references/latency-classes.md](references/latency-classes.md) before
-  choosing any affordance.
-- Read [references/measurement-protocol.md](references/measurement-protocol.md)
-  before recording a baseline.
-- Read [references/technique-catalog.md](references/technique-catalog.md)
-  selectively while selecting techniques.
-- Read [references/honesty-policy.md](references/honesty-policy.md) before
-  applying any optimistic, cached, or progress affordance.
-- Read [references/output-contract.md](references/output-contract.md) before
-  drafting the report.
-- Run `scripts/capture_scope.py` before and after implementation.
-- Run every measurement and test through `scripts/run_checked.py`.
-- Run `scripts/classify_latency.py` per interaction for the budget verdict.
-- Run `scripts/validate_perceived_report.py` before returning the decision. It
-  recomputes receipts through `scripts/verify_receipts.py`, so a typed `PASS`
-  cannot close a gate.
+Write literal absolute paths in every command (shell variables do not persist): `<skill>` = this file's directory, `<tmp>` = one scratch directory outside the repository (`mktemp -d` once) for every temporary artifact, `<repo>` = the repository root.
 
-## 1. Freeze the Request and the Scope
+| Read | Read when |
+| --- | --- |
+| [references/technique-catalog.md](references/technique-catalog.md) | step 3, before choosing a technique |
+| [references/honesty-policy.md](references/honesty-policy.md) | step 3, when an optimistic, cached, or progress technique is a candidate |
+| [references/output-contract.md](references/output-contract.md) | step 6, before scaffolding the report |
+
+Do not re-read a file already read in this context unless context was compacted since or you cannot quote the section you need. Read measured numbers from `<tmp>/receipts/<id>.run1.log`; never open `*.receipt.json` or scope bundles. The validator recomputes every receipt (`scripts/verify_receipts.py`) and budget (`scripts/classify_latency.py`); a typed `PASS` never closes a gate.
+
+## 1. Freeze the Request and Scope
 
 ```bash
-SAM_PERCEIVED_DIR="<absolute directory containing this SKILL.md>"
-WORK_TMP="$(mktemp -d)"
-python3 "$SAM_PERCEIVED_DIR/scripts/capture_scope.py" --repo "$PWD" \
-  > "$WORK_TMP/baseline.json"
+python3 <skill>/scripts/capture_scope.py --repo <repo> > <tmp>/baseline.json
 ```
 
-Use repeated `--path <repo-relative-path>` only for explicit scope and reuse the
-exact arguments later. Keep all temporary artifacts outside the repository.
+Add repeated `--path <repo-relative-path>` only for explicit scope; reuse the exact arguments for every later capture. An interaction is one user intent with one entry point: the trigger, the code path handling it, and the work that must finish before the result is final. Before touching anything, freeze each interaction's id, name, entry point, trigger, and blocking work; what must not change (public contracts, totals, ordering, permissions, security); honesty invariants (outcomes never shown before confirmation, data never shown stale); owned paths, no-go paths, and the baseline fingerprint.
 
-From the request, name each interaction that should feel instantaneous. An
-interaction is one user intent with one entry point: the trigger, the code path
-that handles it, and the work that must finish before the result is final.
-
-Freeze, before touching anything:
-
-- Each interaction's id, name, entry point, trigger, and blocking work.
-- What must not change: public contracts, totals, ordering, permissions, security.
-- Honesty invariants for this domain — which outcomes may never be shown before
-  confirmation, and which data may never be shown stale.
-- Owned paths, no-go paths, and the baseline fingerprint.
-
-If the request names a feeling ("the app is slow") without an interaction, pick the
-interactions on the described path, state that choice, and proceed. Under a parent
-workflow, never ask; return `BLOCKED` with receipts if scope cannot be established
-safely. Standalone, ask one blocking question only if no interaction can be
-identified at all.
+If the request names only a feeling ("the app is slow"), pick the interactions on the described path, state the choice, and proceed. Under a parent never ask; return `BLOCKED` with receipts if scope cannot be established safely. Standalone, ask one blocking question only if no interaction can be identified.
 
 ## 2. Measure the Baseline
 
-Follow [references/measurement-protocol.md](references/measurement-protocol.md).
-Record `feedback_ms`, `meaningful_ms`, `settled_ms`, and `dead_time_ms` per
-interaction, from at least five samples, with the device and network profile
-written down.
+Measure what the user perceives at the interaction boundary, all four numbers from the same input event; server-side or single-request timings do not count.
+
+| Metric | Input event to |
+| --- | --- |
+| `feedback_ms` | first paint reflecting the input (event-to-paint mark or frame trace, not a log line before the paint) |
+| `meaningful_ms` | first paint of real content in the affected region's primary element (a skeleton does not count) |
+| `settled_ms` | last state mutation of the interaction, including retries and reconciliation (not one request's response) |
+| `dead_time_ms` | sum of pending intervals with neither an acknowledged state nor a progress signal |
+
+Ordering is physical: `feedback <= meaningful <= settled` and `dead_time <= settled`.
+
+- Hold environment, device profile, network profile, data volume, and cache state identical before and after, and record them in `environment`. If they cannot be held constant, the interaction is unmeasurable and `BLOCKED`; continue with the rest, and never compare a throttled run with an unthrottled one.
+- Take at least 5 samples per block and report the median, not the best run, naming the metric in `detail`. Discard the first run after a cold start unless cold start is under test, and say which. Keep sample count and selection rule identical before and after.
+- Run every measurement and test through `scripts/run_checked.py` under its own `--id`; reuse an id only to rerun the identical invocation (same command and classification) after fixing its harness. Classifications: `BASELINE` pre-change measurement, run once; `TARGET` post-change measurement cited by `after` and `INTRODUCED` tests this work adds (step 4), both run with `--repeat 2` or more and need identical exit codes, else fix the harness or mark the interaction `BLOCKED`; `ENVIRONMENT` profile capture, throttling, seed data; `EXTERNAL` systems you do not control.
 
 ```bash
-python3 "$SAM_PERCEIVED_DIR/scripts/run_checked.py" \
-  --id E-001 --receipts-dir "$WORK_TMP/receipts" \
-  --classification BASELINE --repeat 2 \
-  -- <baseline measurement command>
+python3 <skill>/scripts/run_checked.py --id E-001 --receipts-dir <tmp>/receipts \
+  --classification BASELINE -- <measurement command>
 ```
 
-Then locate the real cost. Read the handler and the work it awaits, and answer:
-
-- What must finish before the user can see a correct result?
-- What is awaited but not actually needed for the first useful paint?
-- Which part of the wait is unacknowledged, and how long is it?
-
-Inspect changed command definitions before executing them. If an interaction
-cannot be measured comparably, mark it `BLOCKED` and keep going with the rest. Do
-not estimate a number you could not measure.
+Then locate the real cost in the handler and the work it awaits: what must finish before a correct result is visible, what is awaited but not needed for the first useful paint, and how long the wait stays unacknowledged. Inspect changed command definitions before executing them.
 
 ## 3. Select Techniques by Class and Reversibility
 
-Classify each interaction by its measured `settled_ms`:
-
 ```bash
-python3 "$SAM_PERCEIVED_DIR/scripts/classify_latency.py" \
-  --label I-001 --settled-ms <baseline settled> --feedback-ms <baseline feedback> \
-  --dead-time-ms <baseline dead time>
+python3 <skill>/scripts/classify_latency.py --label I-001 --settled-ms <baseline> \
+  --feedback-ms <baseline> --dead-time-ms <baseline>
 ```
 
-The class sets the minimum affordance and names what is forbidden. Then choose
-from [references/technique-catalog.md](references/technique-catalog.md), cheapest
-first, and gate every optimistic or progress affordance against
-[references/honesty-policy.md](references/honesty-policy.md).
+Its JSON gives the class (from `settled_ms`), the budgets, the required affordances (a minimum), and the forbidden ones; never restate budgets from memory. Only when an interaction misses its budget or lacks a required affordance, choose a technique from the catalog.
 
-Decide reversibility before writing code. For each candidate optimistic commit,
-state the failure mode, what rollback restores, what the user sees on failure, and
-the reconciliation rule for concurrent or out-of-order results. If the effect is
-irreversible, reject the optimistic path and use acknowledgement plus real
-progress instead — a rejected optimistic technique is a result, recorded as
-`REJECTED` with its reason.
-
-Classify each technique `APPLIED`, `REJECTED`, or `BLOCKED`. Prefer one
-acknowledgement that lands in 40 ms over three stacked loading affordances.
+For an optimistic or cached candidate, decide reversibility per the honesty policy before writing code. Mark every technique `APPLIED`, `REJECTED` (a result, with its reason), or `BLOCKED`.
 
 ## 4. Implement the Smallest Honest Illusion
 
-Apply one coherent technique at a time. After each meaningful change:
+Apply one coherent technique at a time. After each change:
 
-1. Inspect the exact diff and confirm only owned paths changed.
-2. Re-measure the interaction and compare against the baseline.
+1. Inspect the exact diff; only owned paths changed.
+2. Re-measure as `TARGET --repeat 2` under a new id, then run `capture_scope.py` with the step-1 arguments `> <tmp>/measured-<E-id>.json`; compare with the baseline.
 3. Run the failure-path proof for any optimistic commit.
-4. Undo only that exact patch if it fails, regresses real latency, or requires
-   hiding an error.
+4. Undo only that patch if it fails, regresses real latency, or needs a hidden error.
 
-Every applied technique needs, before it counts as applied:
+A technique counts as applied only with passing `INTRODUCED` tests for the fast path, an optimistic commit's driven failure (asserting rollback and the failure surface), and the pending, settled, and failed announcements, and only when it meets the accessibility rules in the technique catalog.
 
-- A passing test for the fast path.
-- A passing test that drives the failure and asserts the rollback and the failure
-  surface, for any optimistic commit.
-- A passing test that the pending, settled, and failed states are announced, and a
-  stated reduced-motion behavior.
-
-If a necessary change exceeds the authorized goal, contract, or owner boundary,
-return the exact gap to the parent, or ask the user when standalone. More files
-alone do not imply broader scope; justify each added path against acceptance
-criteria and preserve unrelated work.
+If a necessary change exceeds the authorized goal, contract, or owner boundary, return the exact gap to the parent (ask the user when standalone). More files alone do not widen scope; justify each added path against the criteria.
 
 ## 5. Prove the Perceived Improvement
 
-Re-measure with the identical procedure, then receipt the budget verdict so the
-gates are executed rather than asserted:
+Each non-`BLOCKED` interaction's `after` is a `TARGET` measurement taken with the identical procedure: reuse the last step-4 measurement when no code changed since; otherwise, and always when nothing was applied, measure again and capture `measured-<E-id>.json`. A classify_latency run on `after` is only a self-check, never evidence.
 
-```bash
-python3 "$SAM_PERCEIVED_DIR/scripts/run_checked.py" \
-  --id E-006 --receipts-dir "$WORK_TMP/receipts" \
-  --classification TARGET --repeat 2 \
-  -- python3 "$SAM_PERCEIVED_DIR/scripts/classify_latency.py" \
-     --label I-001 --settled-ms <after settled> --feedback-ms <after feedback> \
-     --meaningful-ms <after meaningful> --dead-time-ms <after dead time> \
-     --baseline-settled-ms <baseline settled>
-```
-
-An interaction is `IMPROVED` only when first feedback moved measurably earlier,
-lands inside 100 ms, and its unacknowledged pending time is within budget. It
-feels instantaneous only when `dead_time_ms` is zero.
-
-Run a second cycle only when the first exposes a new measured gap. Stop when the
-remaining gap is real latency that no honest affordance can mask — say so instead
-of adding another layer.
+An interaction is `IMPROVED` only when first feedback moved measurably earlier and `after` meets its class budget. Run a second cycle only for a new measured gap. When an interaction still misses its class budget and the rest of the wait is real latency no honest affordance can mask, stop: that interaction is `BLOCKED`, naming the latency in `remaining`. Real latency behind an in-budget interaction is reported, not blocked.
 
 ## 6. Validate and Return
 
 ```bash
-python3 "$SAM_PERCEIVED_DIR/scripts/capture_scope.py" --repo "$PWD" \
-  > "$WORK_TMP/current.json"
-python3 "$SAM_PERCEIVED_DIR/scripts/validate_perceived_report.py" \
-  --baseline "$WORK_TMP/baseline.json" \
-  --current "$WORK_TMP/current.json" "$WORK_TMP/report.json"
+python3 <skill>/scripts/capture_scope.py --repo <repo> > <tmp>/current.json
+python3 <skill>/scripts/scaffold_perceived_report.py --baseline <tmp>/baseline.json \
+  --current <tmp>/current.json --receipts-dir <tmp>/receipts \
+  --measured-scope <tmp>/measured-<E-id>.json --out <tmp>/report.json
+python3 <skill>/scripts/validate_perceived_report.py --baseline <tmp>/baseline.json \
+  --current <tmp>/current.json <tmp>/report.json
 ```
 
-Follow [references/output-contract.md](references/output-contract.md). Cover every
-post-baseline path exactly once.
-
-Return `PERCEIVED_INSTANT` only when every improved interaction acknowledges
-inside 100 ms with zero unacknowledged pending time, no interaction is blocked,
-every mandatory gate passes, and no evidence is flaky. Return `IMPROVED` when
-first feedback moved earlier but pending time remains, and say what remains.
-Return `NO_CHANGE` when the interactions already met their budgets or no honest
-technique existed. Return `BLOCKED` when measurement, authorization, or a safe
-technique is unavailable.
-
-Do not weaken the validator, the budget table, or a test to reach a status. Report
-real latency alongside perceived latency so the improvement cannot be mistaken for
-the work getting faster. Retain the report and referenced evidence for caller
-re-validation; remove only unused scratch.
+Repeat `--measured-scope` per measurement cited as `after` (its `measured-<E-id>.json`), or pass `--no-after` when every interaction is `BLOCKED`. If anything changes after scaffolding, recapture `current.json` and rerun the scaffold with `--check` in place of `--out` before validating. Complete the report per references/output-contract.md. Retain the report and cited evidence for caller re-validation; remove only unused scratch.

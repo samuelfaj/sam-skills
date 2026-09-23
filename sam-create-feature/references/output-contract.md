@@ -1,63 +1,41 @@
 # Feature Report Contract
 
-Write a temporary JSON object with these fields before rendering the response.
+`--scaffold` derives `schema_version`, `workflow`, `target`, and
+`file_coverage` paths; never hand-edit them. "Blocks" means completion is
+invalid. PROVEN or PASS needs PASS evidence; every other scenario,
+behavior-proof, and gate status needs a concrete reason. A HEAD change, or a
+fingerprint change without a file delta, blocks.
 
-## Common Fields
+| Field | Shape and rules |
+|---|---|
+| `intent` | goal, owner_boundary: text. must_not_change, invariants: non-empty lists. user_visible: bool; true blocks unless behavior_proof is PROVEN. |
+| `scope` | initial_owned_paths, current_owned_paths: repo-relative lists; any changed path outside current_owned_paths blocks, pre-existing dirty work included. cycle: correction cycles so far, from 1; add 1 per in-run correction cycle (`--from` adds 1 itself); above 2 blocks unless new_evidence is true. scope_expansion_approved: bool, true only when the user or parent authorized a change to the frozen goal or contract. |
+| `file_coverage` | [{path, reason}]: each delta path once, non-empty reason. |
+| `evidence` | Non-empty [{id, status, classification, detail}], unique ids; enums per the evidence policy; FAIL + INTRODUCED blocks; no reused_from. |
+| `scenarios` | Non-empty [{behavior, status, evidence_ids, reason}]; statuses per the evidence policy; MISSING_REQUIRED blocks. |
+| `behavior_proof` | {status, evidence_ids, reason}; statuses per the evidence policy. |
+| `gates` | Non-empty [{name, mandatory (bool), status, evidence_ids, reason}]; PASS/FAIL/NOT_RUN/NOT_APPLICABLE. Mandatory non-PASS blocks, except parent-owned: name `code-review`, `coverage`, or `browser-proof`, NOT_APPLICABLE, reason exactly `owned by parent phase`. |
+| `external_actions` | [{kind, requested (bool), status, evidence_ids}]; NOT_REQUESTED/DRAFTED/PUBLISHED/BLOCKED. PUBLISHED needs requested true and PASS evidence; requested false allows only NOT_REQUESTED/DRAFTED. |
+| `requirements` | Non-empty [{id, text, status, material (bool), evidence_ids}], unique ids; CONFIRMED (needs evidence)/ASSUMED/BLOCKED. BLOCKED, or ASSUMED with material true, blocks. |
+| `tdd` | RED_GREEN: red_evidence_ids with >= 1 FAIL and no NOT_RUN, all-PASS green_evidence_ids. ALTERNATIVE_PROOF: reason, PASS proof_evidence_ids. NOT_APPLICABLE: reason. BLOCKED blocks. |
+| `decision` | {result, remaining}. COMPLETE needs nothing blocking and empty remaining; CHANGES_REQUIRED/BLOCKED need >= 1 concrete remaining item. |
 
-- `schema_version`: `1`.
-- `workflow`: `feature`.
-- `target`: `baseline_fingerprint`, `current_fingerprint`,
-  `baseline_head_sha`, `current_head_sha`, and exact `paths` from both bundles.
-- `intent`: non-empty `goal`, `must_not_change`, `invariants`,
-  `owner_boundary`, and boolean `user_visible`.
-- `scope`: `initial_owned_paths`, `current_owned_paths`, positive `cycle`,
-  boolean `scope_expansion_approved`, and optional boolean `new_evidence`.
-- `file_coverage`: one `{path, reason}` entry for every path changed after the
-  baseline, with no duplicates or omissions.
-- `evidence`: unique `{id, status, classification, detail}` entries. Use
-  `PASS|FAIL|NOT_RUN` and classifications from the evidence policy.
-- `scenarios`: `{behavior, status, evidence_ids, reason}` entries. Include
-  `reason` for every status except `PROVEN`.
-- `behavior_proof`: `status`, `evidence_ids`, and `reason` when not proven.
-- `gates`: `{name, mandatory, status, evidence_ids, reason}` entries.
-- `external_actions`: `{kind, requested, status, evidence_ids}` entries. Use
-  `NOT_REQUESTED|DRAFTED|PUBLISHED|BLOCKED`.
+Fix from the validator's error lines and patch the report in place; do not read
+validator source or rewrite the whole report.
 
-## Feature Fields
+## Return
 
-- `requirements`: unique requirements with `id`, `text`, `status`, `material`,
-  and `evidence_ids`. Use `CONFIRMED|ASSUMED|BLOCKED`.
-- `tdd`: one of:
-  - `RED_GREEN` with at least one `FAIL`, no `NOT_RUN`, in
-    `red_evidence_ids`, and only passing `green_evidence_ids`.
-  - `ALTERNATIVE_PROOF` with `proof_evidence_ids` and `reason`.
-  - `NOT_APPLICABLE` with `reason`.
-  - `BLOCKED` with `reason`.
-- `decision`: `result` and `remaining`. Use
-  `COMPLETE|CHANGES_REQUIRED|BLOCKED`.
+Child mode, exactly:
 
-## Consistency Rules
-
-- Baseline and current `head_sha` must match. Fingerprints may differ only when
-  the captured file ledger has a corresponding delta.
-- `COMPLETE` requires no remaining work, unresolved material requirement,
-  required scenario gap, introduced failure, failed mandatory gate, unproven
-  user-visible behavior, scope breach, or dirty-work mutation.
-- A non-complete decision requires at least one concrete remaining item.
-- `PUBLISHED` requires `requested: true` and passing evidence.
-- Keep the report outside the repository and validate it with:
-
-```bash
-python3 scripts/validate_report.py \
-  --baseline baseline.json --current current.json report.json
+```
+RESULT sam-create-feature <decision.result>
+report: <absolute report path>
+validator: <exact last line of the validator output>
+head: <target.current_head_sha> fingerprint: <target.current_fingerprint>
+open: <count of decision.remaining>
+- <one line per remaining item, max 10>
 ```
 
-## Rendered Response
-
-Return requirements and intent, implementation summary, exact files, scenario
-and TDD proof, validations, behavior proof, gate results, external-action status,
-decision, and remaining risk. Do not claim unrun proof.
-
-Scope authorization records changes to the agreed goal or contracts. File and
-line counts are evidence, not an automatic approval threshold. Every changed
-path must still be in scope and accounted for.
+Standalone: at most 15 lines (decision, requirements, implementation summary,
+changed files, key proof, external actions, remaining risk) plus the report
+path; never repeat the JSON report or claim unrun proof.

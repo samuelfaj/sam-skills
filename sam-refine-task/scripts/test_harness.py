@@ -384,6 +384,7 @@ def validate(
     after: JsonObject,
     *,
     expected: int,
+    snippet: str | None = None,
 ) -> None:
     baseline_path = artifacts / f"{name}-baseline.json"
     current_path = artifacts / f"{name}-current.json"
@@ -408,6 +409,262 @@ def validate(
         raise AssertionError(
             f"{name}: expected {expected}, got {result.returncode}\n{result.stdout}{result.stderr}"
         )
+    # Pin the specific check, so the case fails if that check alone is removed.
+    if snippet is not None and snippet not in result.stdout + result.stderr:
+        raise AssertionError(f"{name}: missing {snippet!r}\n{result.stdout}{result.stderr}")
+
+
+def scaffold(
+    artifacts: Path,
+    name: str,
+    before: JsonObject,
+    after: JsonObject | None = None,
+    existing: JsonObject | None = None,
+) -> JsonObject:
+    baseline_path = artifacts / f"{name}-baseline.json"
+    baseline_path.write_text(json.dumps(before), encoding="utf-8")
+    report_path = artifacts / f"{name}-scaffold.json"
+    if existing is not None:
+        report_path.write_text(json.dumps(existing), encoding="utf-8")
+    command = [
+        sys.executable,
+        "-B",
+        str(SKILL_DIR / "scripts/validate_report.py"),
+        "--scaffold",
+        "--baseline",
+        str(baseline_path),
+    ]
+    if after is not None:
+        current_path = artifacts / f"{name}-current.json"
+        current_path.write_text(json.dumps(after), encoding="utf-8")
+        command.extend(["--current", str(current_path)])
+    result = run([*command, str(report_path)], artifacts, check=False)
+    if result.returncode != 0 or not result.stdout.startswith("SCAFFOLD:"):
+        raise AssertionError(f"{name}: scaffold failed\n{result.stdout}{result.stderr}")
+    value = json.loads(report_path.read_text(encoding="utf-8"))
+    assert isinstance(value, dict)
+    return value
+
+
+def refinement_extensions(
+    repo: Path, artifacts: Path, valid: JsonObject, baseline: JsonObject, current: JsonObject
+) -> None:
+    """Scaffold, optional scenarios/gates, and re-checked plan-ledger reuse."""
+    # Scaffold at freeze time (current defaults to baseline) is fail-closed.
+    fresh = scaffold(artifacts, "scaffold-fresh", baseline)
+    if fresh["target"] != target(baseline, baseline) or fresh["file_coverage"] != []:
+        raise AssertionError("scaffold must derive target and file_coverage from bundles")
+    if fresh["scope"] != {
+        "initial_owned_paths": [],
+        "current_owned_paths": [],
+        "cycle": 1,
+        "scope_expansion_approved": False,
+    }:
+        raise AssertionError("scaffold must prefill refinement scope constants")
+    validate(artifacts, "scaffold-unfilled", fresh, baseline, current, expected=1)
+    # Read-only run: the freeze-time target stays valid against the final capture,
+    # so step 5 needs no re-scaffold unless the tree changed.
+    filled = {**fresh, **{key: value for key, value in valid.items() if key != "target"}}
+    validate(artifacts, "scaffold-filled-at-freeze", filled, baseline, current, expected=0)
+
+    # Cycle 2 in place: re-scaffolding refreshes only target/file_coverage.
+    stale = deepcopy(valid)
+    stale["target"]["current_fingerprint"] = "0" * 64
+    stale["scope"]["cycle"] = 2
+    refreshed = scaffold(artifacts, "scaffold-refresh", baseline, current, stale)
+    if refreshed["target"] != target(baseline, current):
+        raise AssertionError("re-scaffold did not refresh target from the current bundle")
+    if refreshed["claims"] != valid["claims"] or refreshed["scope"]["cycle"] != 2:
+        raise AssertionError("re-scaffold overwrote authored fields")
+    validate(artifacts, "scaffold-refreshed", refreshed, baseline, current, expected=0)
+
+    optional = deepcopy(valid)
+    optional["scenarios"] = []
+    optional["gates"] = []
+    validate(artifacts, "refinement-optional-scenarios-gates", optional, baseline, current, expected=0)
+    # Optional means may be [], not absent: the contract documents the keys as required.
+    no_keys = deepcopy(valid)
+    del no_keys["scenarios"], no_keys["gates"]
+    validate(
+        artifacts, "refinement-scenarios-key-required", no_keys, baseline, current,
+        expected=1, snippet="scenarios must be an array",
+    )
+    no_verification = deepcopy(optional)
+    no_verification["verification_plan"] = []
+    validate(artifacts, "refinement-missing-verification", no_verification, baseline, current, expected=1)
+    no_material = deepcopy(valid)
+    del no_material["claims"][0]["material"]
+    validate(artifacts, "claim-without-material", no_material, baseline, current, expected=1)
+    # Claims cite evidence by id, so a repeated id would make a citation ambiguous.
+    repeated_evidence = deepcopy(valid)
+    repeated_evidence["evidence"].append(deepcopy(repeated_evidence["evidence"][0]))
+    validate(
+        artifacts, "evidence-repeats-id", repeated_evidence, baseline, current,
+        expected=1, snippet="evidence repeats id",
+    )
+
+    # Plan-ledger reuse: cite a plan FACT only after re-checking its locator.
+    plan_path = artifacts / "plan-report.json"
+
+    def write_plan(locator: str, classification: str = "FACT", workflow: str = "plan") -> None:
+        plan = {
+            "schema_version": 1,
+            "workflow": workflow,
+            "evidence": [
+                {
+                    "id": "E-001",
+                    "kind": "CODE",
+                    "classification": classification,
+                    "claim": "app.txt holds the original value",
+                    "locator": locator,
+                }
+            ],
+        }
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+
+    reused = deepcopy(valid)
+    reused["plan_report"] = str(plan_path)
+    reused["evidence"].append(
+        {
+            "id": "E_PLAN",
+            "status": "PASS",
+            "classification": "TARGET",
+            "detail": "Re-read app.txt:1; plan E-001 still holds",
+            "plan_ref": "E-001",
+            "locator": "app.txt:1",
+        }
+    )
+    reused["claims"][0]["evidence_ids"] = ["E_PLAN"]
+    write_plan("app.txt:1")
+    validate(artifacts, "plan-ledger-reuse", reused, baseline, current, expected=0)
+
+    def reject(name: str, report: JsonObject, snippet: str) -> None:
+        validate(artifacts, name, report, baseline, current, expected=1, snippet=snippet)
+
+    def with_locator(locator: str) -> JsonObject:
+        case = deepcopy(reused)
+        case["evidence"][-1]["locator"] = locator
+        return case
+
+    no_plan = deepcopy(reused)
+    del no_plan["plan_report"]
+    reject("plan-ref-without-plan-report", no_plan, "plan_report must be an absolute path")
+    relative_plan = deepcopy(reused)
+    relative_plan["plan_report"] = plan_path.name
+    reject("plan-ref-relative-plan-report", relative_plan, "plan_report must be an absolute path")
+    not_rechecked = deepcopy(reused)
+    not_rechecked["evidence"][-1]["status"] = "NOT_RUN"
+    reject("plan-ref-not-rechecked", not_rechecked, "plan_ref evidence must be PASS")
+    # A locator differing from the plan's is a new claim, not a reused FACT.
+    reject("plan-ref-locator-differs", with_locator("app.txt"), "must equal the locator of plan E-001")
+    write_plan("app.txt:1", workflow="refinement")
+    reject("plan-ref-not-a-plan", reused, "plan_report must be a plan freeze")
+    write_plan("app.txt:1", classification="ASSUMPTION")
+    reject("plan-ref-not-fact", reused, "is not a FACT in plan_report")
+    write_plan("app.txt:9")
+    reject("plan-ref-stale-locator", with_locator("app.txt:9"), "line 9 is out of range")
+    write_plan("missing.txt:1")
+    reject("plan-ref-missing-file", with_locator("missing.txt:1"), "does not resolve in the captured tree")
+    # An existing file outside the repository never supports a claim about it.
+    (repo.parent / "outside.txt").write_text("outside\n", encoding="utf-8")
+    write_plan("../outside.txt")
+    reject("plan-ref-outside-repo", with_locator("../outside.txt"), "does not resolve in the captured tree")
+    # A decision locator names no file to re-read; the contract documents it as
+    # exempt, so only its equality with the plan's locator is checked.
+    write_plan("user decision: keep app.txt unchanged")
+    validate(
+        artifacts, "plan-ref-decision-locator",
+        with_locator("user decision: keep app.txt unchanged"), baseline, current, expected=0,
+    )
+    if not (repo / "app.txt").is_file():
+        raise AssertionError("fixture app.txt missing; plan-ledger cases are vacuous")
+    pinned_plan_ref_checks(repo.parent / "pinned", artifacts, reused, write_plan)
+    scaffold_baseline_checks(repo.parent / "rebased", artifacts, valid)
+
+
+def pinned_plan_ref_checks(
+    repo: Path, artifacts: Path, reused: JsonObject, write_plan: Any
+) -> None:
+    """Parents re-validate the refine report after implementation commits, so a
+    locator is checked against the capture, never the live tree."""
+    repo.mkdir()
+    git(repo, "init", "-q")
+    git(repo, "config", "user.email", "fixture@example.invalid")
+    git(repo, "config", "user.name", "Fixture")
+    (repo / "app.txt").write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+    git(repo, "add", "app.txt")
+    git(repo, "commit", "-qm", "baseline")
+    (repo / "notes.txt").write_text("dirty one\ndirty two\n", encoding="utf-8")
+    bundle = capture(repo)
+    report = deepcopy(reused)
+    report["target"] = target(bundle, bundle)
+
+    def check(name: str, locator: str, expected: int, snippet: str | None = None) -> None:
+        case = deepcopy(report)
+        case["evidence"][-1]["locator"] = locator
+        write_plan(locator)
+        validate(artifacts, name, case, bundle, bundle, expected=expected, snippet=snippet)
+
+    check("plan-ref-pinned-before", "app.txt:4", 0)
+    check("plan-ref-dirty-captured", "notes.txt:2", 0)
+    # A later commit shrinks the cited file: the captured answer stands.
+    (repo / "app.txt").write_text("one\n", encoding="utf-8")
+    git(repo, "commit", "-qam", "implementation")
+    check("plan-ref-pinned-after-commit", "app.txt:4", 0)
+    check("plan-ref-pinned-stale", "app.txt:5", 1, "line 5 is out of range (4 lines)")
+    # A dirty file edited after capture no longer matches its captured bytes.
+    (repo / "notes.txt").write_text("changed\n", encoding="utf-8")
+    check("plan-ref-dirty-changed", "notes.txt:2", 1, "does not resolve in the captured tree")
+
+
+def scaffold_baseline_checks(repo: Path, artifacts: Path, valid: JsonObject) -> None:
+    """A re-scaffold on a new baseline never keeps evidence or conclusions."""
+    repo.mkdir()
+    git(repo, "init", "-q")
+    git(repo, "config", "user.email", "fixture@example.invalid")
+    git(repo, "config", "user.name", "Fixture")
+    (repo / "app.txt").write_text("first\n", encoding="utf-8")
+    git(repo, "add", "app.txt")
+    git(repo, "commit", "-qm", "first")
+    old = capture(repo)
+    (repo / "app.txt").write_text("second\n", encoding="utf-8")
+    git(repo, "commit", "-qam", "second")
+    new = capture(repo)
+    report = deepcopy(valid)
+    report["target"] = target(old, old)
+    old_path = artifacts / "rebased-old.json"
+    new_path = artifacts / "rebased-new.json"
+    report_path = artifacts / "rebased-report.json"
+    prior_path = artifacts / "rebased-prior.json"
+    old_path.write_text(json.dumps(old), encoding="utf-8")
+    new_path.write_text(json.dumps(new), encoding="utf-8")
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    command = [
+        sys.executable, "-B", str(SKILL_DIR / "scripts/validate_report.py"),
+        "--scaffold", "--baseline", str(new_path),
+    ]
+    refused = run([*command, str(report_path)], artifacts, check=False)
+    if refused.returncode != 2 or "belongs to another baseline" not in refused.stderr:
+        raise AssertionError(f"scaffold merged a report from another baseline: {refused.stderr}")
+    if json.loads(report_path.read_text(encoding="utf-8")) != report:
+        raise AssertionError("refused scaffold rewrote the existing report")
+    report_path.rename(prior_path)
+    carried = run([*command, "--from", str(prior_path), str(report_path)], artifacts, check=False)
+    if carried.returncode != 0:
+        raise AssertionError(f"--from scaffold failed: {carried.stderr}")
+    fresh = json.loads(report_path.read_text(encoding="utf-8"))
+    if fresh["intent"] != valid["intent"] or fresh["scope"]["cycle"] != 2:
+        raise AssertionError("--from must carry intent and advance the cycle")
+    if fresh["claims"][0]["claim"] != valid["claims"][0]["claim"] or any(
+        item.get("evidence_ids") for key in ("claims", "loopholes", "verification_plan")
+        for item in fresh[key]
+    ):
+        raise AssertionError("--from must keep ledger text but drop every evidence citation")
+    if {item["status"] for item in fresh["loopholes"]} != {"OPEN"} or any(
+        item["status"] == "PASS" for item in fresh["verification_plan"]
+    ) or "|" not in fresh["decision"]["result"] or fresh["evidence"][0]["id"]:
+        raise AssertionError("--from must reset loopholes, verifications, evidence, and decision")
+    validate(artifacts, "rebased-carry-unproven", fresh, new, new, expected=1)
 
 
 def main() -> int:
@@ -617,6 +874,7 @@ def main() -> int:
                 current,
                 expected=1,
             )
+            refinement_extensions(repo, artifacts, valid, baseline, current)
         else:
             failed_application = deepcopy(valid)
             failed_application["candidates"][0]["evidence_ids"] = ["E_RED"]
@@ -709,7 +967,7 @@ def main() -> int:
         "invariants, unique requirement IDs, refinement read-only scope, planned "
         "verification, scope drift, missing proof, contradictory completion, Git "
         "isolation, counterfactual proof, dirty-work preservation, unauthorized "
-        "external action"
+        "external action, scaffold, optional scenarios/gates, plan-ledger reuse"
     )
     return 0
 

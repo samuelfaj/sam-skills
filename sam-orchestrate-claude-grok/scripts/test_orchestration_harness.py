@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -333,9 +335,303 @@ def valid_t2() -> dict[str, Any]:
             "reasons": ["Code and tests changed", "Multiple producers contributed"],
             "status": "PASS",
             "review_task_id": "R1",
+            "rounds": 1,
         },
         "decision": {"result": "COMPLETE", "remaining_task_ids": []},
     }
+
+
+def valid_review_cap_blocked() -> dict[str, Any]:
+    """Third review round still fails: stop for a user decision, never a 4th round."""
+    report = valid_t2()
+    review = report["dag"][2]
+    requirement = review["proof_requirements"][0]
+    review["status"] = "BLOCKED"
+    review["evidence_ids"] = ["V3", "B1"]
+    review["blocker"] = {
+        "kind": "USER_DECISION",
+        "source": "review round cap reached",
+        "evidence_ids": ["B1"],
+    }
+    report["evidence"][2]["status"] = "FAIL"
+    report["evidence"].append(
+        evidence(
+            "B1",
+            "R1",
+            requirement,
+            evidence_type="USER",
+            status="INFO",
+            classification="EXTERNAL",
+        )
+    )
+    report["review_gate"].update(status="FAIL", rounds=3)
+    report["decision"] = {"result": "BLOCKED", "remaining_task_ids": ["R1"]}
+    return report
+
+
+SCAFFOLD = SCRIPT_DIR / "scaffold_report.py"
+
+
+def scaffold_spec(active_host: str | None) -> dict[str, Any]:
+    """Judgment-only input; every mechanical field is left to the scaffold."""
+    task: dict[str, Any] = {
+        "classification": "T2",
+        "goal": "Deliver coordinated runtime changes",
+        "success_criteria": ["Focused tests and independent review pass"],
+        "no_go": ["Do not change unrelated files"],
+    }
+    if active_host is not None:
+        task["active_host"] = active_host
+    base_node = {"kind": "EXECUTION", "capability": "STANDARD", "no_go": ["Stay in scope"]}
+    return {
+        "task": task,
+        "files": {"src/service.py": "CODE"},
+        "nodes": [
+            {**base_node, "id": "E1", "objective": "Runtime change",
+             "proof_requirements": ["Runtime diff matches scope"],
+             "writable_paths": ["src"], "status": "COMPLETE"},
+            {**base_node, "id": "E2", "objective": "Regression coverage",
+             "proof_requirements": ["Focused tests pass"], "writable_paths": ["tests"],
+             "artifact_classes": ["TEST"], "status": "COMPLETE"},
+            {"id": "R1", "kind": "REVIEW", "capability": "REVIEWER",
+             "objective": "Independent review", "no_go": ["Read-only"],
+             "proof_requirements": ["Review finds no required correction"],
+             "depends_on": ["E1", "E2"], "status": "COMPLETE"},
+        ],
+        "evidence": [
+            {"id": f"V{index}", "task_id": task_id, "type": "COMMAND", "status": "PASS",
+             "classification": "TARGET", "detail": f"{task_id} proof exited 0"}
+            for index, task_id in enumerate(("E1", "E2", "R1"), start=1)
+        ],
+        "review_rounds": 1,
+    }
+
+
+def scaffold_cli(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-B", str(SCAFFOLD), *args],
+        check=False, capture_output=True, text=True,
+    )
+
+
+def run_scaffold(
+    spec: dict[str, Any], freeze: Path, out: Path
+) -> subprocess.CompletedProcess[str]:
+    spec_path = out.parent / "spec.json"
+    spec_path.write_text(json.dumps(spec), encoding="utf-8")
+    return scaffold_cli("--spec", str(spec_path), "--out", str(out), "--freeze", str(freeze))
+
+
+def scaffold_manifest(out: Path) -> dict[str, tuple[str, str]]:
+    report = json.loads(out.read_text(encoding="utf-8"))
+    return {f["path"]: (f["producer_task_id"], f["artifact_class"])
+            for f in report["task"]["changed_files"]}
+
+
+def validate_scaffold(active_host: str | None) -> None:
+    """Mechanical fields come from real files and the matrix, and the result validates."""
+    with tempfile.TemporaryDirectory(prefix="sam-orchestrate-scaffold-") as temp_dir:
+        root = Path(temp_dir)
+        repo, run = root / "repo", root / "run"
+        (repo / "src").mkdir(parents=True)
+        run.mkdir()
+        for name in ("service.py", "other.py"):
+            (repo / "src" / name).write_text("OLD = 1\n", encoding="utf-8")
+        git = ["git", "-C", str(repo), "-c", "user.email=h@example.invalid", "-c", "user.name=h"]
+
+        def sh(*args: str) -> None:
+            subprocess.run([*git, *args], check=True, capture_output=True)
+
+        for args in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "base"]):
+            sh(*args)
+        # User work that predates the run sits inside E1's writable scope.
+        (repo / "src" / "other.py").write_text("USER_WIP = 1\n", encoding="utf-8")
+        (repo / "src" / "notes.py").write_text("draft\n", encoding="utf-8")
+        freeze = run / "freeze.json"
+        # Any path inside the repository resolves to its root, so paths stay root-relative.
+        frozen = scaffold_cli("--freeze-out", str(freeze), "--repo", str(repo / "src"))
+        if frozen.returncode != 0 or not frozen.stdout.startswith("FROZE"):
+            raise AssertionError(f"freeze failed\nstderr={frozen.stderr}")
+        # Review round 1 reviewed its own diff beside the freeze.
+        (run / "review-1.diff").write_text("round 1\n", encoding="utf-8")
+        # The run: E1 edits and checkpoint-commits; E2 adds an untracked test.
+        (repo / "src" / "service.py").write_text("NEW = 2\n", encoding="utf-8")
+        sh("add", "src/service.py")
+        sh("commit", "-qm", "checkpoint")
+        (repo / "tests").mkdir()
+        (repo / "tests" / "test_service.py").write_text("pass\n", encoding="utf-8")
+        out = run / "report.json"
+        result = run_scaffold(scaffold_spec(active_host), freeze, out)
+        if result.returncode != 0:
+            raise AssertionError(f"scaffold failed\nstderr={result.stderr}")
+        report = json.loads(out.read_text(encoding="utf-8"))
+        run_validator(report, True)
+        # Owners are neutral and derived; runtime is the matrix row, never typed.
+        if [n["owner"] for n in report["dag"]] != ["worker-1", "worker-2", "reviewer-1"]:
+            raise AssertionError("scaffold must derive neutral owner ids by kind")
+        if report["dag"][0]["runtime"] != RUNTIME_BY_CAPABILITY["STANDARD"]:
+            raise AssertionError("scaffold must bind the STANDARD matrix row")
+        if report["dag"][2]["runtime"] != RUNTIME_BY_CAPABILITY["REVIEWER"]:
+            raise AssertionError("scaffold must bind the REVIEWER matrix row")
+        # Only changes made after the freeze are credited: the pre-existing user work
+        # in E1's scope is not, the checkpoint commit does not hide E1's edit, and the
+        # untracked test is found and attributed to its only producer.
+        if scaffold_manifest(out) != {"src/service.py": ("E1", "CODE"),
+                                      "tests/test_service.py": ("E2", "TEST")}:
+            raise AssertionError(f"scaffold manifest is wrong: {scaffold_manifest(out)}")
+        gate = report["review_gate"]
+        if not gate["required"] or "multiple producers contributed" not in gate["reasons"]:
+            raise AssertionError("scaffold must derive the multi-producer review trigger")
+        if report["decision"]["result"] != "COMPLETE":
+            raise AssertionError("scaffold must derive COMPLETE from settled nodes")
+        # A listed path that did not change after the freeze is an invented claim,
+        # including untouched pre-existing user work.
+        for ghost in ("src/ghost.py", "src/other.py"):
+            spec = scaffold_spec(active_host)
+            spec["files"][ghost] = "CODE"
+            rejected = run_scaffold(spec, freeze, out)
+            if rejected.returncode == 0 or "did not change after the freeze" not in rejected.stderr:
+                raise AssertionError(f"scaffold must reject unchanged listed path {ghost}")
+        # An unrelated change outside every writable scope is rejected, not absorbed.
+        (repo / "unrelated.txt").write_text("x\n", encoding="utf-8")
+        rejected = run_scaffold(scaffold_spec(active_host), freeze, out)
+        if rejected.returncode == 0 or "outside every writable scope" not in rejected.stderr:
+            raise AssertionError("scaffold must reject changes outside writable scopes")
+        (repo / "unrelated.txt").unlink()
+        # Fail closed: with no review diff on disk and no typed count, no round
+        # is credited and the validator rejects the passing gate.
+        (run / "review-1.diff").rename(run / "held-round.txt")
+        spec = scaffold_spec(active_host)
+        del spec["review_rounds"]
+        if run_scaffold(spec, freeze, out).returncode != 0:
+            raise AssertionError("scaffold must still write a report without review_rounds")
+        run_validator(
+            json.loads(out.read_text(encoding="utf-8")),
+            False,
+            "review_gate.rounds must record at least 1 completed review round",
+        )
+        (run / "held-round.txt").rename(run / "review-1.diff")
+        # Nodes without a recorded status stay PENDING, so nothing is claimed done.
+        spec = scaffold_spec(active_host)
+        for entry in spec["nodes"]:
+            entry.pop("status")
+        run_scaffold(spec, freeze, out)
+        if json.loads(out.read_text(encoding="utf-8"))["decision"]["result"] == "COMPLETE":
+            raise AssertionError("scaffold must not default nodes to COMPLETE")
+        # The review diff shows uncommitted and new run files, never pre-existing work.
+        first = scaffold_cli("--freeze", str(freeze), "--diff-out", str(run / "review-1.diff"))
+        diff = (run / "review-1.diff").read_text(encoding="utf-8")
+        if first.returncode != 0 or "NEW = 2" not in diff or "tests/test_service.py" not in diff:
+            raise AssertionError(f"review diff must hold every run change\n{first.stderr}{diff}")
+        if "USER_WIP" in diff or "notes.py" in diff:
+            raise AssertionError("review diff must exclude work that predates the freeze")
+        reviewed = first.stdout.split("tree=")[1].split()[0]
+        # The workspace tree fingerprints proof inputs: stable until something changes.
+        if scaffold_cli("--tree", "--repo", str(repo)).stdout.strip() != f"tree={reviewed}":
+            raise AssertionError("an unchanged workspace must keep its tree id")
+        (repo / "tests" / "test_service.py").write_text("assert True\n", encoding="utf-8")
+        if scaffold_cli("--tree", "--repo", str(repo)).stdout.strip() == f"tree={reviewed}":
+            raise AssertionError("a workspace change must change the tree id")
+        # Round 2 reviews only the correction delta since the reviewed tree.
+        delta = scaffold_cli("--freeze", str(freeze), "--diff-out", str(run / "review-2.diff"),
+                             "--since", reviewed)
+        diff = (run / "review-2.diff").read_text(encoding="utf-8")
+        if delta.returncode != 0 or "assert True" not in diff or "src/service.py" in diff:
+            raise AssertionError(f"delta diff must hold only the correction\n{delta.stderr}{diff}")
+        # A run change to pre-existing dirty work is captured, never silently dropped.
+        (repo / "src" / "other.py").write_text("USER_WIP = 1\nRUN = 2\n", encoding="utf-8")
+        spec = scaffold_spec(active_host)
+        spec["nodes"][0]["artifact_classes"] = ["CODE"]
+        spec["review_rounds"] = 2
+        if run_scaffold(spec, freeze, out).returncode != 0 or (
+            scaffold_manifest(out).get("src/other.py") != ("E1", "CODE")
+        ):
+            raise AssertionError("a run change to a pre-existing dirty file must be credited")
+        # The round count is the review diffs on disk; a typed count cannot hide rounds.
+        spec["review_rounds"] = 1
+        understated = run_scaffold(spec, freeze, out)
+        if understated.returncode == 0 or "disagrees with 2 review-<n>.diff" not in understated.stderr:
+            raise AssertionError("scaffold must refuse a review_rounds count below the diffs on disk")
+        for extra in (3, 4):
+            (run / f"review-{extra}.diff").write_text(f"round {extra}\n", encoding="utf-8")
+        del spec["review_rounds"]
+        if run_scaffold(spec, freeze, out).returncode != 0:
+            raise AssertionError("scaffold must derive the round count from the diffs")
+        run_validator(json.loads(out.read_text(encoding="utf-8")), False, "exceeds the 3-round review cap")
+        # Snapshots never touch the user's index.
+        staged = subprocess.run([*git, "diff", "--cached", "--name-only"], check=True,
+                                capture_output=True, text=True).stdout
+        if staged.strip():
+            raise AssertionError(f"scaffold must not stage files: {staged}")
+        # A same-size edit in the same second as the last index write (checkpoint
+        # commit, then an immediate edit) still reaches the tree and the review diff.
+        # Pinned mtimes make that one second deterministic; ctime is ignored so the
+        # mtimes alone decide, as they do when both land in the same second.
+        sh("config", "core.trustctime", "false")
+        service, stamp = repo / "src" / "service.py", int(time.time()) - 5
+        service.write_text("X = 22\n", encoding="utf-8")
+        os.utime(service, (stamp, stamp))
+        sh("add", "src/service.py")
+        sh("commit", "-qm", "racy checkpoint")
+        checkpoint = scaffold_cli("--tree", "--repo", str(repo)).stdout.strip()
+        service.write_text("X = 33\n", encoding="utf-8")
+        os.utime(service, (stamp, stamp))
+        os.utime(repo / ".git" / "index", (stamp, stamp))
+        edited = scaffold_cli("--tree", "--repo", str(repo)).stdout.strip()
+        racy = scaffold_cli("--freeze", str(freeze), "--diff-out", str(run / "racy.diff"))
+        diff = (run / "racy.diff").read_text(encoding="utf-8")
+        if edited == checkpoint or racy.returncode != 0 or "+X = 33" not in diff:
+            raise AssertionError(f"a same-second edit must reach tree and diff\n{racy.stderr}{diff}")
+        # --since takes only a tree id; an option-shaped value never reaches git.
+        smuggled = run / "smuggled.txt"
+        bad = scaffold_cli("--freeze", str(freeze), "--diff-out", str(run / "bad.diff"),
+                           f"--since=--output={smuggled}")
+        if bad.returncode == 0 or smuggled.exists() or "not a tree id" not in bad.stderr:
+            raise AssertionError("scaffold must reject a --since that is not a tree id")
+        # A failed diff (unknown tree id) leaves no review-<n>.diff to count as a round.
+        failed = scaffold_cli("--freeze", str(freeze), "--diff-out", str(run / "review-9.diff"),
+                              "--since", "0" * 40)
+        if failed.returncode == 0 or list(run.glob("*review-9.diff*")):
+            raise AssertionError("a failed --diff-out must leave no review diff behind")
+        # Assume-unchanged and skip-worktree bits never hide an edit from the snapshot.
+        for flag, name in (("--assume-unchanged", "service.py"), ("--skip-worktree", "flagged.py")):
+            (repo / "src" / name).write_text("FLAG = 0\n", encoding="utf-8")
+            sh("add", f"src/{name}")
+            sh("commit", "-qm", f"track {name}")
+            sh("update-index", flag, f"src/{name}")
+            before = scaffold_cli("--tree", "--repo", str(repo)).stdout.strip()
+            (repo / "src" / name).write_text("FLAG = 1\n", encoding="utf-8")
+            hidden = scaffold_cli("--freeze", str(freeze), "--diff-out", str(run / "flag.diff"))
+            diff = (run / "flag.diff").read_text(encoding="utf-8")
+            if scaffold_cli("--tree", "--repo", str(repo)).stdout.strip() == before or (
+                hidden.returncode != 0 or "+FLAG = 1" not in diff
+            ):
+                raise AssertionError(f"a {flag} edit must reach tree and diff\n{hidden.stderr}{diff}")
+
+
+def validate_scaffold_genius() -> None:
+    """The genius row is bound only with a recorded escalation trigger."""
+    with tempfile.TemporaryDirectory(prefix="sam-orchestrate-genius-") as temp_dir:
+        spec = scaffold_spec(None)
+        spec["files"]["tests/test_service.py"] = None
+        spec["nodes"][0].update(
+            genius=True, fallback_reason="multi_round_fail after 2 attempts; evidence V1"
+        )
+        spec_path = Path(temp_dir) / "spec.json"
+        out = Path(temp_dir) / "report.json"
+        for expect_valid in (True, False):
+            spec_path.write_text(json.dumps(spec), encoding="utf-8")
+            subprocess.run(
+                [sys.executable, "-B", str(SCAFFOLD), "--spec", str(spec_path), "--out", str(out)],
+                check=True, capture_output=True, text=True,
+            )
+            report = json.loads(out.read_text(encoding="utf-8"))
+            if report["dag"][0]["runtime"]["role"] != "genius_worker":
+                raise AssertionError("scaffold must bind the genius row when genius is set")
+            run_validator(
+                report, expect_valid, None if expect_valid else "runtime must match host-runtime-matrix"
+            )
+            spec["nodes"][0]["fallback_reason"] = None
 
 
 def valid_direct_integration() -> dict[str, Any]:
@@ -615,8 +911,38 @@ def main() -> int:
         valid_dependency_blocked(),
         valid_in_progress(),
         valid_genius_escalation(),
+        valid_review_cap_blocked(),
     ):
         run_validator(report, True)
+
+    # Review rounds are capped: a completed review must be counted, and a failing
+    # third round must stop for a user decision instead of looping.
+    expect_failure(
+        lambda report: report["review_gate"].pop("rounds"),
+        "review_gate.rounds must record at least 1 completed review round",
+    )
+    expect_failure(
+        lambda report: report["review_gate"].update(rounds=4),
+        "exceeds the 3-round review cap",
+    )
+
+    def keep_looping_at_cap(report: dict[str, Any]) -> None:
+        report["dag"][2].update(status="PENDING", blocker=None, evidence_ids=["V3"])
+        report["evidence"].pop()
+        report["decision"] = {"result": "IN_PROGRESS", "remaining_task_ids": ["R1"]}
+
+    expect_failure(
+        keep_looping_at_cap,
+        "review round cap reached with a failing gate requires the review node BLOCKED",
+        valid_review_cap_blocked,
+    )
+    expect_failure(
+        lambda report: report["review_gate"].update(rounds=1),
+        "non-required review gate must not record review rounds",
+        valid_t0,
+    )
+    validate_scaffold(None)
+    validate_scaffold_genius()
 
     # Absolute certainty without the T0 micro-task prerequisites must fail closed.
     expect_failure(

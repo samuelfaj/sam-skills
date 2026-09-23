@@ -1,11 +1,21 @@
 #!/usr/bin/env python3
-"""Validate a workflow report against immutable baseline/current scope bundles."""
+"""Validate a workflow report against immutable baseline/current scope bundles.
+
+With --scaffold, write or refresh the report instead: bundle-derived fields are
+recomputed, authored fields are kept, and missing fields get fail-closed
+placeholders that never validate until replaced.
+"""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 from pathlib import Path
+import re
+import shutil
+import subprocess
 import sys
 from typing import Any
 
@@ -29,6 +39,10 @@ COMPLETION = {
     "refinement": {"HIGH_CONFIDENCE"},
     "simplification": {"SIMPLEST_DEFENSIBLE", "NO_CHANGE"},
 }
+EXEMPT_LOCATOR_RE = re.compile(
+    r"^(?:user\s+decision|owner\s+decision|decision|command|cmd|shell)\s*:", re.I
+)
+PATH_LOCATOR_RE = re.compile(r"^(?P<path>[^:\n]+?)(?::(?P<line>\d+))?(?::\d+)?$")
 
 
 def load_json(path: Path) -> JsonObject:
@@ -128,6 +142,114 @@ def evidence_ids(
         if "NOT_RUN" in statuses:
             errors.append(f"{label} cannot use NOT_RUN as failing proof")
     return ids
+
+
+def load_plan_evidence(value: Any, errors: list[str]) -> dict[str, JsonObject] | None:
+    if not isinstance(value, str) or not Path(value).is_absolute():
+        errors.append("plan_report must be an absolute path when evidence cites plan_ref")
+        return None
+    try:
+        plan = load_json(Path(value))
+    except (OSError, ValueError) as exception:
+        errors.append(f"plan_report is unreadable: {exception}")
+        return None
+    if plan.get("workflow") != "plan":
+        errors.append("plan_report must be a plan freeze (workflow plan)")
+        return None
+    items = plan.get("evidence") if isinstance(plan.get("evidence"), list) else []
+    return {
+        item["id"]: item
+        for item in items
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+
+
+def pinned_text(root: Path, relative: str, current: JsonObject) -> str | None:
+    """Content of a repo path as the current bundle captured it, or None.
+
+    A path the bundle lists as changed is read from the working tree only while
+    its bytes still match the captured hash; any other path is read from the
+    pinned head commit, so later commits never change the answer.
+    """
+    entries = {
+        item.get("path"): item
+        for item in current.get("files") or []
+        if isinstance(item, dict)
+    }
+    entry = entries.get(relative)
+    if entry is not None:
+        try:
+            data = (root / relative).read_bytes()
+        except OSError:
+            return None
+        if entry.get("state") != "file" or (
+            hashlib.sha256(data).hexdigest() != entry.get("worktree_sha256")
+        ):
+            return None
+        return data.decode("utf-8", "replace")
+    head = current.get("head_sha")
+    executable = shutil.which("git")
+    if not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40,64}", head):
+        return None
+    if executable is None or root in Path(executable).resolve().parents:
+        return None
+    environment = {
+        key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+    }
+    environment.update(
+        {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_SYSTEM": os.devnull}
+    )
+    result = subprocess.run(
+        [executable, "-C", str(root), "-c", "core.fsmonitor=false", "--no-pager",
+         "cat-file", "blob", f"{head}:{relative}"],
+        env=environment, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False,
+    )
+    return result.stdout.decode("utf-8", "replace") if result.returncode == 0 else None
+
+
+def check_plan_ref(
+    item: JsonObject,
+    label: str,
+    plan_evidence: dict[str, JsonObject] | None,
+    current: JsonObject,
+    errors: list[str],
+) -> None:
+    """Reused plan FACTs must be re-checked: same locator, resolving in the captured tree."""
+    ref = nonempty_text(item.get("plan_ref"), f"{label}.plan_ref", errors)
+    locator = nonempty_text(item.get("locator"), f"{label}.locator", errors)
+    if item.get("status") != "PASS":
+        errors.append(f"{label} plan_ref evidence must be PASS after re-checking its locator")
+    if plan_evidence is None or not ref or not locator:
+        return
+    source = plan_evidence.get(ref)
+    if source is None or source.get("classification") != "FACT":
+        errors.append(f"{label}.plan_ref {ref} is not a FACT in plan_report")
+        return
+    if locator != str(source.get("locator") or "").strip():
+        errors.append(f"{label}.locator must equal the locator of plan {ref}")
+        return
+    if EXEMPT_LOCATOR_RE.match(locator):
+        return
+    text = locator.split(" @", 1)[1].strip() if " @" in locator else locator
+    if " (" in text and text.endswith(")"):
+        text = text[: text.rfind(" (")].strip()
+    match = PATH_LOCATOR_RE.fullmatch(text)
+    content: str | None = None
+    repo_root = current.get("repo_root")
+    if match and isinstance(repo_root, str) and repo_root:
+        root = Path(repo_root).resolve()
+        candidate = Path(match.group("path").strip())
+        path = (candidate if candidate.is_absolute() else root / candidate).resolve()
+        if root in path.parents:
+            content = pinned_text(root, path.relative_to(root).as_posix(), current)
+    if content is None:
+        errors.append(f"{label}.locator does not resolve in the captured tree: {locator}")
+        return
+    line = match.group("line") if match else None
+    if line:
+        count = len(content.splitlines())
+        if not 1 <= int(line) <= count:
+            errors.append(f"{label}.locator line {line} is out of range ({count} lines)")
 
 
 def validate_domain(
@@ -277,6 +399,8 @@ def validate_domain(
             status = item.get("status")
             if status not in {"FACT", "ASSUMPTION", "UNKNOWN"}:
                 errors.append(f"claims[{index}].status is invalid")
+            if not isinstance(item.get("material"), bool):
+                errors.append(f"claims[{index}].material must be boolean")
             ids = evidence_ids(
                 item.get("evidence_ids"),
                 f"claims[{index}].evidence_ids",
@@ -508,6 +632,9 @@ def validate(
     evidence_items = sequence(report.get("evidence"), "evidence", errors)
     if not evidence_items:
         errors.append("evidence must not be empty")
+    plan_evidence = None
+    if any(isinstance(raw, dict) and "plan_ref" in raw for raw in evidence_items):
+        plan_evidence = load_plan_evidence(report.get("plan_report"), errors)
     for index, raw in enumerate(evidence_items):
         item = mapping(raw, f"evidence[{index}]", errors)
         evidence_id = nonempty_text(item.get("id"), f"evidence[{index}].id", errors)
@@ -526,11 +653,15 @@ def validate(
         }:
             errors.append(f"evidence[{index}].classification is invalid")
         nonempty_text(item.get("detail"), f"evidence[{index}].detail", errors)
+        if "plan_ref" in item:
+            check_plan_ref(item, f"evidence[{index}]", plan_evidence, current, errors)
         if item.get("status") == "FAIL" and item.get("classification") == "INTRODUCED":
             blockers.append(f"introduced failure {evidence_id}")
 
+    # Refinement may omit scenarios and gates: loopholes and verification_plan
+    # (both mandatory) carry that duty for a read-only strategy review.
     scenarios = sequence(report.get("scenarios"), "scenarios", errors)
-    if not scenarios:
+    if not scenarios and expected != "refinement":
         errors.append("scenarios must not be empty")
     for index, raw in enumerate(scenarios):
         item = mapping(raw, f"scenarios[{index}]", errors)
@@ -571,7 +702,7 @@ def validate(
         blockers.append("user-visible behavior is not proven")
 
     gates = sequence(report.get("gates"), "gates", errors)
-    if not gates:
+    if not gates and expected != "refinement":
         errors.append("gates must not be empty")
     for index, raw in enumerate(gates):
         item = mapping(raw, f"gates[{index}]", errors)
@@ -649,6 +780,172 @@ def validate(
     return errors
 
 
+def placeholder_report(workflow: str) -> JsonObject:
+    """Refinement skeleton: enum placeholders and empty or null values fail until replaced."""
+    return {
+        "schema_version": 1,
+        "workflow": workflow,
+        "target": {},
+        "intent": {
+            "goal": "",
+            "must_not_change": [],
+            "invariants": [],
+            "owner_boundary": "",
+            "user_visible": None,
+        },
+        "scope": {
+            "initial_owned_paths": [],
+            "current_owned_paths": [],
+            "cycle": 1,
+            "scope_expansion_approved": False,
+        },
+        "file_coverage": [],
+        "evidence": [
+            {
+                "id": "",
+                "status": "PASS|FAIL|NOT_RUN",
+                "classification": "TARGET|INTRODUCED|BASELINE|ENVIRONMENT|EXTERNAL",
+                "detail": "",
+            }
+        ],
+        "claims": [
+            {
+                "claim": "",
+                "status": "FACT|ASSUMPTION|UNKNOWN",
+                "material": None,
+                "evidence_ids": [],
+                "probe": "",
+            }
+        ],
+        "loopholes": [
+            {"loophole": "", "status": "CLOSED|REJECTED|OPEN", "evidence_ids": []}
+        ],
+        "verification_plan": [
+            {
+                "proof": "",
+                "status": "PASS|PLANNED|NOT_RUN|BLOCKED|NOT_APPLICABLE",
+                "evidence_ids": [],
+                "reason": "",
+            }
+        ],
+        "scenarios": [],
+        "behavior_proof": {
+            "status": "PROVEN|NOT_PROVEN|NOT_APPLICABLE",
+            "evidence_ids": [],
+            "reason": "",
+        },
+        "gates": [],
+        "external_actions": [],
+        "decision": {"result": "|".join(sorted(DECISIONS[workflow])), "remaining": []},
+    }
+
+
+def carry_forward(workflow: str, prior: JsonObject, report: JsonObject) -> None:
+    """Carry intent, scope, and ledger text to a new baseline; evidence never carries.
+
+    Claims, loopholes, and verifications lose their evidence and fall back to
+    unproven statuses, so the new baseline must earn every conclusion again.
+    """
+    if prior.get("workflow") != workflow:
+        raise ValueError(f"--from report must be a {workflow} report")
+    scope = prior.get("scope")
+    cycle = scope.get("cycle") if isinstance(scope, dict) else None
+    if not isinstance(cycle, int) or isinstance(cycle, bool) or cycle < 1:
+        raise ValueError("--from report needs a positive scope.cycle")
+    if isinstance(prior.get("intent"), dict):
+        report["intent"] = prior["intent"]
+    report["scope"]["cycle"] = cycle + 1
+
+    def authored(key: str, field: str) -> list[JsonObject]:
+        items = prior.get(key)
+        return [
+            item
+            for item in (items if isinstance(items, list) else [])
+            if isinstance(item, dict) and isinstance(item.get(field), str) and item[field]
+        ]
+
+    claims = [
+        {
+            "claim": item["claim"],
+            "status": "FACT|ASSUMPTION|UNKNOWN",
+            "material": item.get("material") if isinstance(item.get("material"), bool) else None,
+            "evidence_ids": [],
+            "probe": item.get("probe", ""),
+        }
+        for item in authored("claims", "claim")
+    ]
+    loopholes = [
+        {"loophole": item["loophole"], "status": "OPEN", "evidence_ids": []}
+        for item in authored("loopholes", "loophole")
+    ]
+    verifications = [
+        {
+            "proof": item["proof"],
+            "status": "NOT_RUN" if item.get("status") == "PASS" else item.get("status"),
+            "evidence_ids": [],
+            "reason": item.get("reason") or "re-prove on the new baseline",
+        }
+        for item in authored("verification_plan", "proof")
+    ]
+    for key, items in (
+        ("claims", claims), ("loopholes", loopholes), ("verification_plan", verifications)
+    ):
+        if items:
+            report[key] = items
+
+
+def scaffold(
+    workflow: str,
+    baseline: JsonObject,
+    current: JsonObject,
+    existing: JsonObject | None,
+    prior: JsonObject | None = None,
+) -> JsonObject:
+    errors: list[str] = []
+    delta = sorted(
+        changed_paths(
+            file_map(baseline, "baseline", errors), file_map(current, "current", errors)
+        )
+    )
+    if errors:
+        raise ValueError("; ".join(errors))
+    report = placeholder_report(workflow)
+    if prior is not None:
+        carry_forward(workflow, prior, report)
+    reasons: dict[str, Any] = {}
+    if existing is not None:
+        if existing.get("workflow", workflow) != workflow:
+            raise ValueError(f"existing report must be a {workflow} report")
+        # A refresh keeps its baseline; merging a report from another baseline
+        # would keep its stale evidence and decision.
+        existing_target = existing.get("target")
+        if not isinstance(existing_target, dict) or (
+            existing_target.get("baseline_fingerprint"),
+            existing_target.get("baseline_head_sha"),
+        ) != (baseline.get("fingerprint"), baseline.get("head_sha")):
+            raise ValueError(
+                "REPORT belongs to another baseline; move it aside and pass --from <moved file>"
+            )
+        report.update(existing)
+        coverage = existing.get("file_coverage")
+        for item in coverage if isinstance(coverage, list) else []:
+            if isinstance(item, dict) and isinstance(item.get("path"), str):
+                reasons[item["path"]] = item.get("reason", "")
+    report["schema_version"] = 1
+    report["workflow"] = workflow
+    report["target"] = {
+        "baseline_fingerprint": baseline.get("fingerprint"),
+        "current_fingerprint": current.get("fingerprint"),
+        "baseline_head_sha": baseline.get("head_sha"),
+        "current_head_sha": current.get("head_sha"),
+        "paths": current.get("paths"),
+    }
+    report["file_coverage"] = [
+        {"path": path, "reason": reasons.get(path, "")} for path in delta
+    ]
+    return report
+
+
 def main() -> int:
     expected = WORKFLOWS.get(Path(__file__).resolve().parents[1].name)
     if expected is None:
@@ -658,13 +955,42 @@ def main() -> int:
         return 2
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline", required=True, type=Path)
-    parser.add_argument("--current", required=True, type=Path)
+    parser.add_argument(
+        "--current", type=Path, help="Required to validate; --scaffold defaults it to --baseline."
+    )
+    parser.add_argument(
+        "--scaffold",
+        action="store_true",
+        help="Write or refresh REPORT: recompute target and file_coverage, keep authored fields.",
+    )
+    parser.add_argument(
+        "--from",
+        dest="prior",
+        type=Path,
+        help="With --scaffold: carry intent, scope, and ledger text (no evidence) from a prior report; increments scope.cycle.",
+    )
     parser.add_argument("report", type=Path)
     args = parser.parse_args()
+    if args.prior is not None and not args.scaffold:
+        parser.error("--from requires --scaffold")
+    if args.prior is not None and args.prior.resolve() == args.report.resolve():
+        parser.error("--from must name the prior report, not REPORT")
+    if args.current is None and not args.scaffold:
+        parser.error("--current is required unless --scaffold is used")
     try:
-        report = load_json(args.report)
         baseline = load_json(args.baseline)
-        current = load_json(args.current)
+        current = load_json(args.current) if args.current is not None else baseline
+        if args.scaffold:
+            existing = load_json(args.report) if args.report.exists() else None
+            prior = load_json(args.prior) if args.prior is not None else None
+            report = scaffold(expected, baseline, current, existing, prior)
+            args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+            print(
+                f"SCAFFOLD: {args.report} ({len(report['file_coverage'])} delta path(s)); "
+                "replace every placeholder and empty value, then validate"
+            )
+            return 0
+        report = load_json(args.report)
         errors = validate(expected, report, baseline, current)
     except (OSError, ValueError, json.JSONDecodeError) as exception:
         print(f"ERROR: {exception}", file=sys.stderr)

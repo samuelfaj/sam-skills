@@ -1,24 +1,29 @@
 # Chapter Taxonomy (optional lenses)
 
-## Contents
+Add a chapter only when it changes an implementation decision or the user asks
+for a multi-page pack; never emit empty ceremonial pages. For a multi-page
+handoff emit the minimal set that carries decisions; for a dense product or
+migration plan, only focused lenses.
 
-1. Role
-2. Lens catalog
-3. Naming
-4. When to emit
+## Schema
 
-## Role
+`chapters[]`: `{id, slug, title, summary, sections}` with a two-digit `id`, a
+unique kebab-case `slug`, and non-empty `sections: [{heading, blocks}]` and
+`blocks`. Each chapter renders to `<id>-<slug>.html`; nav labels match the
+stem. All text renders escaped. Show non-empty
+`simplicity.retained_complexity_justifications` as a `warn` callout (the
+compact page adds it automatically).
 
-Chapters are **optional presentation lenses** on top of the required light-theme
-HTML pack. They are not a required matrix. Plans may omit `chapters`; the
-renderer then emits a single compact page from the freeze.
+| Block `type` | Fields |
+| --- | --- |
+| `paragraph`, `code` | `text` |
+| `list` | `items` (non-empty strings), optional `ordered` |
+| `callout` | `text`, `tone` `info|ok|warn|danger|decision` (default `info`) |
+| `table` | `headers` (non-empty unique strings), `rows` (string arrays of header length) |
 
-Never emit empty ceremonial pages. Only add a lens when it changes an
-implementation decision or the user asks for a multi-page pack.
+## Lens Catalog
 
-## Lens catalog
-
-Use any subset (or none). IDs/slugs are suggestions for pack mode:
+Use any subset:
 
 | ID | Slug | Purpose |
 | --- | --- | --- |
@@ -33,9 +38,7 @@ Use any subset (or none). IDs/slugs are suggestions for pack mode:
 | 08 | council | Council results when a run happened |
 | 99 | execution-log | Planning ledger and receipts |
 
-### Situational lenses
-
-Emit only when decision-changing:
+Situational lenses, only when decision-changing:
 
 | Trigger | Slug examples |
 | --- | --- |
@@ -47,22 +50,3 @@ Emit only when decision-changing:
 | AI agents/prompts | prompts-agentes |
 | Monetization | monetizacao |
 | Ops/observability | analytics-observabilidade |
-
-For a compact pack, a single merged `00-plano` page synthesized from the freeze
-is enough.
-
-## Naming
-
-Files: `NN-slug.html` with zero-padded index and kebab-case slug when rendering
-a pack. Nav labels match the filename stem. Keep language consistent with the
-prompt locale.
-
-## When to emit
-
-HTML pack is always required. Chapters control pack shape only:
-
-| Situation | Chapters |
-| --- | --- |
-| Default plan | None → renderer synthesizes compact `00-plano` light HTML |
-| Multi-page / Lacco-style handoff | Minimal set that carries decisions |
-| Dense product / migration plan | Focused lenses that change decisions |

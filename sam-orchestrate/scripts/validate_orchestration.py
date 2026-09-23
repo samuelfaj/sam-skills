@@ -29,6 +29,8 @@ EVIDENCE_STATUSES = {"PASS", "FAIL", "NOT_RUN", "INFO"}
 EVIDENCE_CLASSES = {"TARGET", "BASELINE", "ENVIRONMENT", "EXTERNAL"}
 GATE_STATUSES = {"PASS", "FAIL", "NOT_RUN", "NOT_REQUIRED"}
 DECISIONS = {"COMPLETE", "BLOCKED", "IN_PROGRESS"}
+# Initial review plus at most two re-review rounds; then stop for a user decision.
+MAX_REVIEW_ROUNDS = 3
 OWNER_PATTERNS = {
     "EXECUTION": re.compile(r"worker-[1-9][0-9]*\Z"),
     "ORCHESTRATION": re.compile(r"controller-[1-9][0-9]*\Z"),
@@ -843,7 +845,13 @@ def validate(report: dict[str, Any]) -> list[str]:
         errors.append("review_gate must be an object")
         gate = {}
     gate_keys = {"required", "reasons", "status", "review_task_id"}
-    require_keys(gate, gate_keys, gate_keys, "review_gate", errors)
+    require_keys(gate, gate_keys, gate_keys | {"rounds"}, "review_gate", errors)
+    rounds = gate.get("rounds")
+    if rounds is not None and (
+        not isinstance(rounds, int) or isinstance(rounds, bool) or rounds < 0
+    ):
+        errors.append("review_gate.rounds must be a non-negative integer")
+        rounds = None
     if not isinstance(gate.get("required"), bool):
         errors.append("review_gate.required must be boolean")
     if gate.get("required") != review_required:
@@ -923,11 +931,35 @@ def validate(report: dict[str, Any]) -> list[str]:
                     errors.append(
                         "passing review gate is invalid while target evidence is unproven"
                     )
+            review_blocker = review_node.get("blocker")
+            if (
+                isinstance(rounds, int)
+                and rounds >= MAX_REVIEW_ROUNDS
+                and gate.get("status") == "FAIL"
+                and not (
+                    review_node.get("status") == "BLOCKED"
+                    and isinstance(review_blocker, dict)
+                    and review_blocker.get("kind") == "USER_DECISION"
+                )
+            ):
+                errors.append(
+                    "review round cap reached with a failing gate requires the review "
+                    "node BLOCKED with a USER_DECISION blocker"
+                )
+        if gate.get("status") in {"PASS", "FAIL"} and not rounds:
+            errors.append("review_gate.rounds must record at least 1 completed review round")
+        if isinstance(rounds, int) and rounds > MAX_REVIEW_ROUNDS:
+            errors.append(
+                f"review_gate.rounds exceeds the {MAX_REVIEW_ROUNDS}-round review cap; "
+                "stop BLOCKED with USER_DECISION provenance"
+            )
     else:
         if gate.get("status") != "NOT_REQUIRED":
             errors.append("non-required review gate must have NOT_REQUIRED status")
         if review_task_id is not None:
             errors.append("non-required review gate must use null review_task_id")
+        if rounds:
+            errors.append("non-required review gate must not record review rounds")
 
     decision = report.get("decision")
     if not isinstance(decision, dict):

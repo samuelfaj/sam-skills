@@ -13,6 +13,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import time
 from typing import Any
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -20,6 +21,8 @@ BUILDER = HERE / "build_demo_manifest.py"
 AUDITOR = HERE / "audit_demo_plan.py"
 MEDIA = HERE / "media_tools.py"
 VALIDATOR = HERE / "validate_demo_report.py"
+SCAFFOLD = HERE / "scaffold_demo_report.py"
+EMBEDS = HERE / "count_embeds.py"
 
 
 def run(
@@ -232,6 +235,24 @@ def verify_git_isolation() -> None:
             raise AssertionError("temporary Git index was not cleaned")
         if (root / "attacker-index").exists():
             raise AssertionError("inherited GIT_INDEX_FILE was used")
+
+
+def verify_racy_index() -> None:
+    """A same-size edit made in the commit's second must still reach the manifest."""
+    with tempfile.TemporaryDirectory(prefix="sam-demo-racy-") as temporary:
+        root = pathlib.Path(temporary)
+        run("git", "init", "-q", cwd=root)
+        run("git", "config", "user.email", "fixture@example.invalid", cwd=root)
+        run("git", "config", "user.name", "Fixture", cwd=root)
+        time.sleep(1.05 - time.time() % 1)
+        (root / "app.txt").write_text("value = 1\n", encoding="utf-8")
+        run("git", "add", ".", cwd=root)
+        run("git", "commit", "-qm", "base", cwd=root)
+        (root / "app.txt").write_text("value = 2\n", encoding="utf-8")
+        time.sleep(1.2)
+        manifest = json.loads(run(sys.executable, str(BUILDER), "--repo", str(root)).stdout)
+        if [item["path"] for item in manifest["files"]] != ["app.txt"]:
+            raise AssertionError("racily-clean edit was dropped from the manifest")
 
 
 def verify_base_resolution() -> None:
@@ -709,9 +730,54 @@ def valid_report(manifest: dict[str, Any]) -> dict[str, Any]:
 
 
 def invalid(
-    manifest_path: pathlib.Path, report_path: pathlib.Path, report: dict[str, Any]
+    manifest_path: pathlib.Path,
+    report_path: pathlib.Path,
+    report: dict[str, Any],
+    needle: str | None = None,
 ) -> None:
     dump(report_path, report)
+    result = run(
+        sys.executable,
+        str(VALIDATOR),
+        "--manifest",
+        str(manifest_path),
+        str(report_path),
+        expected=1,
+    )
+    if needle is not None and needle not in result.stderr:
+        raise AssertionError(f"expected {needle!r} in:\n{result.stderr}")
+
+
+def verify_scaffold(
+    root: pathlib.Path,
+    manifest_path: pathlib.Path,
+    manifest: dict[str, Any],
+    video_path: pathlib.Path,
+    filled: dict[str, Any],
+) -> None:
+    """The scaffold copies manifest and media facts exactly and fails closed elsewhere."""
+    report_path = root / "scaffold-report.json"
+    base = (sys.executable, str(SCAFFOLD), "--manifest", str(manifest_path))
+    # Creating a report forces an explicit publication decision.
+    run(*base, "--report", str(report_path), expected=2)
+    if report_path.exists():
+        raise AssertionError("scaffold created a report without a publication decision")
+    run(*base, "--report", str(report_path), "--publish-requested", "false")
+    created = json.loads(report_path.read_text(encoding="utf-8"))
+    if created["manifest_fingerprint"] != manifest["fingerprint"] or created[
+        "target"
+    ] != {
+        "base_sha": manifest["target"]["base_sha"],
+        "head_sha": manifest["target"]["head_sha"],
+    }:
+        raise AssertionError("scaffold did not copy the manifest fingerprint and SHAs")
+    if created["command_definitions"]["changed"] is not bool(
+        manifest["command_definitions"]
+    ):
+        raise AssertionError("scaffold did not derive the command-definition flag")
+    if created["publication"] != {"status": "NOT_REQUESTED"}:
+        raise AssertionError("local-only scaffold must start NOT_REQUESTED")
+    # Unfilled placeholders must never validate.
     run(
         sys.executable,
         str(VALIDATOR),
@@ -720,6 +786,236 @@ def invalid(
         str(report_path),
         expected=1,
     )
+    # The pre-recording audit refuses an environment that never declared real_data.
+    raw_audit = run(
+        sys.executable, str(AUDITOR), "--manifest", str(manifest_path), str(report_path),
+        expected=1,
+    )
+    if "UNDECLARED_REAL_DATA" not in raw_audit.stdout:
+        raise AssertionError("audit passed the scaffold's undeclared real_data")
+    # Authorization cannot be flipped by a refresh.
+    run(*base, "--report", str(report_path), "--publish-requested", "true", expected=2)
+    if json.loads(report_path.read_text(encoding="utf-8"))["authorization"] != {
+        "publish_requested": False
+    }:
+        raise AssertionError("refresh changed the publication authorization")
+
+    media = {
+        "path": str(video_path),
+        "mime_type": "video/mp4",
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "size_bytes": video_path.stat().st_size,
+        "sha256": hashlib.sha256(video_path.read_bytes()).hexdigest(),
+        "has_video": True,
+        "codec": "h264",
+        "pixel_format": "yuv420p",
+        "width": 1280,
+        "height": 720,
+        "frame_rate": "30/1",
+        "duration_seconds": 12.5,
+    }
+    media_path = root / "media.json"
+    dump(media_path, media)
+    run(*base, "--report", str(report_path), "--media", str(media_path))
+    refreshed = json.loads(report_path.read_text(encoding="utf-8"))
+    artifact = refreshed["artifacts"][0]
+    if (
+        artifact["path"] != media["path"]
+        or artifact["media"]["sha256"] != media["sha256"]
+        or artifact["media"]["metadata"]["width"] != 1280
+        or artifact["media"]["metadata"]["duration_seconds"] != 12.5
+    ):
+        raise AssertionError("scaffold did not copy the inspected media facts")
+    if artifact["media"]["conversion_status"] != "TODO:PASS|FAIL":
+        raise AssertionError("scaffold must not assert the conversion result")
+
+    # Filling only the semantic fields must validate: the derived ones are exact.
+    completed = copy.deepcopy(refreshed)
+    for key in (
+        "intent",
+        "environment",
+        "criteria",
+        "risks",
+        "scenarios",
+        "checks",
+        "commands",
+        "cleanup",
+        "plan_audit",
+        "recording",
+        "publication",
+        "decision",
+    ):
+        completed[key] = copy.deepcopy(filled[key])
+    for key in ("inspected", "evidence"):
+        completed["command_definitions"][key] = filled["command_definitions"][key]
+    for key in ("status", "playback_verified", "privacy_review", "contact_sheet_review"):
+        completed["artifacts"][0][key] = copy.deepcopy(filled["artifacts"][0][key])
+    completed["artifacts"][0]["media"]["conversion_status"] = "PASS"
+    dump(report_path, completed)
+    run(
+        sys.executable,
+        str(VALIDATOR),
+        "--manifest",
+        str(manifest_path),
+        str(report_path),
+    )
+
+    # A rebuilt manifest is re-derived on refresh without touching filled fields.
+    rebuilt = copy.deepcopy(manifest)
+    rebuilt["fingerprint"] = "f" * 64
+    rebuilt_path = root / "rebuilt-manifest.json"
+    dump(rebuilt_path, rebuilt)
+    run(sys.executable, str(SCAFFOLD), "--manifest", str(rebuilt_path), "--report", str(report_path))
+    again = json.loads(report_path.read_text(encoding="utf-8"))
+    if again["manifest_fingerprint"] != "f" * 64 or again["intent"] != filled["intent"]:
+        raise AssertionError("refresh must re-derive the fingerprint and keep filled fields")
+
+
+def verify_embed_counts(root: pathlib.Path) -> None:
+    """Readback passes only when each uploaded URL renders as its kind's embed."""
+    gh_video = "https://github.com/user-attachments/assets/1a2b-3c4d"
+    gh_image = "https://github.com/user-attachments/assets/5e6f-7a8b"
+    gl_video = "/uploads/abc123/demo.mp4"
+    gl_image = "/uploads/abc123/after.png"
+    gh = ("--video-url", gh_video, "--image-url", gh_image)
+    cases = (
+        # Host player/image markup, beside a legitimate link to source code.
+        (
+            f"### Demo\n\n{gh_video}\n\n### After\n\n![after]({gh_image})\n\n"
+            "See [the handler](https://github.com/o/r/blob/main/src/app.ts).\n",
+            gh,
+            True,
+        ),
+        (
+            f"### Demo\n\n![demo]({gl_video}){{width=100%}}\n\n### After\n\n![after]({gl_image})\n",
+            ("--video-url", gl_video, "--image-url", gl_image),
+            True,
+        ),
+        (f"[Download MP4]({gh_video})\n", ("--video-url", gh_video), False),
+        (
+            f"{gh_video}\n\n[video](https://github.com/org/repo/blob/main/demo.mp4)\n",
+            ("--video-url", gh_video),
+            False,
+        ),
+        (f'<video src="{gl_video}"></video>\n', ("--video-url", gl_video), False),
+        (f"[![thumb]({gl_image})]({gl_video})\n", ("--video-url", gl_video), False),
+        # A download link beside a real player still fails.
+        (f"{gh_video}\n\n[Download]({gh_video})\n", ("--video-url", gh_video), False),
+        # Code renders as text, never as a player.
+        (f"```\n{gh_video}\n```\n", ("--video-url", gh_video), False),
+        (f"~~~md\n![demo]({gl_video})\n~~~\n", ("--video-url", gl_video), False),
+        (f"`![after]({gl_image})`\n", ("--image-url", gl_image), False),
+        (f"<!--\n{gh_video}\n-->\n", ("--video-url", gh_video), False),
+        (f"    {gh_video}\n", ("--video-url", gh_video), False),
+        (f"Intro\n\n    ![demo]({gl_video})\n", ("--video-url", gl_video), False),
+        (f"Intro\n\n\t![after]({gh_image})\n", ("--image-url", gh_image), False),
+        # Indentation inside a list item or a paragraph continuation is not code.
+        (f"- Demo\n\n    ![demo]({gl_video})\n", ("--video-url", gl_video), True),
+        (f"Intro\n    ![after]({gh_image})\n", ("--image-url", gh_image), True),
+        # A committed media file is forbidden even as a bare line or autolink.
+        (
+            f"{gh_video}\n\nhttps://github.com/o/r/blob/main/demo.mp4\n",
+            ("--video-url", gh_video),
+            False,
+        ),
+        (f"{gh_video}\n\nSee https://github.com/o/r/blob/main/demo.mp4.\n", ("--video-url", gh_video), False),
+        (
+            f"![after]({gh_image})\n\n<https://raw.githubusercontent.com/o/r/main/demo.mp4>\n",
+            ("--image-url", gh_image),
+            False,
+        ),
+        (
+            f"{gh_video}\n\n[demo](https://media.githubusercontent.com/media/o/r/main/demo.mp4)\n",
+            ("--video-url", gh_video),
+            False,
+        ),
+        # GitHub attachment URLs carry no extension: the kind comes from the receipt.
+        (f"![demo]({gh_video})\n\n{gh_image}\n", gh, False),
+        (f"![demo]({gh_video})\n", ("--video-url", gh_video), False),
+        (f"![after]({gh_image})\n\n{gh_image}\n", ("--image-url", gh_image), False),
+        # GLFM plays only video extensions inside image syntax.
+        (f"![demo]({gl_image})\n", ("--video-url", gl_image), False),
+        # Only host uploads count; media hosted elsewhere is not an attachment.
+        (
+            "![demo](https://cdn.example.com/demo.mp4)\n",
+            ("--video-url", "https://cdn.example.com/demo.mp4"),
+            False,
+        ),
+        # An uploaded URL that never made it into the body is a failed publication.
+        ("### Demo\n\nno media here\n", ("--video-url", gh_video), False),
+        (f"{gh_video}\n", ("--video-url", "https://github.com/o/r/blob/main/demo.mp4"), False),
+        # Download forms hidden in reference links, anchors, or legacy asset URLs.
+        (
+            f"![demo]({gl_video})\n\n[Download][1]\n\n[1]: /uploads/zzz/other.mp4\n",
+            ("--video-url", gl_video),
+            False,
+        ),
+        (
+            f"{gh_video}\n\n[Download][d]\n\n[d]: https://cdn.example.com/demo.mp4\n",
+            ("--video-url", gh_video),
+            False,
+        ),
+        (
+            f"{gh_video}\n\n[x](https://github.com/o/r/assets/1/demo.mp4)\n",
+            ("--video-url", gh_video),
+            False,
+        ),
+        (
+            f'![demo]({gl_video})\n\n<a data-href="x" href="/uploads/zzz/other.mp4">demo</a>\n',
+            ("--video-url", gl_video),
+            False,
+        ),
+        (f"[ ![thumb]({gl_image}) ](https://example.com/v)\n", ("--image-url", gl_image), False),
+        # HTML code renders as text; unmatched backticks open no code span.
+        (f"<pre>\n{gh_video}\n</pre>\n", ("--video-url", gh_video), False),
+        (f"<code>![demo]({gl_video})</code>\n", ("--video-url", gl_video), False),
+        (f"{gh_video}\n\nRun ``a [Download]({gh_video}) b`\n", ("--video-url", gh_video), False),
+        (f"Run ``a ![after]({gh_image}) b`\n", ("--image-url", gh_image), True),
+        # Every copy of a GitHub video must be bare, and any <video> tag fails.
+        (f"{gh_video}\n\n![x]({gh_video})\n", ("--video-url", gh_video), False),
+        (f'{gh_video}\n\n<video src="https://cdn.example.com/x.mp4"></video>\n', ("--video-url", gh_video), False),
+        # A definition whose destination sits on the next line is still a link.
+        (f"### Demo\n\n[Watch the demo][1]\n\n[1]:\n{gh_video}\n", ("--video-url", gh_video), False),
+        # A backtick inside a comment never pairs with a later one to hide a link.
+        (f"{gh_video}\n\n<!-- use ` for code -->\n[Download]({gh_video}) and `x`\n", ("--video-url", gh_video), False),
+        # Media files and attachment assets are links wherever they are wrapped.
+        (f"{gh_video}\n\n[Download](https://cdn.example.com/demo.mp4)\n", ("--video-url", gh_video), False),
+        (f"{gh_video}\n\n[Download [mp4]](https://github.com/user-attachments/assets/other)\n", ("--video-url", gh_video), False),
+        (f'![demo]({gl_video})\n\n<a title=">" href="/uploads/z/o.mp4">demo</a>\n', ("--video-url", gl_video), False),
+        # Links to uploaded non-media files are not media links.
+        (f"{gh_video}\n\n[build log](https://github.com/user-attachments/files/123/log.txt)\n", ("--video-url", gh_video), True),
+        (f"![demo]({gl_video})\n\n[trace](/uploads/zzz/trace.zip)\n", ("--video-url", gl_video), True),
+        # Inline code that merely names an HTML tag hides nothing after it.
+        (f"Replaced `<code>` and `<!--` markers.\n\n{gh_video}\n\n[Download]({gh_video})\n", ("--video-url", gh_video), False),
+        (f"Replaced `<code>` and `<!--` markers.\n\n{gh_video}\n", ("--video-url", gh_video), True),
+    )
+    body = root / "readback.md"
+    for text, urls, passes in cases:
+        body.write_text(text, encoding="utf-8")
+        result = run(sys.executable, str(EMBEDS), str(body), *urls, expected=0 if passes else 1)
+        verdict = json.loads(result.stdout)
+        if (verdict["status"] == "PASS") != passes or (
+            not passes and not (verdict["problems"] or verdict["media_links"])
+        ):
+            raise AssertionError(f"embed readback misjudged {text!r}: {verdict}")
+    # Without the uploaded URLs nothing can be checked.
+    run(sys.executable, str(EMBEDS), str(body), expected=2)
+    # Long whitespace-free runs stay linear (backtracking scans took minutes).
+    body.write_text(
+        f"{gh_video}\n\n" + "/raw/" * 13000 + " " + "a" * 65000 + " " + "![" * 20000
+        + " [a](" + "/x/" * 5000 + " " + " ".join("`" * n for n in range(1, 300)) + "\n",
+        encoding="utf-8",
+    )
+    started = time.monotonic()
+    try:
+        result = subprocess.run(
+            [sys.executable, str(EMBEDS), str(body), "--video-url", gh_video],
+            text=True, capture_output=True, check=False, timeout=60,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise AssertionError("embed readback hangs on long lines") from exc
+    if result.returncode != 0 or time.monotonic() - started > 10:
+        raise AssertionError(f"long-line readback slow or misjudged: {result.stdout}")
 
 
 def main() -> int:
@@ -752,6 +1048,19 @@ def main() -> int:
         dump(manifest_path, manifest)
         if len(manifest["files"]) != 1 or not manifest["fingerprint"]:
             raise AssertionError("manifest lost the changed target")
+        # Callers read SHAs from one stderr line instead of the patch-bearing file.
+        summary = result.stderr.strip().splitlines()
+        if not summary or not summary[-1].startswith(
+            f"manifest fingerprint={manifest['fingerprint']} "
+            f"base={manifest['target']['base_sha']} "
+            f"head={manifest['target']['head_sha']} "
+        ):
+            raise AssertionError(f"missing compact manifest summary: {result.stderr!r}")
+        # Changed paths come from stderr too, so storyboarding never opens the manifest.
+        if 'changed_paths=["app.txt"]' not in summary:
+            raise AssertionError(f"missing changed-path line: {result.stderr!r}")
+        if "saved profile" in result.stderr:
+            raise AssertionError("manifest summary leaked patch content")
 
         video_path = root / "profile-demo.mp4"
         video_path.write_bytes(b"\x00\x00\x00\x18ftypisomsynthetic-demo-fixture")
@@ -776,10 +1085,23 @@ def main() -> int:
             str(manifest_path),
             str(report_path),
         )
+        verify_scaffold(root, manifest_path, manifest, video_path, report)
+        verify_embed_counts(root)
 
         unsafe_data = copy.deepcopy(report)
         unsafe_data["environment"].update({"kind": "unknown", "real_data": True})
         invalid(manifest_path, report_path, unsafe_data)
+
+        # The scaffold's null real_data must never pass as "no real data".
+        undeclared = copy.deepcopy(report)
+        undeclared["environment"]["real_data"] = None
+        invalid(manifest_path, report_path, undeclared, "environment.real_data must be boolean")
+        audit = run(
+            sys.executable, str(AUDITOR), "--manifest", str(manifest_path), str(report_path),
+            expected=1,
+        )
+        if "UNDECLARED_REAL_DATA" not in audit.stdout:
+            raise AssertionError("pre-recording audit accepted an undeclared real_data")
 
         bad_media = copy.deepcopy(report)
         bad_media["artifacts"][0]["path"] = "/tmp/profile-demo.webm"
@@ -790,7 +1112,13 @@ def main() -> int:
             "status": "NOT_RUN",
             "evidence": "",
         }
-        invalid(manifest_path, report_path, missing_privacy)
+        # Each failed media condition is named so the report is patched from the line.
+        invalid(
+            manifest_path,
+            report_path,
+            missing_privacy,
+            "privacy_review must be PASS with evidence",
+        )
 
         unauthorized = copy.deepcopy(report)
         unauthorized["artifacts"][0].update(
@@ -871,6 +1199,7 @@ def main() -> int:
         invalid(manifest_path, report_path, blocked_without_reason)
 
     verify_git_isolation()
+    verify_racy_index()
     verify_base_resolution()
     verify_media_resolution()
     print(

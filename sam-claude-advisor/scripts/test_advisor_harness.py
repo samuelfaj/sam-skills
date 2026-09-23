@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -14,15 +16,61 @@ RESOLVER = SCRIPT_DIR / "resolve_advisor.py"
 SKILL = SCRIPT_DIR.parent / "SKILL.md"
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 SAMPLE_MODEL = "opus"
+# Stands in for the real CLI: echoes how the prompt arrived and wraps the
+# answer in metadata the caller must not have to read.
+FAKE_CLI = """
+import json, os, sys
+prompt = sys.stdin.read()
+leak = any("SECRET-QUESTION" in arg for arg in sys.argv[1:])
+if os.environ.get("FAKE_MODE") == "fail":
+    print(json.dumps({"is_error": True, "result": "auth failed"}))
+    print("fatal: not logged in", file=sys.stderr)
+    raise SystemExit(1)
+print(json.dumps({"is_error": False, "result": f"ANSWER stdin={len(prompt)} leak={leak}",
+                  "usage": {"ENVELOPE-NOISE": 1}}))
+"""
 
 
-def resolve(*args: str) -> subprocess.CompletedProcess[str]:
+def resolve(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-B", str(RESOLVER), *args],
         text=True,
         capture_output=True,
         check=False,
+        env=env,
     )
+
+
+def check_run_mode() -> None:
+    """--run must send the prompt only via stdin and surface only the answer."""
+    with tempfile.TemporaryDirectory(prefix="sam-advisor-") as temporary:
+        root = Path(temporary)
+        fake = root / "claude"
+        fake.write_text(f"#!{sys.executable}\n{FAKE_CLI}", encoding="utf-8")
+        fake.chmod(0o755)
+        prompt = root / "prompt.md"
+        prompt.write_text("SECRET-QUESTION: is the cache safe?\n", encoding="utf-8")
+        env = {**os.environ, "PATH": f"{root}{os.pathsep}{os.environ.get('PATH', '')}"}
+        base = ("--model", SAMPLE_MODEL, "--effort", "high", "--run")
+
+        ok = resolve(*base, "--prompt-file", str(prompt), env=env)
+        lines = ok.stdout.splitlines()
+        expected = f"ANSWER stdin={len(prompt.read_text(encoding='utf-8'))} leak=False"
+        if ok.returncode != 0 or not lines or not lines[0].startswith("ADVISOR status=ok"):
+            raise RuntimeError(f"--run did not succeed: {ok.stdout}{ok.stderr}")
+        if lines[1:] != [expected]:
+            raise RuntimeError(f"--run did not print only the stdin-fed answer: {lines}")
+        log = Path(f"{prompt}.log").read_text(encoding="utf-8")
+        if "ENVELOPE-NOISE" in ok.stdout or "ENVELOPE-NOISE" not in log:
+            raise RuntimeError("--run must keep the raw envelope in the log, not stdout")
+
+        failed = resolve(*base, "--prompt-file", str(prompt), env={**env, "FAKE_MODE": "fail"})
+        if failed.returncode == 0 or "status=failed" not in failed.stdout:
+            raise RuntimeError("--run did not surface a failed invocation as a blocker")
+        if resolve(*base, env=env).returncode == 0:
+            raise RuntimeError("--run without --prompt-file did not fail closed")
+        if resolve(*base, "--prompt-file", "prompt.md", env=env).returncode == 0:
+            raise RuntimeError("--run with a relative --prompt-file did not fail closed")
 
 
 def main() -> int:
@@ -68,6 +116,8 @@ def main() -> int:
     empty_model = resolve("--model", "   ", "--effort", "high")
     if empty_model.returncode == 0:
         raise RuntimeError("empty model was accepted")
+
+    check_run_mode()
 
     text = SKILL.read_text(encoding="utf-8")
     for fragment in (

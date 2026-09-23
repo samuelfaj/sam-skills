@@ -1,140 +1,108 @@
 ---
 name: sam-fix-bug
-description: "Diagnose and repair broken existing behavior with exact reproduction, proven root cause, frozen scope, the smallest safe correction, calibrated regression proof, and validated evidence. Use for defects, regressions, crashes, incorrect results, failed user flows, or contract violations; do not use for new capabilities, plan-only analysis, or code review."
+description: "Repair broken existing behavior with exact reproduction, proven root cause, frozen scope, the smallest safe fix, and regression proof. Use for defects, regressions, crashes, wrong results, failed flows, or contract violations; not for new features, plan-only work, or review."
 ---
 
 # Sam Fix Bug
 
-Fix the defect at its owning boundary with the smallest safe diff. Remain
-stack-, provider-, host-, tool-, and model-neutral.
+Fix the defect at its owning boundary with the smallest safe diff. Stay stack-,
+provider-, host-, tool-, and model-neutral.
 
 ## Non-Negotiable Contract
 
-- Preserve unrelated staged, unstaged, and untracked work byte-for-byte.
-- Never reset, checkout, stash, clean, rebase, or broadly restore the workspace.
-- Do not stage, commit, push, publish, open a change request, or message an
-  external system unless the user or a parent workflow (for example `sam-work`)
-  explicitly requests that exact action. Parent authorization is enough; do not
-  re-ask.
-- Do not patch from the reported symptom alone. Prove the reachable failure and
-  root cause, or return `BLOCKED`.
-- Treat mandatory gates as fail-closed. Never simulate a missing dependency or
-  invent proof.
-- Stop after two correction cycles unless new evidence appears.
+- Preserve unrelated staged, unstaged, and untracked work byte-for-byte. Never
+  reset, checkout, stash, clean, rebase, or broadly restore the workspace.
+- Stage, commit, push, publish, open a change request, or message an external
+  system only when the user or a parent workflow (e.g. `sam-work`) explicitly
+  requested that exact action; parent authorization is enough, never re-ask.
+- Child mode (a parent workflow or phase worker invoked you): never ask;
+  execute or return `BLOCKED` with receipts. Standalone: ask only blocking
+  questions once evidence is exhausted.
+- Never patch from the symptom alone: no production edit until the reachable
+  failure and its root cause are proven; otherwise return `BLOCKED`.
+- A missing mandatory dependency, gate, or proof returns `BLOCKED`; never
+  simulate it or invent proof. Stop after two correction cycles unless new
+  evidence appears.
+- Return any change beyond the frozen goal, contract, or owner boundary to the
+  parent as the exact gap (standalone: ask). File or line counts alone neither
+  widen nor approve scope; justify each added path against the frozen goal.
 
-## Resource Routing
+## Resources
 
-- Read [references/evidence-policy.md](references/evidence-policy.md) before
-  choosing reproduction and regression proof.
-- Read [references/risk-lenses.md](references/risk-lenses.md) after locating the
-  failure boundary; load only applicable lenses.
-- Read [references/output-contract.md](references/output-contract.md) before
-  drafting the structured report.
-- Run `scripts/capture_scope.py` before any edit and after all edits.
-- Run `scripts/validate_report.py` before declaring completion.
+Use literal absolute paths: `<skill>` is this directory; `<tmp>` is the
+parent's phase directory, else scratch outside `<repo>`. Re-read a file only
+after compaction or when you cannot quote the needed section; a copy of
+`evidence-policy.md` or `risk-lenses.md` already read from sam-create-feature,
+sam-refine-task, or sam-simplify-task counts.
 
-## 1. Freeze Target, Intent, and Scope
+| Read | When |
+|---|---|
+| `references/output-contract.md` | Step 1, before freezing the report |
+| `references/evidence-policy.md` | Step 2, before choosing proof |
+| `references/risk-lenses.md` | After locating the failure boundary: only lenses the flow reaches; Browser-to-Service in full for browser-to-service failures |
 
-Set the skill directory to the directory containing this file. Keep temporary
-artifacts outside the repository.
+## 1. Freeze
 
 ```bash
-SAM_BUG_DIR="<absolute directory containing this SKILL.md>"
-WORK_TMP="$(mktemp -d)"
-python3 "$SAM_BUG_DIR/scripts/capture_scope.py" --repo "$PWD" \
-  > "$WORK_TMP/baseline.json"
+python3 <skill>/scripts/capture_scope.py --repo <repo> > <tmp>/baseline.json
+python3 <skill>/scripts/validate_report.py --scaffold --baseline <tmp>/baseline.json <tmp>/report.json
 ```
 
-Add repeated `--path <repo-relative-path>` only for explicit user scope and
-reuse the exact arguments later.
-
-Freeze:
-
-- Observed behavior, expected behavior, and affected user or system flow.
-- Business rule or contract that must hold.
-- Behavior that must not change and system invariants.
-- Owning boundary, initial owned paths, no-go paths, and fingerprint.
-- Required reproduction, regression, behavior, and publication proof.
+Repeat `--path <repo-relative-path>` only for explicit user scope, with
+identical arguments in every capture. Never open `baseline.json` or
+`current.json`; the capture's stderr line summarizes them. Rewind (this skill
+already wrote a report for this task): capture and scaffold in a fresh `<tmp>`
+(under a parent, the handoff's phase dir) with `--from <prior report>`; never
+move, edit, or overwrite the prior report.
 
 Inspect relevant callers, routes, handlers, state, persistence, tests, logs,
-schemas, and configuration. Under a parent workflow (for example `sam-work`),
-never ask—execute or return `BLOCKED` with receipts. When running standalone,
-ask only blocking questions after available evidence is exhausted.
+schemas, and configuration, then freeze into the report: `bug` (observed and
+expected behavior, affected flow), every `intent` field (goal: the business
+rule or contract; must_not_change: behavior and no-go paths), initial owned
+paths, the required `gates` (`NOT_RUN` until run), and publication
+authorization (`external_actions[].requested`).
 
 ## 2. Reproduce and Prove Root Cause
 
 Reproduce at the narrowest layer that still exercises the reported failure.
-Trace the causal chain; distinguish root cause from downstream symptoms.
+Trace the causal chain; separate root cause from downstream symptoms.
 
-For browser-to-service failures, prove the actual method, URL, route
-registration, preflight when applicable, failed-response visibility, and final
-user action. A change that only reveals a hidden error is not a complete fix.
+Record `reproduction.status`:
 
-Record one reproduction status:
-
-- `REPRODUCED`: observed directly through a meaningful test or runtime path.
-- `PROVEN_BY_CONTRACT`: direct execution is unavailable, but code and an
-  authoritative contract prove the violation.
-- `BLOCKED`: evidence cannot distinguish a defect from environment, data,
+- `REPRODUCED`: observed through a meaningful test or runtime path.
+- `PROVEN_BY_CONTRACT`: no direct execution, but code and an authoritative
+  contract prove the violation.
+- `BLOCKED`: evidence cannot separate a defect from environment, data,
   configuration, or external state.
 
-Do not edit production code while root cause remains speculative.
+## 3. Regression Proof and Minimal Fix
 
-## 3. Build Regression Proof and Fix Minimally
+- Prefer a `DIFFERENTIAL` test that fails on the defect and passes after the
+  fix; otherwise `ALTERNATIVE_PROOF` per the evidence policy.
+- Keep public contracts unless the proven defect is the contract. No unrelated
+  refactors, speculative abstractions, duplicated rules, sensitive-data
+  exposure, N+1 work, or widened payloads.
+- Map scenarios per the evidence policy, including adjacent regressions.
 
-Prefer a differential regression test that fails under defective behavior and
-passes after the correction. Use `ALTERNATIVE_PROOF` only when no practical
-test seam exists; state why and provide the closest behavior-level evidence.
+## 4. Validate and Gate
 
-Implement only at the owning boundary. Preserve public contracts unless the
-proven defect is the contract itself. Avoid unrelated refactors, speculative
-abstractions, duplicated rules, sensitive-data exposure, N+1 work, and widened
-payloads.
+- Run the narrowest safe checks first, then broader ones proportional to risk;
+  inspect changed command definitions before executing them. If a gate changes
+  code, rerun the affected proof.
+- Run applicable local review and coverage gates for runtime changes, and
+  browser proof only for impacted browser flows. A gate the parent runs itself
+  on the final head (e.g. `sam-work` review, coverage, or browser proof) is
+  recorded parent-owned (output-contract `gates` row) and skipped;
+  `behavior_proof` is never parent-owned.
 
-Map success, negative, boundary, permission, persistence, partial-failure,
-compatibility, and adjacent regression scenarios when applicable. Verify
-user-visible loading, empty, error, disabled, accessibility, and recovery states
-only when the affected flow reaches them.
+## 5. Report and Decide
 
-If a necessary change exceeds the authorized goal, contract, or owner boundary,
-return the exact gap to the parent, or ask the user when standalone. More files
-alone do not imply broader scope; justify each added path against acceptance
-criteria and preserve unrelated work.
-
-## 4. Validate and Run Gates
-
-Run the narrowest safe checks first, then broader checks proportional to risk.
-Inspect changed command definitions before executing them. Record exact command
-status and classify failures as `TARGET`, `INTRODUCED`, `BASELINE`,
-`ENVIRONMENT`, or `EXTERNAL`.
-
-Record user-visible behavior as `PROVEN`, `NOT_PROVEN`, or `NOT_APPLICABLE`.
-Static source review does not prove a user-visible fix.
-
-Run applicable local review and coverage gates for runtime changes. Run browser
-proof only for impacted browser flows. A missing mandatory dependency or proof
-results in `BLOCKED`; never synthesize a pass. If a gate changes code, rerun the
-affected proof. Stop after two non-converging cycles without new evidence.
-
-## 5. Validate Scope and Decision
+Capture `<tmp>/current.json` with the step 1 arguments, re-scaffold with
+`--current <tmp>/current.json`, fill the report, and validate:
 
 ```bash
-python3 "$SAM_BUG_DIR/scripts/capture_scope.py" --repo "$PWD" \
-  > "$WORK_TMP/current.json"
-python3 "$SAM_BUG_DIR/scripts/validate_report.py" \
-  --baseline "$WORK_TMP/baseline.json" \
-  --current "$WORK_TMP/current.json" "$WORK_TMP/report.json"
+python3 <skill>/scripts/validate_report.py --baseline <tmp>/baseline.json --current <tmp>/current.json <tmp>/report.json
 ```
 
-Follow [references/output-contract.md](references/output-contract.md). Cover
-every post-baseline path exactly once. Do not weaken the validator.
-
-Return `COMPLETE` only when reproduction, root cause, regression proof,
-required scenarios, validations, mandatory gates, behavior proof, scope, and
-dirty-work preservation agree. Otherwise return `CHANGES_REQUIRED` or
-`BLOCKED` with exact remaining work.
-
-Draft publication text locally when useful. Publish only after explicit user or
-parent-workflow authorization and record the action evidence; never re-ask when
-the parent already authorized. Retain the report and evidence needed by the
-caller; remove only unused scratch.
+Never weaken the validator. Keep the report and evidence the caller needs;
+remove only unused scratch.

@@ -91,6 +91,25 @@ def nonempty_string(value: Any, label: str, errors: list[str]) -> str:
     return value
 
 
+def load_body(report: dict[str, Any], errors: list[str]) -> Any:
+    """Return the body from exactly one of inline `body` or absolute `body_file`."""
+    has_inline, has_file = "body" in report, "body_file" in report
+    if has_inline == has_file:
+        errors.append("report requires exactly one of body or body_file")
+        return report.get("body") if has_inline else None
+    if has_inline:
+        return report.get("body")
+    raw_path = report.get("body_file")
+    if not isinstance(raw_path, str) or not Path(raw_path).is_absolute():
+        errors.append("body_file must be an absolute path")
+        return None
+    try:
+        return Path(raw_path).read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        errors.append(f"cannot read body_file: {exc}")
+        return None
+
+
 def validate_context(
     context: dict[str, Any], errors: list[str]
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
@@ -203,7 +222,6 @@ def validate(context: dict[str, Any], report: dict[str, Any]) -> list[str]:
             "file_coverage",
             "evidence",
             "claims",
-            "body",
             "remote_update",
         },
         {
@@ -215,6 +233,7 @@ def validate(context: dict[str, Any], report: dict[str, Any]) -> list[str]:
             "evidence",
             "claims",
             "body",
+            "body_file",
             "remote_update",
         },
         "report",
@@ -250,7 +269,7 @@ def validate(context: dict[str, Any], report: dict[str, Any]) -> list[str]:
     if len(set(change_types)) != len(change_types):
         errors.append("change_types must not contain duplicates")
 
-    body = nonempty_string(report.get("body"), "body", errors)
+    body = nonempty_string(load_body(report, errors), "body", errors)
     headings = re.findall(r"^## ([^\n]+)$", body, flags=re.MULTILINE)
     context_paths: list[str] = []
     for index, item in enumerate(context_files):

@@ -1,242 +1,59 @@
 # Sam Task Output Contract
 
-## Contents
+`task-report.json` (UTF-8 object). `scaffold_task_report.py` derives every field marked *derived* from the cited files; strings starting `SCAFFOLD:` fail validation.
 
-1. Terminal statuses
-2. Report shape
-3. Phase objects
-4. Closure object
-5. Learning object
-6. Web surface and video evidence
-7. Advisor consults
-8. Validation
+## Top level
 
-## Terminal statuses
-
-- `COMPLETE`: plan, refine, work, closure, and learning audit are terminal and
-  current for one final head; validator returns `VALID`.
-- `BLOCKED`: a required child failed, exhausted, or could not produce receipts.
-- `IN_PROGRESS`: only for interrupted runs; never claim completion.
-
-## Report shape
-
-Write `task-report.json` (UTF-8 object):
-
-```json
-{
-  "schema_version": 3,
-  "workflow": "task",
-  "workflow_id": "stable-id",
-  "status": "COMPLETE",
-  "request": {
-    "prompt_sha256": "64 lowercase hex",
-    "prompt_summary": "short text",
-    "classification": "BUG"
-  },
-  "target": {
-    "repo_root": "/absolute/path",
-    "base_ref": "main",
-    "base_sha": "40-or-64 hex",
-    "final_head_sha": "40-or-64 hex",
-    "final_change_fingerprint": "64 lowercase hex",
-    "web_surface": true,
-    "web_surface_evidence": ["dev server script and routed pages"]
-  },
-  "plan": {
-    "plan_dir": "/absolute/plan",
-    "depth": "simple",
-    "status": "READY_TO_EXECUTE",
-    "validator_receipt": "VALID",
-    "freeze_path": "/absolute/plan/plan-report.json"
-  },
-  "phases": [],
-  "closure": {},
-  "learning": {},
-  "work_report_path": "/absolute/work-report.json",
-  "refine_report_path": "/absolute/plan/refine-report.json",
-  "advisor_consults": [],
-  "residuals": [],
-  "blockers": []
-}
-```
-
-`classification` is `BUG` or `FEATURE` and must match the path taken inside
-`sam-work`.
-
-## Phase objects
-
-`phases` contains exactly these ids in order: `plan`, `refine`, `work`,
-`closure`, `learn`.
-
-Each phase:
-
-```json
-{
-  "id": "plan",
-  "skill": "sam-plan",
-  "status": "READY_TO_EXECUTE",
-  "current": true,
-  "validated_head_sha": null,
-  "evidence": ["..."],
-  "validator_receipts": ["VALID"],
-  "iterations": []
-}
-```
-
-- `plan` and `refine` may use `validated_head_sha: null` when no implementation
-  head exists yet; once `work` starts, later phases and final target head must
-  align.
-- `work` and `closure` require `validated_head_sha == target.final_head_sha`
-  when status is terminal for `COMPLETE`.
-- Iterations are contiguous from 1. Intermediate iterations with open items
-  require correction receipts. The last iteration matches phase status and has
-  zero open required items for successful terminals.
-
-Accepted phase terminals:
-
-| id | status |
+| Field | Rule |
 | --- | --- |
-| plan | `READY_TO_EXECUTE` |
-| refine | `HIGH_CONFIDENCE` |
-| work | `COMPLETE` |
-| closure | `CLEAN` |
-| learn | `LEARNING_AUDITED` |
+| `schema_version` | `3` |
+| `workflow` | `"task"` |
+| `workflow_id` | non-empty |
+| `status` | `COMPLETE` (per SKILL.md § Non-Negotiable Contract), `BLOCKED` (a child failed, exhausted, or lacks receipts; needs `residuals` or `blockers`), `IN_PROGRESS` (interrupted only) |
+| `request` | *derived*: `prompt_sha256` (64 lowercase hex, = freeze `frozen.prompt_hash`), `prompt_summary`, `classification` `BUG`/`FEATURE` (the path taken in `sam-work`) |
+| `target` | *derived* from the work report: `repo_root` (absolute), `base_ref`, `base_sha` and `final_head_sha` (40/64 hex), `final_change_fingerprint` (64 hex); plus `web_surface` (boolean, required for `COMPLETE`) and `web_surface_evidence` (≥1) |
+| `plan` | *derived*: `plan_dir` (absolute), `depth` `simple`/`standard`/`deep`, `status` (`READY_TO_EXECUTE` for `COMPLETE`), `validator_receipt` (= the plan phase's last receipt), `freeze_path` (absolute; required for `COMPLETE`) |
+| `refine_report_path`, `work_report_path` | absolute; required for `COMPLETE` |
+| `refine_validator_args` | *derived*: exactly `--baseline` and `--current`, each `<absolute path>` or `=<absolute path>` |
+| `phases` | exactly `plan`, `refine`, `work`, `closure`, `learn`, in order |
+| `advisor_consults` | fields and enums in SKILL.md § Advisors; at most 3 |
+| `residuals`, `blockers` | string arrays; `COMPLETE` needs `blockers: []` |
+
+## Phases
+
+Each: `id`; `skill` as in the SKILL.md table; `status` (= last iteration's); `current` (true for `COMPLETE`); `validated_head_sha` (`plan`/`refine`: null or a revision; `work`/`closure`/`learn`: `target.final_head_sha` for `COMPLETE`); `evidence`, `validator_receipts`, `iterations` (≥1 each). `COMPLETE` needs each phase's accepted terminal (SKILL.md table).
+
+Iteration: `sequence` (contiguous from 1), `input_fingerprint` and `output_fingerprint` (64 hex), `status`, `open_required_items[]`, `correction_receipts[]`, `evidence` (≥1). Iteration statuses: plan `READY_TO_EXECUTE`/`NOT_CONFIDENT`/`BLOCKED`; refine `HIGH_CONFIDENCE`/`NOT_CONFIDENT`/`BLOCKED`; work `COMPLETE`/`BLOCKED`/`IN_PROGRESS`; closure `CLEAN`/`OPEN`/`BLOCKED`; learn `LEARNING_AUDITED`/`BLOCKED`. An intermediate iteration with open items needs correction receipts; a terminal last iteration has none. Fingerprints are *derived* (input → output): plan `prompt_sha256` → freeze sha256; refine freeze → refine report sha256; work refine report → work report sha256; closure iterations mirror `closure.iterations` (input: cited review report sha256); learn mirrors `learning`.
 
 ## Closure object
 
-```json
-{
-  "max_iterations": 5,
-  "iterations_used": 1,
-  "final_status": "CLEAN",
-  "iterations": [
-    {
-      "sequence": 1,
-      "head_sha": "40-or-64 hex",
-      "review_status": "APPROVE",
-      "council_profile": "fast",
-      "council_status": "TRIAGE_PASS",
-      "open_findings": [],
-      "correction_receipts": [],
-      "review_receipt": "VALID",
-      "council_receipt": "VALID",
-      "evidence": ["..."]
-    }
-  ]
-}
-```
+`max_iterations` (positive, default 5), `iterations_used` (= length, ≤ max), `final_status` `CLEAN`/`OPEN`/`BLOCKED`, `iterations[]`:
 
-For `COMPLETE`, the last closure iteration must have empty `open_findings`,
-`review_status=APPROVE`, and an accepted council status
-(`TRIAGE_PASS|APPROVED|APPROVED_WITH_CONDITIONS` with conditions closed).
+| Field | Rule |
+| --- | --- |
+| `sequence` | contiguous from 1 |
+| `head_sha` | revision (*derived* from the review report) |
+| `review_status` | `APPROVE`/`CHANGES_REQUIRED`/`COMMENT_ONLY`/`BLOCKED` (*derived*) |
+| `review_report_path` / `review_reused_from` | exactly one, absolute: a fresh review, or the `sam-work` review phase `report_path` cited under an identical key |
+| `review_validator_args` | fresh review: exactly `--bundle <absolute path>` (*derived* from `validator-args.json` beside it) |
+| `review_receipt` | non-empty (*derived*) |
+| `review_report_sha256` | *derived*: sha256 of the cited review, pinned while the iteration is last; a superseded iteration's file must keep it |
+| `council_status` | `NOT_RUN` unless review is `APPROVE` on this head; else the council status (*derived*) |
+| `council_profile`, `council_receipt` | required when council ran (*derived*) |
+| `council_report_path` | absolute when council ran, else null |
+| `open_findings`, `correction_receipts` | string arrays; intermediate open findings need receipts; a finding that disappears must be named in the previous iteration's receipts |
+| `evidence` | ≥1 |
+
+`COMPLETE` needs `final_status: CLEAN` and a last iteration with no open findings, `review_status: APPROVE`, council `TRIAGE_PASS`/`APPROVED`/`APPROVED_WITH_CONDITIONS` (conditions closed), and `head_sha` = final head. A `BLOCKED` report cannot claim `CLEAN` without iterations.
 
 ## Learning object
 
-The learning audit runs on the final head and proposes durable knowledge without
-writing it:
+`status` `LEARNING_AUDITED`/`BLOCKED` (`COMPLETE` needs `LEARNING_AUDITED`), `write_policy: PROPOSAL_ONLY`, `audited_head_sha` = final head, `writes_performed: []`, `evidence` (≥1), `candidates[]` (`[]` is valid). Candidate: `id` (`L-###`, unique), `observation`, `proposed_rule`, `scope` (≥1), `evidence` (≥1), `destination` `AGENTS.md`/`SKILL`/`MEMORY`/`NONE`, `revalidate_when`, `sensitivity` `PUBLIC`/`INTERNAL`/`SENSITIVE`, `status` `PROPOSED`/`REJECTED`, `decision_reason`.
 
-```json
-{
-  "status": "LEARNING_AUDITED",
-  "write_policy": "PROPOSAL_ONLY",
-  "audited_head_sha": "40-or-64 hex",
-  "candidates": [
-    {
-      "id": "L-001",
-      "observation": "current-run observation",
-      "proposed_rule": "narrow reusable rule",
-      "scope": ["where the rule applies"],
-      "evidence": ["current-run receipt"],
-      "destination": "AGENTS.md",
-      "revalidate_when": "condition that may make the rule stale",
-      "sensitivity": "INTERNAL",
-      "status": "PROPOSED",
-      "decision_reason": "why this is or is not durable"
-    }
-  ],
-  "writes_performed": [],
-  "evidence": ["learning audit receipt"]
-}
-```
+## What `COMPLETE` re-checks on disk
 
-`destination` is `AGENTS.md|SKILL|MEMORY|NONE`; `sensitivity` is
-`PUBLIC|INTERNAL|SENSITIVE`; candidate status is `PROPOSED|REJECTED`.
-`candidates: []` is valid and preferable to inventing a lesson.
-`writes_performed` must remain empty. Promotion requires a separate explicit
-user action.
-
-## Web surface and video evidence
-
-`COMPLETE` requires a boolean `target.web_surface` with at least one
-`target.web_surface_evidence` receipt. Decide it from repository evidence: `true`
-for any browser-reachable UI; `false` only with concrete evidence of no browser
-surface. Unclear or unchecked evidence is `true`.
-
-The validator opens `work_report_path` and checks the child receipt directly. A
-`work` phase of `COMPLETE` is not video proof on its own. For `COMPLETE`:
-
-- The work report must exist, load, and record `final.result = COMPLETE`.
-- `request.web_system` in the work report must equal `target.web_surface` here.
-  A mismatch is `INVALID`—the child cannot silently downgrade a web system.
-- `video_inventory.demo_uploaded` must be at least 1 on every run.
-- When `web_surface` is `true`, `video_inventory.playwright_uploaded` must be at
-  least 1 and must equal `playwright_discovered`.
-- When `web_surface` is `false`, Playwright counts must be 0.
-
-## Advisor consults
-
-`advisor_consults` is evidence-only and defaults to `[]`. It never closes a
-phase, replaces a validator receipt, or changes a terminal status.
-
-```json
-{
-  "advisor_consults": [
-    {
-      "id": "A-001",
-      "advisor": "sam-<runtime>-advisor",
-      "phase": "refine",
-      "model": "advisor model bound by this workflow",
-      "effort": "high",
-      "effort_source": "MATRIX_DEFAULT",
-      "question": "one focused question",
-      "status": "ANSWERED",
-      "caller_decision": "ACCEPTED",
-      "decision_reason": "why the caller accepted or rejected it",
-      "failure_reason": null,
-      "evidence": ["consult receipt"]
-    }
-  ]
-}
-```
-
-- `id` matches `A-###` and is unique.
-- `advisor` matches `sam-<runtime>-advisor` (the provider-specific advisor skill
-  that was consulted).
-- `phase` is `plan`, `refine`, or `closure`. `work` is rejected—that phase is
-  owned by the `sam-work` ledger.
-- `effort` is `low|medium|high|xhigh|max`; `effort_source` is `MATRIX_DEFAULT` or
-  `USER_SPECIFIED`.
-- `status` is `ANSWERED` or `FAILED`; `FAILED` requires a `failure_reason` and
-  must appear in `residuals`, never in `blockers`.
-- `caller_decision` is `ACCEPTED`, `REJECTED`, or `UNRESOLVED`.
-- At most 3 consults per run.
-
-## Validation
-
-On `COMPLETE`, the task validator re-opens durable child artifacts:
-
-- `plan.freeze_path` must exist and report `status == READY_TO_EXECUTE`
-- `frozen.prompt_hash` must match `request.prompt_sha256`
-- `refine_report_path` must exist with `decision.result == HIGH_CONFIDENCE` and empty `remaining`
-
-Bare `validator_receipt` strings are not sufficient.
-
-Closure iterations: a finding present in iteration *N* and absent in *N+1* must be named in iteration *N* `correction_receipts` (normalized substring match).
-
-## Validation
-
-```bash
-python3 -B scripts/validate_task_report.py task-report.json
-```
-
-Cite only `VALID` as machine proof. Re-run after every report edit.
+- Freeze `READY_TO_EXECUTE` with `frozen.prompt_hash` = `request.prompt_sha256`; refine `HIGH_CONFIDENCE`, empty `remaining`; plan/refine/work output fingerprints = file sha256.
+- Fresh validator runs (plan freeze and council with no arguments, refine with `refine_validator_args`, work, fresh review with `review_validator_args`) that pass, with the last line = the recorded receipt.
+- Work report: `final.result: COMPLETE`; `request.prompt_sha256`, `request.web_system` (= `target.web_surface`), and `target` `repo_root`/`base_sha`/`final_head_sha`/`final_change_fingerprint` equal this report's; `video_inventory.demo_uploaded` ≥1; web: `playwright_uploaded` ≥1 and = `playwright_discovered`; non-web: Playwright counts 0.
+- Last closure iteration: a reused review is the work report's review `report_path` (branch mode, same head and base, its receipt); a fresh review matches `head_sha`, `review_status`, branch mode, and `target.base_sha`; the council report matches `council_status` and `packet_head` = `head_sha`.
+- Superseded closure iterations: the cited review still holds the recorded `head_sha` and `review_status`.

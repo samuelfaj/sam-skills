@@ -1,128 +1,78 @@
 ---
 name: sam-codex-advisor
-description: "Consult Codex as a read-only advisor for a focused assumption, tradeoff, architecture question, security concern, difficult diagnosis, or high-risk decision. The calling agent binds model and reasoning effort from the sam-orchestrate host-runtime-matrix advisor row (or the user's exact override). Use when the user requests a Codex second opinion or when another AI agent needs a bounded independent advisory pass."
+description: "Read-only Codex second opinion on a focused assumption, tradeoff, architecture, security, diagnosis, or high-risk decision. Use when a Codex second opinion or a bounded independent advisory pass is needed."
 ---
 
 # Sam Codex Advisor
 
-Obtain one independent advisory answer. Keep the calling agent responsible for
-the final decision, implementation, and proof.
-
 ## Non-Negotiable Contract
 
-- Bind `model` and `effort` in the calling agent. Prefer the **advisor** row for
-  the Codex host in
-  [../sam-orchestrate/references/host-runtime-matrix.md](../sam-orchestrate/references/host-runtime-matrix.md).
-  Do not hardcode a model or invent one outside that matrix and an explicit
-  user override.
-- If the user supplies an effort (`low`, `medium`, `high`, `xhigh`, or `max`),
-  use that value exactly. Otherwise use the matrix advisor effort for Codex.
-- Do not infer a lower effort from urgency, simplicity, cost, or latency.
-- Run the advisor read-only and ephemerally. Do not let it edit files, spawn
-  subagents, publish, commit, push, or perform external writes.
-- Ask one focused question. Do not delegate the whole task or request implementation.
-- Pass only the minimum context required and exclude secrets or credentials.
-- Do not silently fall back when the CLI, model, effort, or authentication is unavailable.
-- Treat the advisor response as analysis, not proof. Verify material claims before acting.
-- **Token Saver inheritance:** when the host provides
-  `RC_TOKEN_SAVER_EXECUTION_RECEIPT_V1`, preserve it and the authorized
-  capability/lane environment in every child process. Never reconstruct or
-  widen admission. A missing, malformed, denied, cross-user, or
-  provider-mismatched receipt is raw fail-open input. Skills, exact-output
-  commands, prompts, transcripts, secrets, and the full advisor response stay
-  lossless and out of the receipt. Do not claim billing or quota savings.
-- **Subagents telemetry:** when this advisor is a controlled nested lifetime,
-  bracket the real invocation with the provider-neutral bridge, preserving the
-  returned run id:
+- Bind `model` and `effort` in the calling agent: the user's exact override,
+  else the `codex` advisor row of
+  `<abs skill dir>/../sam-orchestrate/references/host-runtime-matrix.md`. Read
+  only that section (`sed -n '/^## Advisor/,$p' <abs matrix path>`; the whole
+  file only if that prints nothing). Never hardcode or invent a model.
+  Use a user-supplied effort (`low`, `medium`, `high`, `xhigh`, `max`)
+  exactly; never lower effort for urgency, simplicity, cost, or latency.
+- Read-only sandbox, ephemeral, strict config, user config ignored; no edits,
+  subagents, publishing, commits, pushes, or external writes.
+- One focused question; never delegate the whole task or request
+  implementation. Minimum context, no secrets or credentials: cite repository
+  files by path and line range; paste only facts the advisor cannot read.
+- The prompt reaches the CLI only through stdin, never argv or a command string.
+- Do not silently fall back when the CLI, model, effort, or authentication is
+  unavailable, and never retry with another model or effort; return the exact
+  blocker.
+- The answer is analysis, not proof; the caller keeps the decision,
+  implementation, and proof. Never claim the advisor ran unless the invocation
+  succeeded.
+- **Token Saver:** Pass the host's content-free
+  `RC_TOKEN_SAVER_EXECUTION_RECEIPT_V1` and its capability/lane environment
+  unchanged to every controlled child (nested spawns, retries, resumes,
+  recovery); never reconstruct or widen admission. A missing, malformed,
+  denied, cross-user, or provider-mismatched receipt is raw fail-open input.
+  Never put skills, exact-output commands, prompts, transcripts, secrets, or
+  full responses in it. Skills and exact-output evidence stay lossless; claim
+  no billing or quota savings.
+- **Telemetry (lifetime only):** With
+  `T="${REMOTE_CODE_SUBAGENT_TELEMETRY_COMMAND:-distill}"`, bracket each
+  controlled child: `run=$("$T" subagent begin --node <stable-id> </dev/null)`
+  … `"$T" subagent end --run-id "$run" --status completed|failed|cancelled </dev/null`;
+  keep the run id across retries. If the run's first `begin` fails, record one
+  Subagents proof gap and skip brackets for the rest of the run. Telemetry
+  never invents a Done row or receives skill bodies or exact output. Bracket
+  the consult only when it is a controlled nested lifetime.
 
-```bash
-telemetry_command="${REMOTE_CODE_SUBAGENT_TELEMETRY_COMMAND:-distill}"
-child_run="$("$telemetry_command" subagent begin --node '<stable-advisor-node-id>')"
-# run the bounded advisor
-"$telemetry_command" subagent end --run-id "$child_run" --status completed
-```
+## Subordinate mode
 
-  Use `failed` or `cancelled` on the corresponding terminal path. Bridge
-  unavailability means raw execution plus an explicit Subagents proof gap —
-  never invent a Done row. Do not require Distill to process Skill bodies or
-  exact output.
+When a parent skill invoked this consult: if it supplied `model` and
+`effort`, use them exactly without opening the matrix; return the Output
+fields inline as a consult record; emit no workflow report, close no parent
+phase, and never alter the parent's response format, phases, gates, or
+evidence rules; never ask the user; on failure, hand the exact blocker back as
+a residual and let the parent decide.
 
-## Subordinate mode (parent workflow active)
+## Procedure
 
-When a parent workflow (`sam-task`, `sam-work`, `sam-orchestrate`, or any other
-skill) invoked this consult, the parent's contract stays in force and this skill
-is a step inside it, not the run:
-
-- If the caller already supplied `model` and `effort`, use them exactly and do
-  **not** open the host runtime matrix. The parent owns that binding.
-- Return the `## Output` fields as an inline consult record to the caller. Do not
-  emit a terminal workflow report, do not close the parent's phase, and do not
-  replace the parent's final response format.
-- Never ask the user anything. On failure, hand the exact blocker back to the
-  caller as a residual and let the parent decide.
-- Do not restate, renegotiate, or override the parent's phases, gates, or
-  evidence requirements.
-
-## 1. Freeze the Advisory Request
-
-Record:
-
-- Focused question or decision.
-- Relevant facts and evidence.
-- Constraints and no-go surfaces.
-- Current hypothesis, if any.
-- Desired output: recommendation, risks, and strongest verification path.
-- Selected `model` and `effort` (matrix advisor binding, or user override) and
-  whether effort was user-specified.
-
-## 2. Resolve the Invocation
-
-Run the deterministic resolver before invoking the advisor. Both flags are
-required:
-
-```bash
-SAM_CODEX_ADVISOR_DIR="<absolute directory containing this SKILL.md>"
-python3 "$SAM_CODEX_ADVISOR_DIR/scripts/resolve_advisor.py" \
-  --model "<caller-selected-model>" \
-  --effort "<caller-selected-effort>"
-```
-
-The resolver returns an argv array fixed to Codex, the selected model and
-effort, ephemeral execution, and read-only sandboxing. It does not invent
-defaults.
-
-## 3. Invoke Safely
-
-Execute the returned argv directly without a shell. Send the advisory request
-through stdin because the final `-` tells `codex exec` to read the prompt there.
-Do not interpolate the question into a command string or expose it in process arguments.
-
-Require the advisor prompt to say:
-
-- Act only as an advisor.
-- Do not edit files or spawn subagents.
-- Answer the focused question.
-- Return a recommendation, key risks, hard assumptions, and verification path.
-- Separate confirmed evidence from inference.
-
-Wait for completion. If invocation fails, return the exact blocker and do not
-retry with another model or effort.
-
-## 4. Reconcile
-
-Check the response against supplied evidence. Reject unsupported claims,
-scope expansion, invented facts, and implementation work. Resolve disagreement
-using direct evidence or present the tradeoff to the user; do not defer blindly.
+1. Write the prompt to an absolute scratch path: the question, relevant facts
+   and evidence, constraints and no-go surfaces, any current hypothesis, and:
+   - Act only as an advisor. Do not edit files or spawn subagents.
+   - Answer the focused question in at most 400 words under Recommendation,
+     Risks, Assumptions, and Verification.
+   - Separate confirmed evidence from inference.
+2. Run `python3 -B <abs skill dir>/scripts/resolve_advisor.py --model <model> --effort <effort> --run --prompt-file <abs prompt path>`.
+   It runs the fixed argv without a shell and prints one status line plus only
+   the final message; a nonzero exit is the blocker. Without `--run` (keep
+   `--prompt-file`) it prints only the argv: run it without a shell and read
+   only the `--output-last-message` file.
+3. Reconcile before acting: check the answer against the evidence and verify
+   material claims; reject unsupported claims, scope expansion, invented
+   facts, and implementation work. Settle disagreement with direct evidence or
+   present the tradeoff to the user; never defer blindly.
 
 ## Output
 
-Return:
-
-- `Advisor`: Codex with the selected model.
-- `Effort`: selected effort and whether it was matrix-default or user-specified.
-- `Recommendation`: concise advisory conclusion.
-- `Risks`: material risks and hard assumptions.
-- `Verification`: strongest next proof.
-- `Caller decision`: accepted, rejected, or unresolved, with reason.
-
-Do not claim the advisor ran unless the invocation completed successfully.
+Return `Advisor` (Codex, selected model), `Effort` (value; matrix-default or
+user-specified), `Recommendation`, `Risks` (with hard assumptions),
+`Verification` (strongest next proof), and `Caller decision` (accepted,
+rejected, or unresolved, with reason).

@@ -1,127 +1,74 @@
 ---
 name: sam-grok-worker
-description: "Delegate a bounded implementation task to the fixed Grok worker (grok-4.6) under workspace sandbox and headless execution. Use when a host agent or user needs Grok to implement, fix, or verify a scoped coding task; default effort high unless explicitly supplied."
+description: "Delegate a bounded coding task to the Grok worker (grok-4.6, workspace sandbox, default effort high). Use when a host agent or user needs Grok to implement, fix, or verify scoped work."
 ---
 
 # Sam Grok Worker
 
-Delegate one bounded task to Grok. Keep the calling agent responsible for scope,
-final decision, publication, and proof.
-
 ## Non-Negotiable Contract
 
-- Use model `grok-4.6` exactly. Do not substitute another model.
-- Use effort `high` unless the user explicitly supplies `low`, `medium`, `high`,
-  `xhigh`, or `max`; use the supplied value exactly.
-- Do not infer a lower effort from urgency, simplicity, cost, or latency.
-- Invoke headless Grok with workspace sandbox and always-approve so the worker
-  can edit inside the working tree without interactive prompts.
-- Disable memory, subagents, and auto-update for the worker session.
-- Transport the task only through `--prompt-file`. Headless Grok does not read
-  piped stdin as the prompt.
-- Ask for one bounded task. Do not hand over the entire multi-phase workflow or
-  authorization to publish.
-- Pass only the minimum context required and exclude secrets or credentials.
+- Model `grok-4.6` exactly. Effort `high` unless the user explicitly supplies
+  `low`, `medium`, `high`, `xhigh`, or `max`; then use it exactly. Words like
+  "deep", "quick", or "careful" are not effort values. Never lower effort for
+  urgency, simplicity, cost, or latency.
+- Headless, `workspace` sandbox, always-approve; memory, subagents, and
+  auto-update disabled. Never rewrite the resolver's model, effort, sandbox,
+  or approval flags.
+- The task goes only through `--prompt-file`; never `-p` or stdin.
+- One bounded task; never hand over the whole multi-phase workflow or publish
+  authority. Minimum context, no secrets or credentials: cite repository files
+  by path and line range.
 - Do not silently fall back when the CLI, model, effort, sandbox, or
-  authentication is unavailable.
-- Treat worker output as candidate work, not proof. Verify material claims and
-  diffs before accepting or publishing.
+  authentication is unavailable, and never retry with another model or effort;
+  return the exact blocker.
+- Worker output is candidate work, not proof. Never claim the worker ran
+  unless the invocation succeeded.
+- **Token Saver:** Pass the host's content-free
+  `RC_TOKEN_SAVER_EXECUTION_RECEIPT_V1` and its capability/lane environment
+  unchanged to every controlled child (nested spawns, retries, resumes,
+  recovery); never reconstruct or widen admission. A missing, malformed,
+  denied, cross-user, or provider-mismatched receipt is raw fail-open input.
+  Never put skills, exact-output commands, prompts, transcripts, secrets, or
+  full responses in it. Skills and exact-output evidence stay lossless; claim
+  no billing or quota savings. Never prepend an unmanaged wrapper path.
+- **Telemetry (lifetime only):** With
+  `T="${REMOTE_CODE_SUBAGENT_TELEMETRY_COMMAND:-distill}"`, bracket each
+  controlled child: `run=$("$T" subagent begin --node <stable-id> </dev/null)`
+  … `"$T" subagent end --run-id "$run" --status completed|failed|cancelled </dev/null`;
+  keep the run id across retries. If the run's first `begin` fails, record one
+  Subagents proof gap and skip brackets for the rest of the run. Telemetry
+  never invents a Done row or receives skill bodies or exact output. Bracket
+  the worker only when it is a controlled nested task.
 
-## Token Saver inheritance
+## Procedure
 
-If `RC_TOKEN_SAVER_EXECUTION_RECEIPT_V1` is present, preserve it and the
-host-provided `RC_TOKEN_SAVER_*` capability/lane variables in every child
-process you start. Do not derive a new admission decision, enable a disabled
-lane, prepend an unmanaged wrapper path, or copy content into the receipt.
-Malformed/denied/cross-user/provider-mismatched receipts remain raw. Skills,
-exact-output commands, and provider responses must stay complete; Token Saver
-is an optimization seam, not permission to truncate output.
-
-When this worker is a controlled nested task, bracket the real worker lifetime
-with the provider-neutral telemetry bridge, preserving the returned run id:
-
-```bash
-telemetry_command="${REMOTE_CODE_SUBAGENT_TELEMETRY_COMMAND:-distill}"
-child_run="$("$telemetry_command" subagent begin --node '<stable-worker-node-id>')"
-# run the bounded worker
-"$telemetry_command" subagent end --run-id "$child_run" --status completed
-```
-
-Use `failed` or `cancelled` on the corresponding terminal path. If the bridge
-is unavailable, continue the task raw and report the missing Subagents proof;
-never fabricate a receipt or mark an unobserved child done.
-
-## 1. Freeze the Worker Request
-
-Record:
-
-- Exact task goal and acceptance criteria.
-- In-scope paths, commands, and surfaces.
-- Out-of-scope and no-go surfaces (publish, push, remote comments, secrets).
-- Relevant facts, files, and evidence already known.
-- Desired return: summary of changes, verification run, residual risks.
-
-If the request contains an explicit effort, preserve it. Otherwise select `high`.
-Do not treat words such as “deep”, “quick”, or “careful” as effort values.
-
-## 2. Materialize the Prompt File
-
-Write the full worker prompt to a temporary absolute path owned by the caller.
-Do not put the prompt in process argv via `-p`.
-
-Require the prompt to say:
-
-- Act only as a worker for this bounded task.
-- Stay inside the frozen scope and no-go list.
-- Do not publish, push, open remote proposals, send messages, or perform other
-  external writes unless the frozen request explicitly authorizes that action.
-- Prefer the smallest safe change that satisfies acceptance criteria.
-- Return: what changed, how it was verified, residual risks, and blockers.
-- Separate completed work from unverified claims.
-
-## 3. Resolve the Invocation
-
-Run the deterministic resolver before invoking the worker:
-
-```bash
-SAM_GROK_WORKER_DIR="<absolute directory containing this SKILL.md>"
-python3 "$SAM_GROK_WORKER_DIR/scripts/resolve_worker.py" --prompt-file /abs/path/prompt.txt
-python3 "$SAM_GROK_WORKER_DIR/scripts/resolve_worker.py" --prompt-file /abs/path/prompt.txt --effort high
-```
-
-Use the first form when effort is absent. Use the second form with the user's
-exact effort when supplied. The resolver returns an argv array fixed to Grok,
-`grok-4.6`, the selected effort, workspace sandbox, always-approve, no-memory,
-no-subagents, JSON output, and the absolute prompt file.
-
-## 4. Invoke Safely
-
-Execute the returned argv directly without a shell. Do not rewrite model,
-effort, sandbox, or approval flags. Do not swap `--prompt-file` for `-p` or
-stdin.
-
-Wait for completion and parse the JSON `text` field as the worker report. If
-invocation fails, return the exact blocker and do not retry with another model
-or effort. Delete the temporary prompt file after the run when it is safe to do
-so.
-
-## 5. Reconcile
-
-Inspect the working tree and any verification the worker claims. Reject
-unsupported claims, scope expansion, invented evidence, and unauthorized
-external writes. Resolve disagreement with direct proof or present the tradeoff
-to the user; do not defer blindly.
+1. Write the prompt to a caller-owned absolute temporary path: goal and
+   acceptance criteria; in-scope paths, commands, and surfaces; out-of-scope
+   and no-go surfaces (publish, push, remote comments, secrets); known facts,
+   files, and evidence; and:
+   - Act only as a worker for this bounded task; stay inside the frozen scope
+     and no-go list.
+   - Do not publish, push, open remote proposals, send messages, or perform
+     other external writes unless the frozen request explicitly authorizes it.
+   - Make the smallest safe change that meets the acceptance criteria.
+   - Report in at most 250 words: files changed, commands run with pass/fail,
+     residual risks, and blockers; separate completed work from unverified
+     claims; no code excerpts.
+2. Run `python3 -B <abs skill dir>/scripts/resolve_worker.py --prompt-file <abs prompt path> [--effort <user value>] --run`.
+   It runs the fixed argv without a shell and prints one status line plus only
+   the `text` report; a nonzero exit is the blocker. Without `--run` it prints
+   only the argv: run it without a shell and read only the JSON `text`. Delete
+   a remaining prompt file when safe.
+3. Reconcile before accepting or publishing: inspect the working tree with
+   `git status --short` (includes untracked files) and `git diff --stat`, then
+   targeted diffs and any verification the worker claims. Reject unsupported
+   claims, scope expansion, invented evidence, and unauthorized external
+   writes. Settle disagreement with direct proof or present the tradeoff to
+   the user; never defer blindly.
 
 ## Output
 
-Return:
-
-- `Worker`: Grok `grok-4.6`.
-- `Effort`: selected effort and whether it was defaulted or user-specified.
-- `Summary`: concise report of work performed.
-- `Changes`: files or behaviors touched, if any.
-- `Verification`: proofs run and their results.
-- `Risks`: residual risks, hard assumptions, and blockers.
-- `Caller decision`: accepted, rejected, or unresolved, with reason.
-
-Do not claim the worker ran unless the invocation completed successfully.
+Return `Worker` (Grok `grok-4.6`), `Effort` (value; defaulted or
+user-specified), `Summary`, `Changes` (files, behaviors), `Verification`
+(proofs and results), `Risks` (residual risks, hard assumptions, blockers),
+and `Caller decision` (accepted, rejected, or unresolved, with reason).

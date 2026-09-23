@@ -173,31 +173,70 @@ def validate(manifest: dict[str, Any], report: dict[str, Any]) -> list[str]:
         local_file = Path(path)
         media = artifact.get("media", {})
         metadata = media.get("metadata", {})
-        valid = True
-        valid &= path.lower().endswith(".mp4")
-        valid &= local_file.is_file() and local_file.stat().st_size > 0
-        if local_file.is_file():
-            with local_file.open("rb") as source:
-                valid &= b"ftyp" in source.read(64)
-            valid &= file_digest(local_file) == media.get("sha256")
-        valid &= media.get("mime_type") == "video/mp4"
-        valid &= media.get("conversion_status") == "PASS"
-        valid &= bool(re.fullmatch(r"[0-9a-f]{64}", str(media.get("sha256", ""))))
-        valid &= metadata.get("has_video") is True
-        valid &= (
-            isinstance(metadata.get("duration_seconds"), (int, float))
-            and metadata.get("duration_seconds", 0) > 0
-        )
-        valid &= isinstance(metadata.get("width"), int) and metadata.get("width", 0) > 0
-        valid &= (
-            isinstance(metadata.get("height"), int) and metadata.get("height", 0) > 0
-        )
-        valid &= artifact.get("playback_verified") is True
         privacy = artifact.get("privacy_review", {})
         contact = artifact.get("contact_sheet_review", {})
-        valid &= privacy.get("status") == "PASS" and bool(privacy.get("evidence"))
-        valid &= contact.get("status") == "PASS" and bool(contact.get("evidence"))
-        need(valid, f"{artifact_id} has invalid or unverified MP4 evidence")
+        # Same conditions as before; each failure is named so the report can be
+        # patched from the error line alone.
+        checks = [
+            (path.lower().endswith(".mp4"), "path must end in .mp4"),
+            (
+                local_file.is_file() and local_file.stat().st_size > 0,
+                "file is missing or empty",
+            ),
+        ]
+        if local_file.is_file():
+            with local_file.open("rb") as source:
+                checks.append((b"ftyp" in source.read(64), "file lacks an MP4 ftyp box"))
+            checks.append(
+                (
+                    file_digest(local_file) == media.get("sha256"),
+                    "media.sha256 does not match the file",
+                )
+            )
+        checks += [
+            (media.get("mime_type") == "video/mp4", "media.mime_type must be video/mp4"),
+            (
+                media.get("conversion_status") == "PASS",
+                "media.conversion_status must be PASS",
+            ),
+            (
+                bool(re.fullmatch(r"[0-9a-f]{64}", str(media.get("sha256", "")))),
+                "media.sha256 must be 64 lowercase hex",
+            ),
+            (metadata.get("has_video") is True, "metadata.has_video must be true"),
+            (
+                isinstance(metadata.get("duration_seconds"), (int, float))
+                and metadata.get("duration_seconds", 0) > 0,
+                "metadata.duration_seconds must be > 0",
+            ),
+            (
+                isinstance(metadata.get("width"), int) and metadata.get("width", 0) > 0,
+                "metadata.width must be a positive integer",
+            ),
+            (
+                isinstance(metadata.get("height"), int)
+                and metadata.get("height", 0) > 0,
+                "metadata.height must be a positive integer",
+            ),
+            (
+                artifact.get("playback_verified") is True,
+                "playback_verified must be true",
+            ),
+            (
+                privacy.get("status") == "PASS" and bool(privacy.get("evidence")),
+                "privacy_review must be PASS with evidence",
+            ),
+            (
+                contact.get("status") == "PASS" and bool(contact.get("evidence")),
+                "contact_sheet_review must be PASS with evidence",
+            ),
+        ]
+        failed = [label for ok, label in checks if not ok]
+        valid = not failed
+        need(
+            valid,
+            f"{artifact_id} has invalid or unverified MP4 evidence: " + "; ".join(failed),
+        )
         invalid_media = invalid_media or not valid
         if status == "UPLOADED":
             uploaded = True
@@ -227,6 +266,11 @@ def validate(manifest: dict[str, Any], report: dict[str, Any]) -> list[str]:
     need(
         bool(environment.get("identity")) and bool(environment.get("evidence")),
         "environment identity and evidence required",
+    )
+    # An undeclared real_data would slip past the unsafe-environment check below.
+    need(
+        isinstance(environment.get("real_data"), bool),
+        "environment.real_data must be boolean",
     )
     unsafe_real_data = environment.get("real_data") is True and environment.get(
         "kind"

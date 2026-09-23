@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +19,13 @@ COMPILE = SCRIPT_DIR / "compile_prompt.py"
 VALIDATE = SCRIPT_DIR / "validate_gauntlet.py"
 SUITE = REPO_ROOT / "scripts" / "validate_skill_suite.py"
 
-from gauntlet_core import compile_prompt, detect_host, is_compound_bar, validate_report
+from gauntlet_core import (
+    build_report,
+    compile_prompt,
+    detect_host,
+    is_compound_bar,
+    validate_report,
+)
 
 CLEAR_KEYS = (
     "CLAUDECODE",
@@ -317,18 +324,192 @@ def test_skill_returns_prompt_and_does_not_start() -> None:
         raise AssertionError("skill must reject a compound bar")
 
 
+def compile_cli(env: dict[str, str], *extra: str, bar: str = "Nike current running campaign page") -> subprocess.CompletedProcess[str]:
+    return run(
+        [
+            sys.executable,
+            "-B",
+            str(COMPILE),
+            "--host",
+            "grok",
+            "--goal",
+            "a landing page for a running brand, athletic, green and dark",
+            "--bar-name",
+            bar,
+            "--bar-locator",
+            "https://www.nike.com/running",
+            "--fetch-method",
+            "screenshot",
+            "--kind",
+            "visual",
+            *extra,
+        ],
+        env,
+    )
+
+
+def test_blocked_reports_validate() -> None:
+    """Why: a BLOCKED return must validate honestly, or agents fabricate a host, bar, or prompt."""
+    unknown = build_report(
+        host="grok",
+        goal="a pricing page",
+        bar_name="Stripe pricing page",
+        bar_locator="https://stripe.com/pricing",
+        fetch_method="screenshot",
+        kind="visual",
+        environ={},
+    )
+    if unknown["decision"]["result"] != "BLOCKED" or unknown["prompt"] != "":
+        raise AssertionError(f"UNKNOWN host must block with no prompt: {unknown}")
+    if not unknown["decision"]["remaining"][0].startswith("host_unknown"):
+        raise AssertionError(f"host_unknown gap missing: {unknown['decision']}")
+    # Why: under a parent the gap lands in the parent's open items, and a child must not ask.
+    if "ask" in unknown["decision"]["remaining"][0].lower():
+        raise AssertionError(f"host gap tells a child to ask: {unknown['decision']}")
+    errors = validate_report(unknown)
+    if errors:
+        raise AssertionError(f"host_unknown BLOCKED report rejected: {errors}")
+
+    vague = build_report(
+        host="grok",
+        goal="a pricing page",
+        bar_name="award-winning SaaS sites",
+        bar_locator="saas sites",
+        fetch_method="screenshot",
+        kind="visual",
+        environ={"GROK_AGENT": "1"},
+    )
+    codes = [item.split(":", 1)[0] for item in vague["decision"]["remaining"]]
+    if vague["decision"]["result"] != "BLOCKED" or "vague_bar" not in codes:
+        raise AssertionError(f"vague bar must block with vague_bar: {vague['decision']}")
+    errors = validate_report(vague)
+    if errors:
+        raise AssertionError(f"vague_bar BLOCKED report rejected: {errors}")
+
+
+def test_blocked_and_ready_stay_fail_closed() -> None:
+    """Why: relaxing BLOCKED must not let a gapless block, a blocked prompt, or a guessed host through."""
+    empty_gap = build_report(
+        host="grok",
+        goal="a pricing page",
+        bar_name="Stripe pricing page",
+        bar_locator="https://stripe.com/pricing",
+        fetch_method="screenshot",
+        kind="visual",
+        environ={},
+    )
+    empty_gap["decision"]["remaining"] = []
+    if not any("concrete remaining" in item for item in validate_report(empty_gap)):
+        raise AssertionError("BLOCKED without a gap was accepted")
+
+    leaked = prompt_only_report("grok")
+    leaked["decision"]["result"] = "BLOCKED"
+    leaked["decision"]["remaining"] = ["vague_bar: example"]
+    if not any("empty prompt" in item for item in validate_report(leaked)):
+        raise AssertionError("BLOCKED report carrying a paste-ready prompt was accepted")
+
+    guessed = prompt_only_report("grok")
+    guessed["host"] = {"key": None, "status": "UNKNOWN", "detected_from": "none"}
+    if not any("DETECTED or OVERRIDE" in item for item in validate_report(guessed)):
+        raise AssertionError("PROMPT_READY with an UNKNOWN host was accepted")
+
+    vague = prompt_only_report("grok")
+    vague["bar"]["name"] = "award-winning SaaS sites"
+    if not any("vague" in item for item in validate_report(vague)):
+        raise AssertionError("PROMPT_READY with a vague bar was accepted")
+
+
+def test_compile_cli_self_validates_report() -> None:
+    """Why: the compiler owns the report, so no hand-copied prompt can drift from what was checked."""
+    env = clean_env()
+    env["GROK_AGENT"] = "1"
+    with tempfile.TemporaryDirectory(prefix="sam-gauntlet-") as temporary:
+        saved = Path(temporary) / "report.json"
+        result = compile_cli(env, "--report", str(saved))
+        if result.returncode != 0:
+            raise AssertionError(f"compile failed: {result.stderr}")
+        lines = result.stdout.strip().splitlines()
+        if lines[-1] != "VALID PROMPT_READY host=grok (DETECTED)":
+            raise AssertionError(f"compile status line wrong: {lines[-1]}")
+        if "/workflows" not in result.stdout:
+            raise AssertionError("compile did not print the grok prompt")
+        check = run([sys.executable, "-B", str(VALIDATE), str(saved)], clean_env())
+        if check.returncode != 0 or check.stdout.strip() != "VALID PROMPT_READY":
+            raise AssertionError(f"saved report invalid: {check.stdout}{check.stderr}")
+
+
+def test_compile_cli_binds_host_from_env() -> None:
+    """Why: --host is a claim; env detection decides, and only a user answer binds an UNKNOWN host."""
+    mismatch = clean_env()
+    mismatch["CLAUDECODE"] = "1"
+    result = compile_cli(mismatch)
+    if result.returncode == 0 or "host_mismatch" not in result.stderr:
+        raise AssertionError(f"--host disagreeing with env compiled: {result.stdout}{result.stderr}")
+    if "/workflows" in result.stdout:
+        raise AssertionError("blocked compile printed a prompt")
+
+    with tempfile.TemporaryDirectory(prefix="sam-gauntlet-") as temporary:
+        blocked = Path(temporary) / "blocked.json"
+        result = compile_cli(clean_env(), "--report", str(blocked))
+        if result.returncode == 0 or "host_unknown" not in result.stdout:
+            raise AssertionError(f"UNKNOWN host compiled: {result.stdout}{result.stderr}")
+        check = run([sys.executable, "-B", str(VALIDATE), str(blocked)], clean_env())
+        if check.returncode != 0 or check.stdout.strip() != "VALID BLOCKED":
+            raise AssertionError(f"BLOCKED report invalid: {check.stdout}{check.stderr}")
+
+        answered = Path(temporary) / "answered.json"
+        result = compile_cli(clean_env(), "--user-host", "--report", str(answered))
+        if result.returncode != 0:
+            raise AssertionError(f"user-bound host failed: {result.stderr}")
+        host = json.loads(answered.read_text(encoding="utf-8"))["host"]
+        if host != {"key": "grok", "status": "OVERRIDE", "detected_from": "user:grok"}:
+            raise AssertionError(f"user-bound host recorded wrong: {host}")
+
+
+def test_compile_cli_refuses_report_inside_repo() -> None:
+    """Why: temporary reports stay outside the repository; a typed rule alone let one land in it."""
+    env = clean_env()
+    env["GROK_AGENT"] = "1"
+    with tempfile.TemporaryDirectory(prefix="sam-gauntlet-") as temporary:
+        repo = Path(temporary)
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        inside = repo / "report.json"
+        command = [sys.executable, "-B", str(COMPILE), "--host", "grok", "--goal", "a landing page",
+                   "--bar-name", "Nike current running campaign page", "--bar-locator",
+                   "https://www.nike.com/running", "--fetch-method", "screenshot", "--kind", "visual",
+                   "--report", str(inside)]
+        result = subprocess.run(command, cwd=repo, env=env, text=True, capture_output=True, check=False)
+        if result.returncode != 2 or "outside the repository" not in result.stderr or inside.exists():
+            raise AssertionError(f"report inside the repo was written: {result.returncode} {result.stderr}")
+        # Why: a caller whose cwd is outside the repo must not land a report in it either.
+        with tempfile.TemporaryDirectory(prefix="sam-gauntlet-cwd-") as outside:
+            result = subprocess.run(command, cwd=outside, env=env, text=True, capture_output=True, check=False)
+        if result.returncode != 2 or "outside the repository" not in result.stderr or inside.exists():
+            raise AssertionError(f"report path inside a repo was written from outside it: {result.returncode} {result.stderr}")
+
+
+def test_compile_cli_reports_unwritable_report_path() -> None:
+    """Why: a bad --report path must fail as one ERROR line with nothing printed as VALID, not a traceback."""
+    env = clean_env()
+    env["GROK_AGENT"] = "1"
+    with tempfile.TemporaryDirectory(prefix="sam-gauntlet-") as temporary:
+        missing = Path(temporary) / "nope" / "report.json"
+        result = compile_cli(env, "--report", str(missing))
+        if result.returncode != 2 or "ERROR: cannot write --report" not in result.stderr:
+            raise AssertionError(f"unwritable report path not reported: {result.returncode} {result.stderr}")
+        if "Traceback" in result.stderr or "VALID" in result.stdout or missing.exists():
+            raise AssertionError(f"unwritable report path leaked output: {result.stdout}{result.stderr}")
+
+
 def test_cli_validate_and_suite_accept_package() -> None:
     """Why: this package must stay valid even if a sibling skill is dirty."""
     report = prompt_only_report("grok")
-    path = SCRIPT_DIR / "_tmp_report.json"
-    try:
+    with tempfile.TemporaryDirectory(prefix="sam-gauntlet-") as temporary:
+        path = Path(temporary) / "report.json"
         path.write_text(json.dumps(report), encoding="utf-8")
         result = run([sys.executable, "-B", str(VALIDATE), str(path)], clean_env())
         if result.returncode != 0:
             raise AssertionError(f"validator cli failed: {result.stderr}")
-    finally:
-        if path.exists():
-            path.unlink()
     sys.path.insert(0, str(SUITE.parent))
     import validate_skill_suite as suite_mod
 
@@ -355,6 +536,12 @@ def main() -> int:
         test_compile_rejects_compound_bar,
         test_report_validator_accepts_prompt_only_and_rejects_run,
         test_unfetched_bar_cannot_be_ready,
+        test_blocked_reports_validate,
+        test_blocked_and_ready_stay_fail_closed,
+        test_compile_cli_self_validates_report,
+        test_compile_cli_binds_host_from_env,
+        test_compile_cli_refuses_report_inside_repo,
+        test_compile_cli_reports_unwritable_report_path,
         test_skill_returns_prompt_and_does_not_start,
         test_cli_validate_and_suite_accept_package,
     ]

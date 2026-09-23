@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -32,8 +31,7 @@ def main() -> int:
             print(f"ERROR: {error}", file=sys.stderr)
         print(f"INVALID: {len(errors)} error(s)", file=sys.stderr)
         return 1
-    print("VALID")
-    print(json.dumps({"result": report["decision"]["result"]}, indent=2))
+    print(f"VALID {report['decision']['result']}")
     return 0
 
 

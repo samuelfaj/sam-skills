@@ -1,56 +1,40 @@
 # Simplification Report Contract
 
-Write a temporary JSON object with these fields before rendering the response.
+`--scaffold` derives `schema_version`, `workflow`, `target`, and
+`file_coverage` paths; never hand-edit them. "Blocks" means
+completion is invalid. PROVEN or PASS needs PASS evidence; every other
+scenario, behavior-proof, and gate status needs a concrete reason. A HEAD
+change, or a fingerprint change without a file delta, blocks.
 
-## Common Fields
+| Field | Shape and rules |
+|---|---|
+| `intent` | goal, owner_boundary: text. must_not_change, invariants: non-empty lists. user_visible: bool; true blocks unless behavior_proof is PROVEN. |
+| `scope` | initial_owned_paths, current_owned_paths: repo-relative lists; any changed path outside current_owned_paths blocks, pre-existing dirty work included. cycle: correction cycles so far, from 1; add 1 per in-run correction cycle (`--from` adds 1 itself); above 2 blocks unless new_evidence is true. scope_expansion_approved: bool, true only when the user or parent authorized a change to the frozen goal or contract. |
+| `file_coverage` | [{path, reason}]: each delta path once, non-empty reason. |
+| `evidence` | Non-empty [{id, status, classification, detail}], unique ids; enums per the evidence policy; FAIL + INTRODUCED blocks. Optional reused_from (absolute path of a completed simplification/bugfix/feature report whose validator passed, ending at this baseline's head, fingerprint, and paths) + reused_id (a PASS entry there, not itself reused, cited as behavior, scenario, or gate proof), status PASS; after an edit, only a baseline record (never proof). |
+| `scenarios` | Preserved contracts: non-empty [{behavior, status, evidence_ids, reason}]; statuses per the evidence policy; MISSING_REQUIRED blocks. |
+| `behavior_proof` | {status, evidence_ids, reason}; statuses per the evidence policy. Any delta needs PROVEN, whatever the decision. |
+| `gates` | Non-empty [{name, mandatory (bool), status, evidence_ids, reason}]; PASS/FAIL/NOT_RUN/NOT_APPLICABLE. Mandatory non-PASS blocks. |
+| `external_actions` | Normally empty. [{kind, requested (bool), status, evidence_ids}]; NOT_REQUESTED/DRAFTED/PUBLISHED/BLOCKED. PUBLISHED needs requested true and PASS evidence; requested false allows only NOT_REQUESTED/DRAFTED. |
+| `candidates` | Non-empty [{opportunity, status, complexity_removed, evidence_ids, reason}]. APPLIED: complexity_removed, PASS evidence_ids. SKIPPED: reason. BLOCKED blocks. |
+| `decision` | {result, remaining}. Completions SIMPLEST_DEFENSIBLE (needs an applied candidate and a delta) and NO_CHANGE (no edit justified; forbids both) need nothing blocking and empty remaining. BLOCKED (missing proof, access, authorization, or scope expansion) needs >= 1 concrete remaining item. |
 
-- `schema_version`: `1`.
-- `workflow`: `simplification`.
-- `target`: `baseline_fingerprint`, `current_fingerprint`,
-  `baseline_head_sha`, `current_head_sha`, and exact `paths` from both bundles.
-- `intent`: non-empty `goal`, `must_not_change`, `invariants`,
-  `owner_boundary`, and boolean `user_visible`.
-- `scope`: `initial_owned_paths`, `current_owned_paths`, positive `cycle`,
-  boolean `scope_expansion_approved`, and optional `new_evidence`.
-- `file_coverage`: one `{path, reason}` entry per post-baseline changed path.
-- `evidence`: unique `{id, status, classification, detail}` entries.
-- `scenarios`: preserved contracts as `{behavior, status, evidence_ids, reason}`.
-- `behavior_proof`: `status`, `evidence_ids`, and `reason` when not proven.
-- `gates`: `{name, mandatory, status, evidence_ids, reason}` entries.
-- `external_actions`: normally empty; publication requires explicit request and
-  passing evidence.
+Fix from the validator's error lines and patch the report in place; do not read
+validator source or rewrite the whole report.
 
-## Simplification Fields
+## Return
 
-- `candidates`: entries with `opportunity` and one status:
-  - `APPLIED` with `complexity_removed` and passing `evidence_ids`.
-  - `SKIPPED` with `reason`.
-  - `BLOCKED` with `reason`.
-- `decision`: `result` and `remaining`. Use
-  `SIMPLEST_DEFENSIBLE|NO_CHANGE|BLOCKED`.
+Child mode, exactly:
 
-## Consistency Rules
-
-- Baseline and current `head_sha` must match. Fingerprints may differ only when
-  the captured file ledger has a corresponding delta.
-- `SIMPLEST_DEFENSIBLE` requires at least one applied candidate, a real scope
-  delta, passing behavior proof, all mandatory gates passed, preserved dirty
-  work, and no blocked required candidate.
-- `NO_CHANGE` requires no applied candidate and no scope delta.
-- `BLOCKED` requires concrete remaining work.
-- Every scope delta path must be owned and covered exactly once.
-- Keep the report outside the repository and validate it with:
-
-```bash
-python3 scripts/validate_report.py \
-  --baseline baseline.json --current current.json report.json
+```
+RESULT sam-simplify-task <decision.result>
+report: <absolute report path>
+validator: <exact last line of the validator output>
+head: <target.current_head_sha> fingerprint: <target.current_fingerprint>
+open: <count of decision.remaining>
+- <one line per remaining item, max 10>
 ```
 
-## Rendered Response
-
-Return decision, candidates applied/skipped/blocked, exact complexity removed,
-behavior preserved, validations, files changed, residual risk, and next action.
-
-Scope authorization records changes to the agreed goal or contracts. File and
-line counts are evidence, not an automatic approval threshold. Every changed
-path must still be in scope and accounted for.
+Standalone: at most 15 lines (decision, candidates by status with complexity
+removed, preserved behavior and validations, changed files, residual risk, next
+action) plus the report path; never repeat the JSON report or claim unrun proof.

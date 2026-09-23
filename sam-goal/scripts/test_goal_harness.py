@@ -234,6 +234,36 @@ def test_scaffold(root: Path) -> None:
     expect("scaffold plan", (delegated / "PLAN.md").is_file())
     expect("scaffold leaf", (delegated / "gates" / "leaf-1.1.md").is_file())
 
+    # Why: every extra worker brief used to be hand-written; --workers must emit one
+    # brief and one pending ledger row per worker, each carrying the worker ladder,
+    # the never-skip line, and the cheap exit-code-plus-tail report-back.
+    crew = root / "crew"
+    result = run_script(
+        "scaffold_goal_dir.py",
+        ["--out", str(crew), "--mode", "delegated", "--workers", "3", "--json"],
+        root,
+    )
+    expect("scaffold workers", result.returncode == 0, result.stderr)
+    for n in (1, 2, 3):
+        brief = (crew / "briefs" / f"worker-{n}.md").read_text(encoding="utf-8")
+        expect(f"brief {n} names worker", f"worker-{n}" in brief, brief[:80])
+        expect(f"brief {n} ladder", "Standard library." in brief and "Never add a new one unless Scope names it." in brief)
+        # Why: the full ladder is not sent to workers, so its quality guard and ceiling
+        # rule must travel in the brief or a worker may ship the flimsier algorithm.
+        expect(f"brief {n} quality guard", "not the flimsier algorithm" in brief and "correct on edge cases" in brief)
+        expect(f"brief {n} ceiling comment", "`sam-goal:` comment" in brief)
+        expect(f"brief {n} never skip", "Never skip: trust-boundary validation" in brief)
+        expect(f"brief {n} tail only", "exit code and the deciding tail" in brief)
+        expect(f"brief {n} no full output", "The output of your Verify commands" not in brief)
+    ledger = (crew / "DELEGATION.md").read_text(encoding="utf-8")
+    expect("ledger rows per worker", all(f"| worker-{n} |" in ledger for n in (1, 2, 3)), ledger)
+    code, _ = ledger_mod.inspect(crew / "DELEGATION.md")
+    expect("scaffolded ledger fails closed", code == 1)
+    solo_workers = run_script(
+        "scaffold_goal_dir.py", ["--out", str(root / "bad"), "--workers", "2"], root
+    )
+    expect("workers need delegated", solo_workers.returncode == 2, solo_workers.stderr)
+
 
 def test_gates(root: Path) -> None:
     empty = run_script("check_gates.py", [], root)
@@ -302,6 +332,159 @@ def test_gates(root: Path) -> None:
     result = run_script("check_gates.py", ["--status", str(goal_root)], target)
     expect("gates goal dir", result.returncode == 0, result.stdout)
     expect("gates both files", "GATES.md" in result.stdout and "leaf.md" in result.stdout, result.stdout)
+
+
+def test_recheck(root: Path) -> None:
+    """Why: plain runs skip met gates, so a cut after the check could leave a stale
+    box; --recheck must re-measure every CHECK and uncheck what now fails."""
+    target = root / "recheck"
+    path = write(
+        target / "GATES.md",
+        "# Gates: recheck\n\n"
+        "- [x] G1: still greets\n"
+        "  CHECK: printf 'now-broken\\n'\n"
+        "  EXPECT: hello-ok\n"
+        "  EVIDENCE: hello-ok\n\n"
+        "- [x] G2: count\n"
+        "  CHECK: printf '4/4 passed\\n'\n"
+        "  EXPECT: 4/4 passed\n"
+        "  EVIDENCE: 3/4 passed\n\n"
+        "- [x] G3: manual copy review\n"
+        "  EVIDENCE: docs/copy.md:12\n",
+    )
+    stale = run_script("check_gates.py", [str(path)], target)
+    expect("plain run trusts met boxes", stale.returncode == 0, stale.stdout)
+    expect("plain run ran nothing", "FAIL" not in stale.stdout and "PASS" not in stale.stdout, stale.stdout)
+
+    result = run_script("check_gates.py", ["--recheck", str(path)], target)
+    text = path.read_text(encoding="utf-8")
+    expect("recheck fails broken gate", result.returncode == 1, result.stdout)
+    expect("recheck names failure", "FAIL G1" in result.stdout, result.stdout)
+    expect("recheck unchecks", "- [ ] G1:" in text, text)
+    expect("recheck resets evidence", "EVIDENCE: pending" in text, text)
+    expect("recheck re-measures number", "EVIDENCE: 4/4 passed" in text, text)
+    expect("recheck flags manual", "MANUAL G3" in result.stdout, result.stdout)
+    status = run_script("check_gates.py", ["--status", str(path)], target)
+    expect("recheck result persists", "UNMET G1 (unchecked)" in status.stdout, status.stdout)
+
+    both = run_script("check_gates.py", ["--status", "--recheck", str(path)], target)
+    expect("status and recheck exclusive", both.returncode == 2, both.stderr)
+
+
+def agent_fields(**overrides: Any) -> dict[str, Any]:
+    fields: dict[str, Any] = {
+        "goal": "Add a native date field",
+        "action": "execute",
+        "intensity": "full",
+        "mode": "solo",
+        "tree_depth": 2,
+        "units": {"counted": 1, "gate": "closed", "reason": "single-agent: 1 unit, below threshold"},
+        "ladder": {
+            "rung": 4,
+            "rationale": "native date input covers the request",
+            "skipped": [],
+            "new_dependencies": [],
+            "authorized_dependencies": [],
+        },
+        "overbuild_review": {"lean_already": True, "net_lines": 0, "findings": []},
+        "decision": {"result": "COMPLETE", "remaining": []},
+    }
+    fields.update(overrides)
+    return fields
+
+
+def test_derive(root: Path) -> None:
+    """Why: counts, host, and check results copied by hand were never cross-checked;
+    --derive must take them from the files and env so a typed claim cannot pass."""
+    env = clean_env()
+    env["GROK_AGENT"] = "1"
+    met_gate = "# Gates: d\n\n- [x] G1: ok\n  CHECK: true\n  EVIDENCE: ran python3 -c pass\n"
+
+    solo = root / "derive-solo"
+    write(solo / "GATES.md", met_gate)
+    report = write(solo / "goal-report.json", json.dumps(agent_fields()))
+    result = run_script("validate_goal_report.py", ["--derive", str(report)], root, env=env)
+    expect("derive solo valid", result.returncode == 0 and "VALID" in result.stdout, result.stderr)
+    saved = json.loads(report.read_text(encoding="utf-8"))
+    expect("derive goal_dir", saved["goal_dir"] == str(solo.resolve()), saved["goal_dir"])
+    expect("derive host", saved["host"] == {"key": "grok", "status": "DETECTED", "detected_from": "env:GROK_AGENT"}, str(saved["host"]))
+    expect("derive gates", saved["gates"]["total"] == 1 and saved["gates"]["met"] == 1, str(saved["gates"]))
+    expect("derive check", saved["checks"]["gates"] == {"exit_code": 0, "summary": "ALL MET (1 met)"}, str(saved["checks"]))
+    expect("derive evidence", saved["evidence"][-1]["id"] == "gates-check", str(saved["evidence"]))
+
+    lying = root / "derive-lie"
+    write(lying / "GATES.md", met_gate + "\n- [ ] G2: still open\n  EVIDENCE: pending\n")
+    claimed = agent_fields(
+        gates={"path": str(lying / "GATES.md"), "total": 1, "met": 1, "abandoned": 0, "unmet": [], "abandoned_ids": []},
+        checks={"gates": {"exit_code": 0, "summary": "ALL MET (1 met)"}, "ledger": None},
+        evidence=[{"id": "E1", "status": "PASS", "detail": "check_gates.py: ALL MET"}],
+    )
+    report = write(lying / "goal-report.json", json.dumps(claimed))
+    result = run_script("validate_goal_report.py", ["--derive", str(report)], root, env=env)
+    expect("derive beats typed counts", result.returncode == 1, result.stdout)
+    expect("derive names open gate", "COMPLETE requires empty gates.unmet" in result.stderr, result.stderr)
+
+    override = root / "derive-override"
+    write(override / "GATES.md", met_gate)
+    pinned = agent_fields(host={"key": "codex", "status": "OVERRIDE", "detected_from": "override:codex"})
+    report = write(override / "goal-report.json", json.dumps(pinned))
+    result = run_script("validate_goal_report.py", ["--derive", str(report)], root, env=env)
+    saved = json.loads(report.read_text(encoding="utf-8"))
+    expect("derive keeps override", result.returncode == 0 and saved["host"]["key"] == "codex", result.stderr)
+    expect("derive shows env beside override", saved["host"].get("env", {}).get("key") == "grok", str(saved["host"]))
+
+    # Why: a typed OVERRIDE is the one host claim derive keeps, so it must look like a
+    # real detect_host.py --host result; a made-up source falls back to env detection.
+    forged = agent_fields(host={"key": "codex", "status": "OVERRIDE", "detected_from": "made-up"})
+    report = write(override / "goal-report.json", json.dumps(forged))
+    result = run_script("validate_goal_report.py", ["--derive", str(report)], root, env=env)
+    saved = json.loads(report.read_text(encoding="utf-8"))
+    expect("derive drops forged override", saved["host"] == {"key": "grok", "status": "DETECTED", "detected_from": "env:GROK_AGENT"}, str(saved["host"]))
+
+    # Why: counts must come from the report's own directory; a typed goal_dir pointing at
+    # a directory whose gates are all met must not let an open gate pass as COMPLETE.
+    open_dir = root / "derive-open"
+    write(open_dir / "GATES.md", "# Gates: o\n\n- [ ] G1: open\n  EVIDENCE: pending\n")
+    borrowed = agent_fields(goal_dir=str(solo))
+    report = write(open_dir / "goal-report.json", json.dumps(borrowed))
+    result = run_script("validate_goal_report.py", ["--derive", str(report)], root, env=env)
+    expect("derive rejects foreign goal_dir", result.returncode == 1 and "not the report's directory" in result.stderr, result.stdout + result.stderr)
+    expect("derive rejects before rewrite", json.loads(report.read_text(encoding="utf-8")) == borrowed)
+
+    ledger_rows = (
+        "# Delegation plan\nUnits: 2\n\n"
+        "| # | Unit | Files (mine) | Worker | Acceptance | Status |\n"
+        "|---|------|--------------|--------|------------|--------|\n"
+        "| 1 | stats | app/stats.py | worker-1 | python3 tests/run.py | verified |\n"
+        "| 2 | finance | app/finance.py | worker-2 | python3 tests/run.py | {status} |\n\n"
+        "## Evidence\n\n- Ran python3 tests/run.py -> 93 passed.\n"
+    )
+    delegated = agent_fields(
+        mode="delegated",
+        tree_depth=4,
+        units={"counted": 2, "gate": "open", "reason": "gate open: 2 units"},
+    )
+    team = root / "derive-team"
+    write(team / "GATES.md", met_gate)
+    write(team / "DELEGATION.md", ledger_rows.format(status="pending"))
+    report = write(team / "goal-report.json", json.dumps(delegated))
+    result = run_script("validate_goal_report.py", ["--derive", str(report)], root, env=env)
+    expect("derive partial ledger", result.returncode == 1, result.stdout)
+    expect("derive ledger incomplete", "delegation.complete" in result.stderr, result.stderr)
+    write(team / "DELEGATION.md", ledger_rows.format(status="verified"))
+    result = run_script("validate_goal_report.py", ["--derive", str(report)], root, env=env)
+    saved = json.loads(report.read_text(encoding="utf-8"))
+    expect("derive full ledger", result.returncode == 0, result.stderr)
+    expect("derive ledger counts", saved["delegation"]["units"] == 2 and saved["delegation"]["verified"] == 2, str(saved["delegation"]))
+
+    # Why: the ledger is analyzed only in delegated mode, so a typed solo mode beside a
+    # partial DELEGATION.md would otherwise report a partial ledger as COMPLETE.
+    hidden = root / "derive-hidden-ledger"
+    write(hidden / "GATES.md", met_gate)
+    write(hidden / "DELEGATION.md", ledger_rows.format(status="pending"))
+    report = write(hidden / "goal-report.json", json.dumps(agent_fields()))
+    result = run_script("validate_goal_report.py", ["--derive", str(report)], root, env=env)
+    expect("derive rejects solo beside a ledger", result.returncode != 0 and "mode must be delegated" in result.stderr, result.stdout + result.stderr)
 
 
 def test_ledger(root: Path) -> None:
@@ -562,7 +745,9 @@ def main() -> int:
             root = Path(temporary)
             test_scaffold(root)
             test_gates(root)
+            test_recheck(root)
             test_ledger(root)
+            test_derive(root)
             test_report(root)
             test_host(root)
     except AssertionError as error:

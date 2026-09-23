@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Render a validated-style plan-report.json into a light-theme multi-page HTML plan pack."""
+"""Render a validated-style plan-report.json into a light-theme multi-page HTML plan pack.
+
+Visual contract (maintainers): light theme only (`color-scheme: light`), self-contained
+CSS, sticky nav linking every page in order, callout tones info|ok|warn|danger|decision.
+All planner text is HTML-escaped. An empty `chapters` list renders one compact page
+synthesized from the freeze; the synthesized chapter is never written back.
+"""
 
 from __future__ import annotations
 
@@ -619,8 +625,8 @@ def main() -> int:
     if not isinstance(chapters, list):
         chapters = []
     if not chapters:
+        # In memory only: persisting it would make later renders reuse a stale page.
         chapters = [synthesize_compact_chapter(report)]
-        report["chapters"] = chapters
 
     out_dir = Path(args.out).expanduser()
     if not out_dir.is_absolute():

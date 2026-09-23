@@ -115,6 +115,17 @@ def exercise_sensitive_content(root: Path) -> None:
     secret = run(builder_command(secret_repo, secret_base, secret_head), secret_repo)
     if secret.returncode == 0 or sentinel in secret.stdout or sentinel in secret.stderr:
         raise AssertionError("credential-like content was accepted or leaked")
+    secret_out = root / "secret-out"
+    secret_to_dir = run(
+        [*builder_command(secret_repo, secret_base, secret_head), "--out", str(secret_out)],
+        secret_repo,
+    )
+    if (
+        secret_to_dir.returncode == 0
+        or sentinel in secret_to_dir.stdout + secret_to_dir.stderr
+        or secret_out.exists()
+    ):
+        raise AssertionError("--out wrote or leaked credential-like content")
 
     private_content = "private-material-should-not-be-read"
     private_repo, private_base, private_head = content_fixture(
@@ -131,6 +142,30 @@ def exercise_sensitive_content(root: Path) -> None:
         or private_content in private.stderr
     ):
         raise AssertionError("sensitive path was accepted or its content leaked")
+
+    # An oversized patch is a final refusal (SKILL.md section 2): nothing is
+    # written and the error never suggests splitting scope to get past it.
+    oversized_out = root / "oversized-out"
+    oversized = run(
+        [
+            *builder_command(safe_repo, safe_base, safe_head),
+            "--max-patch-bytes",
+            "16",
+            "--out",
+            str(oversized_out),
+        ],
+        safe_repo,
+    )
+    if (
+        oversized.returncode == 0
+        or "rather than truncating" not in oversized.stderr
+        or "report BLOCKED" not in oversized.stderr
+        or "split" in oversized.stderr
+        or oversized_out.exists()
+    ):
+        raise AssertionError(
+            f"oversized patch was not a final BLOCKED refusal: {oversized.stderr}"
+        )
 
 
 def build_context(repo: Path, base: str, output: Path) -> dict[str, Any]:
@@ -467,6 +502,89 @@ def validate(
         )
 
 
+def exercise_out_and_body_file(
+    root: Path, repo: Path, base: str, context: dict[str, Any], clean: dict[str, Any]
+) -> None:
+    """--out keeps the exact context, prefills only mechanical report fields, and the
+    body is written once to body.md and validated from that file."""
+    out = (root / "out").resolve()
+    result = run([*builder_command(repo, base, "HEAD"), "--out", str(out)], repo)
+    if result.returncode != 0:
+        raise AssertionError(f"--out build failed: {result.stderr}")
+    if json.loads((out / "context.json").read_text(encoding="utf-8")) != context:
+        raise AssertionError("--out context.json differs from the default stdout context")
+    if (out / "patch.diff").read_bytes() != context["patch"].encode("utf-8"):
+        raise AssertionError("--out patch.diff is not the raw context patch")
+    fingerprint_line = f"fingerprint={context['context_fingerprint']}"
+    if fingerprint_line not in result.stderr or len(result.stderr.strip().splitlines()) != 1:
+        raise AssertionError("builder must print exactly one stderr summary line")
+    listed = result.stdout.split("files:\n", 1)[1].splitlines()
+    if [line.split(" ")[1] for line in listed] != [item["path"] for item in context["files"]]:
+        raise AssertionError(f"--out summary must list one line per file: {listed}")
+    if '"patch"' in result.stdout:
+        raise AssertionError("--out must print the compact summary, not the context JSON")
+    default = run(builder_command(repo, base, "HEAD"), repo)
+    if fingerprint_line not in default.stderr or json.loads(default.stdout) != context:
+        raise AssertionError("default mode must keep stdout JSON and add the stderr summary")
+
+    scaffold = json.loads((out / "report.json").read_text(encoding="utf-8"))
+    body_path = out / "body.md"
+    if (
+        scaffold["target"] != clean["target"]
+        or scaffold["remote_update"] != clean["remote_update"]
+        or [item["path"] for item in scaffold["file_coverage"]]
+        != [item["path"] for item in context["files"]]
+        or scaffold["body_file"] != str(body_path)
+    ):
+        raise AssertionError("report scaffold did not derive mechanical fields from context")
+    context_path = out / "context.json"
+    validate(context_path, scaffold, False, root)  # fail closed until filled
+
+    body_path.write_text(clean["body"], encoding="utf-8")
+    filled = copy.deepcopy(clean)
+    del filled["body"]
+    filled["body_file"] = str(body_path)
+    validate(context_path, filled, True, root)
+    rerun = run([*builder_command(repo, base, "HEAD"), "--out", str(out)], repo)
+    kept = json.loads((out / "report.json").read_text(encoding="utf-8"))
+    if rerun.returncode != 0 or "kept existing" not in rerun.stdout or kept != scaffold:
+        raise AssertionError("--out must never overwrite an existing report.json")
+    # A different change must never replace the retained files callers re-validate.
+    retained = {name: (out / name).read_bytes() for name in ("context.json", "report.json")}
+    other = run([*builder_command(repo, base, "HEAD", "merge-base"), "--out", str(out)], repo)
+    if (
+        other.returncode == 0
+        or "refusing to overwrite" not in other.stderr
+        or {name: (out / name).read_bytes() for name in retained} != retained
+    ):
+        raise AssertionError(f"--out overwrote a different retained context: {other.stderr}")
+
+    both = copy.deepcopy(filled)
+    both["body"] = clean["body"]
+    validate(context_path, both, False, root)
+    relative = copy.deepcopy(filled)
+    relative["body_file"] = "body.md"
+    validate(context_path, relative, False, root)
+    missing = copy.deepcopy(filled)
+    missing["body_file"] = str(out / "absent.md")
+    validate(context_path, missing, False, root)
+    body_path.write_text(clean["body"].replace("Service returns the corrected value.", "Changed."), encoding="utf-8")
+    validate(context_path, filled, False, root)  # claim text must stay verbatim in the file
+
+    inside = run([*builder_command(repo, base, "HEAD"), "--out", str(repo / "desc-out")], repo)
+    if inside.returncode == 0 or "outside the repository" not in inside.stderr or (repo / "desc-out").exists():
+        raise AssertionError("--out inside the repository must fail closed without writing")
+    # A differently cased spelling of the checkout on a case-insensitive filesystem
+    # is still the checkout.
+    recased = repo.parent / repo.name.swapcase()
+    if recased.exists() and os.path.samefile(recased, repo):
+        cased = run([*builder_command(repo, base, "HEAD"), "--out", str(recased / "desc-case")], repo)
+        if cased.returncode == 0 or "outside the repository" not in cased.stderr or (repo / "desc-case").exists():
+            raise AssertionError("--out inside the repository under another case must fail closed")
+    else:
+        print("test_description_harness: case-sensitive filesystem; recased --out case skipped", file=sys.stderr)
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="sam-pr-description-test-") as temp_dir:
         root = Path(temp_dir)
@@ -577,11 +695,13 @@ def main() -> int:
         )
         validate(context_path, updated, True, root)
 
+        exercise_out_and_body_file(root, repo, base, context, clean)
         exercise_git_isolation(root, repo, base, head)
         exercise_sensitive_content(root)
 
     print(
-        "PASS: base-aware context, Git isolation, secret safety, claims, coverage, placeholders, drift, and receipts"
+        "PASS: base-aware context, --out summary and scaffold, body_file, Git isolation, "
+        "secret safety, claims, coverage, placeholders, drift, and receipts"
     )
     return 0
 

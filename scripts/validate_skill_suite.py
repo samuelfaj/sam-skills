@@ -35,7 +35,41 @@ ALLOWED_SKILL_FILES = {"SKILL.md"}
 ALLOWED_RESOURCE_DIRS = {"agents", "assets", "references", "scripts"}
 # Shared implementations that must stay byte-identical across every skill that
 # ships them. Skills install standalone and cannot import across packages.
-SHARED_SCRIPTS = ("run_checked.py", "verify_receipts.py", "audit_test_diff.py")
+SHARED_SCRIPTS = (
+    "run_checked.py",
+    "verify_receipts.py",
+    "audit_test_diff.py",
+)
+# Files that must stay byte-identical only within an explicit skill set; a
+# same-named file in another skill may legitimately differ. Agents skip
+# re-reading a sibling copy, so drift here would silently change the rules.
+SHARED_POLICY_SKILLS = (
+    "sam-create-feature",
+    "sam-fix-bug",
+    "sam-refine-task",
+    "sam-simplify-task",
+)
+SHARED_FILE_GROUPS = (
+    ("references/evidence-policy.md", SHARED_POLICY_SKILLS),
+    ("references/risk-lenses.md", SHARED_POLICY_SKILLS),
+    (
+        "scripts/validate_report.py",
+        ("sam-create-feature", "sam-fix-bug", "sam-simplify-task"),
+    ),
+    (
+        "scripts/capture_scope.py",
+        SHARED_POLICY_SKILLS + ("sam-perceived-performance",),
+    ),
+    (
+        "scripts/scaffold_report.py",
+        (
+            "sam-orchestrate",
+            "sam-orchestrate-claude-grok",
+            "sam-orchestrate-codex-glmflash",
+            "sam-orchestrate-codex-grok",
+        ),
+    ),
+)
 PROVIDER_SPECIFIC_REPLACEMENTS = {
     "sam-codex-advisor": (
         (re.compile(r"\bcodex\b", re.IGNORECASE), "advisor-runtime"),
@@ -328,9 +362,16 @@ def validate_shared_scripts(root: Path, errors: list[str]) -> None:
     """Skills install standalone, so shared logic is duplicated by design.
 
     Duplication is only safe if it cannot drift: every copy must be byte-identical.
+    Only existing copies are compared, so a group needs at least two of them.
     """
-    for name in SHARED_SCRIPTS:
-        copies = sorted(root.glob(f"sam-*/scripts/{name}"))
+    checks = [
+        (f"shared script {name}", sorted(root.glob(f"sam-*/scripts/{name}")))
+        for name in SHARED_SCRIPTS
+    ]
+    for relative, skills in SHARED_FILE_GROUPS:
+        copies = [root / skill / relative for skill in skills]
+        checks.append((f"shared file {relative}", [p for p in copies if p.is_file()]))
+    for label, copies in checks:
         if len(copies) < 2:
             continue
         digests: dict[str, list[str]] = {}
@@ -343,9 +384,7 @@ def validate_shared_scripts(root: Path, errors: list[str]) -> None:
             groups = " | ".join(
                 ", ".join(paths) for paths in sorted(digests.values())
             )
-            errors.append(
-                f"shared script {name} has diverged between skills: {groups}"
-            )
+            errors.append(f"{label} has diverged between skills: {groups}")
 
 
 def validate_repository_docs(

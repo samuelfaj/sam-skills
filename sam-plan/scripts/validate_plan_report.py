@@ -34,6 +34,16 @@ RISK_FLAGS = {
     "user_requested_council",
     "material_uncertainty",
 }
+MIGRATION_FLAGS = {"data_migration", "irreversible"}
+COUNCIL_PROFILES = {"fast", "full"}
+COUNCIL_STATUSES = {
+    "TRIAGE_PASS",
+    "ESCALATE_TO_FULL",
+    "APPROVED",
+    "APPROVED_WITH_CONDITIONS",
+    "REVISE",
+    "BLOCKED",
+}
 ID_PATTERNS = {
     "evidence": re.compile(r"^E-\d{3,}$"),
     "assumptions": re.compile(r"^A-\d{3,}$"),
@@ -123,6 +133,8 @@ RISK_HEURISTICS: list[tuple[str, re.Pattern[str]]] = [
         re.compile(r"\b(compliance|hipaa|sox|audit\s+log|regulated)\b", re.I),
     ),
 ]
+# Only keyword suggestions may be dismissed; MIGRATION-derived flags stay mandatory.
+KEYWORD_FLAGS = {flag for flag, _ in RISK_HEURISTICS}
 
 
 def load_json(path: Path) -> JsonObject:
@@ -228,15 +240,13 @@ def parse_path_locator(locator: str) -> tuple[str | None, int | None]:
 
 
 def resolve_locator_path(repo_root: Path, rel: str) -> Path | None:
+    """Resolve a locator path; None when it escapes the repo (absolute paths too)."""
     candidate = Path(rel)
-    if candidate.is_absolute():
-        path = candidate
-    else:
-        path = (repo_root / rel).resolve()
-        try:
-            path.relative_to(repo_root.resolve())
-        except ValueError:
-            return None
+    path = (candidate if candidate.is_absolute() else repo_root / rel).resolve()
+    try:
+        path.relative_to(repo_root.resolve())
+    except ValueError:
+        return None
     return path
 
 
@@ -298,6 +308,13 @@ def collect_heuristic_risk_flags(report: JsonObject) -> set[str]:
         if pattern.search(text):
             suggested.add(flag)
     return suggested
+
+
+def intent_risk_flags(report: JsonObject) -> set[str]:
+    """Keyword flags hit by frozen goal/prompt_summary: user intent, never a false positive."""
+    frozen = report.get("frozen") if isinstance(report.get("frozen"), dict) else {}
+    text = f"{frozen.get('goal') or ''}\n{frozen.get('prompt_summary') or ''}"
+    return {flag for flag, pattern in RISK_HEURISTICS if pattern.search(text)}
 
 
 def validate_blocks(blocks: list[Any], label: str, errors: list[str]) -> None:
@@ -478,6 +495,58 @@ def validate_report(
                     resolved_fact_locators += 1
         elif locator is not None and not isinstance(locator, str):
             errors.append(f"evidence[{index}].locator must be text")
+
+    # Justified dismissals of keyword-heuristic risk flag suggestions.
+    evidence_by_id = {
+        item.get("id"): item for item in evidence_items if isinstance(item.get("id"), str)
+    }
+    dismissed_flags: set[str] = set()
+    intent_flags = intent_risk_flags(report)
+    for index, raw in enumerate(
+        sequence(report.get("risk_flag_dismissals", []), "risk_flag_dismissals", errors)
+    ):
+        label = f"risk_flag_dismissals[{index}]"
+        item = mapping(raw, label, errors)
+        if not item:
+            continue
+        before = len(errors)
+        flag = nonempty_text(item.get("flag"), f"{label}.flag", errors)
+        nonempty_text(item.get("reason"), f"{label}.reason", errors)
+        cited = string_list(
+            item.get("evidence_ids", []), f"{label}.evidence_ids", errors, allow_empty=False
+        )
+        if flag and flag not in KEYWORD_FLAGS:
+            errors.append(f"{label}.flag {flag} is not a dismissible keyword-heuristic flag")
+        elif flag in risk_flags:
+            errors.append(f"{label}.flag {flag} is also listed in risk_flags")
+        elif flag in MIGRATION_FLAGS and case_type == "MIGRATION":
+            errors.append(f"{label}.flag {flag} cannot be dismissed for case_type=MIGRATION")
+        elif flag in intent_flags:
+            errors.append(
+                f"{label}.flag {flag} matches frozen.goal or prompt_summary and cannot be dismissed"
+            )
+        if flag in dismissed_flags:
+            errors.append(f"risk_flag_dismissals repeats flag {flag}")
+        for evidence_id in cited:
+            cited_item = evidence_by_id.get(evidence_id)
+            if cited_item is None:
+                errors.append(f"{label}.evidence_ids unknown id {evidence_id}")
+            elif cited_item.get("classification") != "FACT" or not (
+                isinstance(cited_item.get("locator"), str) and cited_item["locator"].strip()
+            ):
+                errors.append(
+                    f"{label} requires FACT evidence with locator; {evidence_id} is not"
+                )
+            elif repo_root is not None:
+                # With a known repo the proof of absence must be a file in it.
+                rel, _ = parse_path_locator(cited_item["locator"])
+                path = resolve_locator_path(repo_root, rel) if rel else None
+                if path is None or not path.is_file():
+                    errors.append(
+                        f"{label} requires a FACT path locator under the repo; {evidence_id} is not"
+                    )
+        if len(errors) == before and flag:
+            dismissed_flags.add(flag)
 
     assumption_items = [
         mapping(item, f"assumptions[{index}]", errors)
@@ -788,11 +857,38 @@ def validate_report(
             errors.append("council.runs must not be empty when required")
         for index, raw_run in enumerate(runs):
             run = mapping(raw_run, f"council.runs[{index}]", errors)
-            nonempty_text(run.get("profile"), f"council.runs[{index}].profile", errors)
-            nonempty_text(run.get("status"), f"council.runs[{index}].status", errors)
+            profile = nonempty_text(
+                run.get("profile"), f"council.runs[{index}].profile", errors
+            )
+            if profile and profile not in COUNCIL_PROFILES:
+                errors.append(
+                    f"council.runs[{index}].profile must be one of {sorted(COUNCIL_PROFILES)}"
+                )
+            run_status = nonempty_text(
+                run.get("status"), f"council.runs[{index}].status", errors
+            )
+            if run_status and run_status not in COUNCIL_STATUSES:
+                errors.append(
+                    f"council.runs[{index}].status must be a council terminal: "
+                    f"{sorted(COUNCIL_STATUSES)}"
+                )
             nonempty_text(
                 run.get("thesis_id"), f"council.runs[{index}].thesis_id", errors
             )
+            # A run is a claim until its report is on disk with the same status.
+            report_path = run.get("report_path")
+            if not isinstance(report_path, str) or not Path(report_path).is_absolute():
+                errors.append(f"council.runs[{index}].report_path must be an absolute path")
+                continue
+            try:
+                council_report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exception:
+                errors.append(f"council.runs[{index}].report_path is unreadable: {exception}")
+                continue
+            if not isinstance(council_report, dict) or council_report.get("status") != run_status:
+                errors.append(
+                    f"council.runs[{index}].status must equal its council report status"
+                )
     else:
         nonempty_text(skip_reason, "council.skip_reason", errors)
 
@@ -987,11 +1083,11 @@ def validate_report(
                     f"READY_TO_EXECUTE evidence[{index}] FACT claim uses hedge language"
                 )
         suggested = collect_heuristic_risk_flags(report)
-        missing_flags = sorted(suggested - set(risk_flags))
+        missing_flags = sorted(suggested - set(risk_flags) - dismissed_flags)
         if missing_flags:
             errors.append(
-                "READY_TO_EXECUTE missing risk_flags suggested by heuristics: "
-                f"{missing_flags}"
+                "READY_TO_EXECUTE missing risk_flags suggested by heuristics "
+                f"(flag them or justify in risk_flag_dismissals): {missing_flags}"
             )
         if required and runs:
             terminal = {run.get("status") for run in runs if isinstance(run, dict)}

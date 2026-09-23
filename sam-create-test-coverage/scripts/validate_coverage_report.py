@@ -14,6 +14,7 @@ from typing import Any
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from audit_test_diff import audit as audit_patch  # noqa: E402
 from verify_receipts import verify_commands, verify_wiring  # noqa: E402
 
 PREFIXES = {
@@ -26,6 +27,9 @@ PREFIXES = {
     "artifacts": "ART-",
     "cleanup": "CL-",
 }
+# The only NOT_APPLICABLE reason that hands PLANNED E2E scenarios to the parent's
+# Playwright phase; the parent must then hold that phase to COMPLETE.
+DELEGATED_TO_PLAYWRIGHT = "delegated to playwright phase"
 
 
 def read_object(path: str) -> dict[str, Any]:
@@ -159,6 +163,11 @@ def validate(
             f"{risk_id} missing evidence or description",
         )
 
+    real_system = report.get("real_system_proof", {})
+    delegated = (
+        real_system.get("status") == "NOT_APPLICABLE"
+        and real_system.get("reason") == DELEGATED_TO_PLAYWRIGHT
+    )
     required_gap = False
     e2e_required = False
     for scenario_id, scenario in tables.get("scenarios", {}).items():
@@ -196,9 +205,12 @@ def validate(
             bool(scenario.get("sufficiency")),
             f"{scenario_id} missing layer sufficiency",
         )
-        required_gap = required_gap or status in {"PLANNED", "NOT_COVERED"}
+        delegated_journey = delegated and layer == "E2E" and status == "PLANNED"
+        required_gap = required_gap or (
+            status in {"PLANNED", "NOT_COVERED"} and not delegated_journey
+        )
         e2e_required = e2e_required or (
-            layer == "E2E" and status in {"AUTOMATED", "PLANNED"}
+            layer == "E2E" and status in {"AUTOMATED", "PLANNED"} and not delegated_journey
         )
 
     proof_gap = False
@@ -312,6 +324,26 @@ def validate(
         audit.get("status") in {"PASS", "FAIL"} and bool(audit.get("evidence")),
         "test diff audit required",
     )
+    # Recompute the audit from the final bundle instead of trusting a typed PASS.
+    # A PASS over real findings needs one disproof per finding (id, kind, path,
+    # reason). Ids are positional, so the path keeps a disproof on its finding.
+    recomputed_audit = audit_patch(bundle)
+    if audit.get("status") == "PASS" and recomputed_audit["status"] != "PASS":
+        disproven = {
+            (str(item.get("id")), str(item.get("kind")), str(item.get("path")))
+            for item in audit.get("disproven") or []
+            if isinstance(item, dict) and str(item.get("reason") or "").strip()
+        }
+        undisproven = [
+            f"{issue['id']} {issue['kind']} {issue['path']}"
+            for issue in recomputed_audit["issues"]
+            if (issue["id"], issue["kind"], issue["path"]) not in disproven
+        ]
+        need(
+            not undisproven,
+            "test_diff_audit PASS but the recomputed audit reports undisproven "
+            "finding(s): " + ", ".join(undisproven),
+        )
     authorization = report.get("authorization", {})
     need(
         isinstance(authorization.get("publish_requested"), bool),
@@ -321,7 +353,6 @@ def validate(
         not uploaded or authorization.get("publish_requested") is True,
         "artifact uploaded without authorization",
     )
-    real_system = report.get("real_system_proof", {})
     need(
         real_system.get("status")
         in {"PROVEN", "FALLBACK", "NOT_PROVEN", "NOT_APPLICABLE"},

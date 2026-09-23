@@ -335,6 +335,7 @@ def materialize(name: str, output: Path) -> Path:
 
 
 RUN_CHECKED = Path(__file__).resolve().parent / "run_checked.py"
+SCAFFOLD = Path(__file__).resolve().parent / "scaffold_review_report.py"
 
 
 def make_receipt(
@@ -853,13 +854,19 @@ def self_test() -> None:
             large_repo,
             check=False,
         )
-        explicit_split = any(
-            marker in oversized.stderr
-            for marker in ("rather than truncating", "review it as a separate target")
+        # An oversized patch is a final refusal: no truncation, BLOCKED, and no
+        # advice to narrow --path or the range unless the user explicitly re-scopes
+        # the review (SKILL.md section 2).
+        final_refusal = (
+            "rather than truncating" in oversized.stderr
+            and "report BLOCKED" in oversized.stderr
+            and "only on an explicit user re-scope" in oversized.stderr
+            and "coherent --path targets" not in oversized.stderr
+            and "separate target" not in oversized.stderr
         )
-        if oversized.returncode != 2 or not explicit_split:
+        if oversized.returncode != 2 or not final_refusal:
             raise RuntimeError(
-                "oversized bundle did not fail closed without truncation"
+                "oversized bundle did not fail closed as a final BLOCKED refusal"
             )
 
         sensitive_repo = temp / "sensitive"
@@ -1364,6 +1371,604 @@ def self_test() -> None:
         if scope_valid.returncode != 0:
             raise RuntimeError(f"in-scope growth rejected: {scope_valid.stderr}")
 
+        exercise_risk_tag_precision()
+        exercise_out_mode(temp, builder, bundles["clean-runtime-change"])
+        exercise_scaffold_and_delta(temp, builder, validator)
+
+
+def exercise_risk_tag_precision() -> None:
+    """Word-level matching keeps lens-routing tags from firing on every bundle; the
+    DELTA gate adds fail-safe substring hints (see exercise_scaffold_and_delta)."""
+    sys.dont_write_bytecode = True
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from build_review_bundle import risk_tags  # noqa: E402
+
+    over_matches = {
+        "yarn.lock": "concurrency-jobs",
+        "package-lock.json": "concurrency-jobs",
+        "src/ui/Blocked.py": "concurrency-jobs",
+        "src/design/tokens.ts": "delivery",
+        "docs/assign.md": "delivery",
+        "src/signal.py": "delivery",
+        "references/publication-policy.md": "public-contract",
+        "src/exporter/csv.py": "public-contract",
+    }
+    for path, tag in over_matches.items():
+        if tag in risk_tags(path):
+            raise RuntimeError(f"risk tag {tag} over-matches {path}")
+    true_positives = {
+        "src/locks/mutex.py": "concurrency-jobs",
+        "src/useLock.ts": "concurrency-jobs",
+        "scripts/sign_release.sh": "delivery",
+        "build/codesign.sh": "delivery",
+        "src/public/api_client.ts": "public-contract",
+        "src/exports.ts": "public-contract",
+        "src/auth/session.py": "security",
+    }
+    for path, tag in true_positives.items():
+        if tag not in risk_tags(path):
+            raise RuntimeError(f"risk tag {tag} missed {path}")
+
+
+def exercise_out_mode(temp: Path, builder: Path, default_bundle: dict[str, Any]) -> None:
+    """--out writes the unchanged bundle plus raw patch and prints a compact ledger."""
+    repo = temp / "clean-runtime-change"
+    out = temp / "out-bundle"
+    result = run(
+        [sys.executable, str(builder), "--repo", str(repo), "--mode", "local", "--out", str(out)],
+        repo,
+    )
+    written = json.loads((out / "bundle.json").read_text(encoding="utf-8"))
+    if written != default_bundle:
+        raise RuntimeError("--out bundle.json differs from the default stdout bundle")
+    if (out / "patch.diff").read_bytes() != default_bundle["patch"].encode("utf-8"):
+        raise RuntimeError("--out patch.diff is not the raw bundle patch")
+    stdout = result.stdout
+    if f"fingerprint: {default_bundle['fingerprint']}" not in stdout or '"patch"' in stdout:
+        raise RuntimeError("--out must print the compact summary, not the bundle JSON")
+    ledger = stdout.split("files:\n", 1)[1].splitlines()
+    if len(ledger) != len(default_bundle["files"]) or not all(
+        line.split(" ")[1] == item["path"]
+        for line, item in zip(ledger, default_bundle["files"])
+    ):
+        raise RuntimeError(f"--out ledger must list one line per file: {ledger}")
+    summary_line = f"fingerprint={default_bundle['fingerprint']}"
+    if summary_line not in result.stderr or len(result.stderr.strip().splitlines()) != 1:
+        raise RuntimeError("builder must print exactly one stderr summary line")
+    default = run(
+        [sys.executable, str(builder), "--repo", str(repo), "--mode", "local"], repo
+    )
+    if summary_line not in default.stderr or json.loads(default.stdout) != default_bundle:
+        raise RuntimeError("default mode must keep stdout JSON and add the stderr summary")
+
+    inside = run(
+        [
+            sys.executable,
+            str(builder),
+            "--repo",
+            str(repo),
+            "--mode",
+            "local",
+            "--out",
+            str(repo / "review-out"),
+        ],
+        repo,
+        check=False,
+    )
+    if (
+        inside.returncode != 2
+        or "outside the repository" not in inside.stderr
+        or (repo / "review-out").exists()
+    ):
+        raise RuntimeError("--out inside the repository must fail closed without writing")
+    # On a case-insensitive filesystem a differently cased spelling of the checkout
+    # is still the checkout: writing there would break the read-only contract.
+    recased = repo.parent / repo.name.swapcase()
+    if recased.exists() and os.path.samefile(recased, repo):
+        cased = run(
+            [sys.executable, str(builder), "--repo", str(repo), "--mode", "local", "--out", str(recased / "review-case")],
+            repo,
+            check=False,
+        )
+        if cased.returncode != 2 or "outside the repository" not in cased.stderr or (repo / "review-case").exists():
+            raise RuntimeError("--out inside the repository under another case must fail closed")
+    else:
+        print("test_review_harness: case-sensitive filesystem; recased --out case skipped", file=sys.stderr)
+
+    # An identical rebuild must not refresh the bundle: the scaffold dates receipts
+    # against it, so a rewrite would turn valid post-bundle receipts into stale ones.
+    kept_mtime = (out / "bundle.json").stat().st_mtime_ns
+    run(
+        [sys.executable, str(builder), "--repo", str(repo), "--mode", "local", "--out", str(out)],
+        repo,
+    )
+    if (out / "bundle.json").stat().st_mtime_ns != kept_mtime:
+        raise RuntimeError("an identical --out rebuild must leave bundle.json untouched")
+
+    other_repo = temp / "functional-regression"
+    clobber = run(
+        [
+            sys.executable,
+            str(builder),
+            "--repo",
+            str(other_repo),
+            "--mode",
+            "local",
+            "--out",
+            str(out),
+        ],
+        other_repo,
+        check=False,
+    )
+    retained = json.loads((out / "bundle.json").read_text(encoding="utf-8"))
+    if (
+        clobber.returncode != 2
+        or "refusing to overwrite" not in clobber.stderr
+        or retained != default_bundle
+    ):
+        raise RuntimeError("--out must never overwrite a different retained bundle")
+
+
+def commit_all(repo: Path, message: str) -> str:
+    run(["git", "add", "-A"], repo)
+    run(["git", "commit", "-q", "-m", message], repo)
+    return run(["git", "rev-parse", "HEAD"], repo).stdout.strip()
+
+
+def build_out(builder: Path, repo: Path, out: Path, *mode_args: str) -> Path:
+    run(
+        [sys.executable, str(builder), "--repo", str(repo), *mode_args, "--out", str(out)],
+        repo,
+    )
+    return out / "bundle.json"
+
+
+def scaffold_report(out: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return run(
+        [sys.executable, str(SCAFFOLD), *args, "--out", str(out)], out.parent, check=False
+    )
+
+
+def validate_with(
+    validator: Path, bundle_path: Path, report: dict[str, Any], report_path: Path
+) -> subprocess.CompletedProcess[str]:
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    return run(
+        [sys.executable, str(validator), "--bundle", str(bundle_path), str(report_path)],
+        report_path.parent,
+        check=False,
+    )
+
+
+def fill_judgment(report: dict[str, Any], result: str) -> dict[str, Any]:
+    """Stand in for the reviewer: only fields the scaffold must leave empty."""
+    if not report["intent"]["intended_behavior"]:
+        report["intent"].update(
+            {
+                "intended_behavior": ["Fixture behavior changes as requested"],
+                "invariants": ["Review evidence remains tied to the frozen diff"],
+                "owner_boundary": "fixture repository",
+                "user_visible_change": False,
+            }
+        )
+    for row in report["file_coverage"]:
+        row["reason"] = row["reason"] or "Fixture file reviewed"
+    if not report["test_coverage"]:
+        report["test_coverage"] = [
+            {
+                "behavior": "Fixture behavior",
+                "level": "UNIT",
+                "status": "COVERED",
+                "paths": [],
+                "reason": "Harness contract check",
+                "finding_id": None,
+            }
+        ]
+    for row in report["validations"]:
+        row["reason"] = row["reason"] or "Receipt-backed fixture check"
+    report["behavior_proof"] = {"status": "NOT_APPLICABLE", "evidence": []}
+    report["decision"].update({"result": result, "confidence": "HIGH"})
+    return report
+
+
+def expect_rejected(
+    completed: subprocess.CompletedProcess[str], marker: str, label: str
+) -> None:
+    if completed.returncode == 0 or marker not in completed.stderr:
+        raise RuntimeError(f"{label}: expected rejection containing {marker!r}: {completed.stderr}")
+
+
+def exercise_scaffold_and_delta(temp: Path, builder: Path, validator: Path) -> None:
+    """Scaffolds prefill only derivable fields; DELTA reviews carry forward only what
+    the validator can prove unchanged and must re-adjudicate every open finding."""
+    repo = temp / "delta-review"
+    repo.mkdir()
+    run(["git", "init", "-q", "-b", "trunk"], repo)
+    run(["git", "config", "user.email", "review-fixture@example.invalid"], repo)
+    run(["git", "config", "user.name", "Review Fixture"], repo)
+    write_files(
+        repo,
+        {
+            "src/rates.py": "def rate(amount):\n    return amount\n",
+            "src/label.py": "def label(value):\n    return str(value)\n",
+        },
+    )
+    commit_all(repo, "baseline")
+    run(["git", "switch", "-q", "-c", "feature"], repo)
+    write_files(
+        repo,
+        {
+            "src/rates.py": "def rate(amount):\n    return amount * 2\n",
+            "src/label.py": "def label(value):\n    return f'{value}!'\n",
+        },
+    )
+    head0 = commit_all(repo, "feature change")
+    bundle0 = build_out(builder, repo, temp / "delta-b0", "--mode", "branch", "--base", "trunk", "--head", head0)
+    make_receipt(temp / "receipts-r0", "CMD-001", "TARGET", "echo cycle-one")
+
+    report0_path = temp / "delta-r0.json"
+    scaffolded = scaffold_report(
+        report0_path, "--bundle", str(bundle0), "--receipts-dir", str(temp / "receipts-r0")
+    )
+    if scaffolded.returncode != 0:
+        raise RuntimeError(f"FULL scaffold failed: {scaffolded.stderr}")
+    raw = json.loads(report0_path.read_text(encoding="utf-8"))
+    bundle0_data = json.loads(bundle0.read_text(encoding="utf-8"))
+    receipt0 = json.loads((temp / "receipts-r0/CMD-001.receipt.json").read_text(encoding="utf-8"))
+    if (
+        raw["target"]["bundle_fingerprint"] != bundle0_data["fingerprint"]
+        or raw["scope"]["current_file_count"] != bundle0_data["summary"]["file_count"]
+        or raw["validations"][0]["command"] != " ".join(receipt0["argv"])
+        or raw["publication"]["status"] != "NOT_REQUESTED"
+        or [row["path"] for row in raw["file_coverage"]] != ["src/label.py", "src/rates.py"]
+    ):
+        raise RuntimeError("scaffold did not derive mechanical fields from real files")
+    # Fail closed: an unfilled scaffold must never validate.
+    unfilled = validate_with(validator, bundle0, raw, temp / "delta-unfilled.json")
+    for marker in ("intent.intended_behavior", "reason must be a non-empty string", "decision.result is invalid"):
+        expect_rejected(unfilled, marker, "unfilled scaffold")
+    if scaffold_report(report0_path, "--bundle", str(bundle0)).returncode != 2:
+        raise RuntimeError("scaffold must refuse to overwrite an existing report")
+
+    report0 = fill_judgment(raw, "CHANGES_REQUIRED")
+    report0["findings"] = [
+        {
+            "id": "F1",
+            "severity": "BLOCKER",
+            "status": "ACCEPTED",
+            "scope": "IN_SCOPE",
+            "path": "src/rates.py",
+            "line": 2,
+            "side": "NEW",
+            "failure_mode": "Rate doubles instead of applying the agreed factor",
+            "impact": "Totals are wrong",
+            "evidence": ["src/rates.py:2"],
+            "required_change": "Apply the agreed factor",
+            "test_gap": False,
+            "rejection_reason": None,
+        }
+    ]
+    report0["decision"]["remaining_corrections"] = ["F1"]
+    if validate_with(validator, bundle0, report0, report0_path).returncode != 0:
+        raise RuntimeError("cycle-one CHANGES_REQUIRED report was rejected")
+
+    write_files(repo, {"src/rates.py": "def rate(amount):\n    return amount * 3\n"})
+    head1 = commit_all(repo, "correct rate")
+    bundle1 = build_out(builder, repo, temp / "delta-b1", "--mode", "branch", "--base", "trunk", "--head", head1)
+    delta = build_out(builder, repo, temp / "delta-d", "--mode", "range", "--range", f"{head0}..{head1}")
+    make_receipt(temp / "receipts-r1", "CMD-001", "TARGET", "echo cycle-two")
+    report1_path = temp / "delta-r1.json"
+    scaffolded = scaffold_report(
+        report1_path,
+        "--bundle", str(bundle1),
+        "--receipts-dir", str(temp / "receipts-r1"),
+        "--base-review", str(report0_path),
+        "--base-bundle", str(bundle0),
+        "--delta-bundle", str(delta),
+    )
+    if scaffolded.returncode != 0:
+        raise RuntimeError(f"DELTA scaffold failed: {scaffolded.stderr}")
+    report1 = json.loads(report1_path.read_text(encoding="utf-8"))
+    basis = report1["review_basis"]
+    if (
+        basis["mode"] != "DELTA"
+        or basis["carried_forward"] != ["src/label.py"]
+        or [finding["id"] for finding in report1["findings"]] != ["F1"]
+        or report1["scope"]["review_cycle"] != 2
+    ):
+        raise RuntimeError(f"DELTA scaffold carried the wrong state: {basis}")
+    # A carried coverage judgment is never re-used untouched on the new head.
+    carried_rows = [row for row in report1["test_coverage"] if row["finding_id"] is None]
+    if not carried_rows or any(row["reason"] for row in carried_rows):
+        raise RuntimeError(f"DELTA scaffold must clear carried test_coverage reasons: {carried_rows}")
+    untouched = fill_judgment(copy.deepcopy(report1), "APPROVE")
+    untouched["findings"] = []
+    untouched["decision"]["remaining_corrections"] = []
+    untouched["review_basis"]["resolved_findings"] = [
+        {"id": "F1", "evidence": "rates.py now applies the agreed factor"}
+    ]
+    expect_rejected(
+        validate_with(validator, bundle1, untouched, temp / "delta-untouched.json"),
+        "test_coverage[0].reason",
+        "untouched carried test_coverage",
+    )
+    for row in carried_rows:
+        row["reason"] = "Re-affirmed against the delta: rates.py test still covers it"
+    report1 = fill_judgment(report1, "APPROVE")
+    report1["findings"] = []
+    report1["decision"]["remaining_corrections"] = []
+    basis = report1["review_basis"]
+    basis["resolved_findings"] = [{"id": "F1", "evidence": "rates.py now applies the agreed factor"}]
+    check_path = temp / "delta-check.json"
+    accepted = validate_with(validator, bundle1, report1, check_path)
+    if accepted.returncode != 0:
+        raise RuntimeError(f"valid DELTA review rejected: {accepted.stderr}")
+
+    def variant(mutate: Any) -> dict[str, Any]:
+        value = copy.deepcopy(report1)
+        mutate(value)
+        return value
+
+    expect_rejected(
+        validate_with(validator, bundle1, variant(lambda r: r["review_basis"]["carried_forward"].append("src/rates.py")), check_path),
+        "patch changed since the base review",
+        "carried changed file",
+    )
+    expect_rejected(
+        validate_with(validator, bundle1, variant(lambda r: r["review_basis"].update(resolved_findings=[])), check_path),
+        "prior open finding F1 must be re-adjudicated",
+        "dropped prior finding",
+    )
+    expect_rejected(
+        validate_with(validator, bundle1, variant(lambda r: r["review_basis"]["resolved_findings"].append({"id": "F9", "evidence": "never open"})), check_path),
+        "resolved finding F9 is not an open base review finding",
+        "resolving an unknown finding",
+    )
+    expect_rejected(
+        validate_with(validator, bundle1, variant(lambda r: r["findings"].append(copy.deepcopy(report0["findings"][0]))), check_path),
+        "resolved finding F1 must not remain in findings",
+        "resolved finding still listed",
+    )
+    expect_rejected(
+        validate_with(validator, bundle1, variant(lambda r: r["scope"].update(review_cycle=1)), check_path),
+        "must exceed the base review cycle",
+        "cycle reset",
+    )
+    expect_rejected(
+        validate_with(validator, bundle1, variant(lambda r: r["file_coverage"][0].update(reason="Re-worded")), check_path),
+        "must equal the base review row",
+        "edited carried row",
+    )
+    expect_rejected(
+        validate_with(validator, bundle1, variant(lambda r: r["review_basis"].update(mode="FULL", delta_bundle=None)), check_path),
+        "FULL review must not carry coverage forward",
+        "FULL with carry-forward",
+    )
+    tampered_base = copy.deepcopy(report0)
+    tampered_base["decision"]["result"] = "APPROVE"
+    tampered_path = temp / "delta-r0-tampered.json"
+    tampered_path.write_text(json.dumps(tampered_base), encoding="utf-8")
+    expect_rejected(
+        validate_with(validator, bundle1, variant(lambda r: r["review_basis"].update(base_review=str(tampered_path))), check_path),
+        "review_basis.base_review is not VALID",
+        "invalid base review",
+    )
+    wrong_delta = build_out(builder, repo, temp / "delta-wrong", "--mode", "range", "--range", f"trunk..{head1}")
+    expect_rejected(
+        validate_with(validator, bundle1, variant(lambda r: r["review_basis"].update(delta_bundle=str(wrong_delta))), check_path),
+        "delta_bundle base must equal the base review head",
+        "delta from the wrong base",
+    )
+    branch_delta = build_out(builder, repo, temp / "delta-branch-d", "--mode", "branch", "--base", head0, "--head", head1)
+    expect_rejected(
+        validate_with(validator, bundle1, variant(lambda r: r["review_basis"].update(delta_bundle=str(branch_delta))), check_path),
+        "must be a range bundle",
+        "branch-mode delta bundle",
+    )
+    expect_rejected(
+        validate_with(validator, bundle1, variant(lambda r: r["review_basis"].update(base_review=None, base_bundle=None, delta_bundle=None, carried_forward=[])), check_path),
+        "DELTA review requires review_basis.base_review",
+        "DELTA without a base review",
+    )
+    expect_rejected(
+        validate_with(validator, bundle1, variant(lambda r: r["review_basis"].update(mode="FULL", carried_forward=[])), check_path),
+        "FULL review must not cite review_basis.delta_bundle",
+        "FULL citing a delta bundle",
+    )
+    forged_delta = temp / "delta-forged.json"
+    forged = json.loads(delta.read_text(encoding="utf-8"))
+    forged["patch"] += "\n"
+    forged_delta.write_text(json.dumps(forged), encoding="utf-8")
+    expect_rejected(
+        validate_with(validator, bundle1, variant(lambda r: r["review_basis"].update(delta_bundle=str(forged_delta))), check_path),
+        "review_basis.delta_bundle is invalid",
+        "tampered delta bundle",
+    )
+    # A delta that stops at an older head would let later changes (here a
+    # risk-tagged auth change) escape the FULL-review triggers.
+    run(["git", "switch", "-q", "-c", "after-delta", head1], repo)
+    write_files(repo, {"src/auth/guard.py": "ALLOW = True\n"})
+    head2 = commit_all(repo, "auth change after the delta head")
+    bundle2 = build_out(builder, repo, temp / "delta-b2", "--mode", "branch", "--base", "trunk", "--head", head2)
+    make_receipt(temp / "receipts-r2", "CMD-001", "TARGET", "echo cycle-three")
+    older_path = temp / "delta-older-head.json"
+    if scaffold_report(older_path, "--bundle", str(bundle2), "--receipts-dir", str(temp / "receipts-r2"), "--base-review", str(report0_path), "--base-bundle", str(bundle0)).returncode != 0:
+        raise RuntimeError("FULL scaffold with a base review on a later head failed")
+    older = fill_judgment(json.loads(older_path.read_text(encoding="utf-8")), "APPROVE")
+    older["findings"] = []
+    older["decision"]["remaining_corrections"] = []
+    base_label = next(row for row in report0["file_coverage"] if row["path"] == "src/label.py")
+    for row in older["file_coverage"]:
+        if row["path"] == "src/label.py":
+            row.update(base_label)
+    older["review_basis"].update(
+        mode="DELTA",
+        delta_bundle=str(delta),
+        carried_forward=["src/label.py"],
+        resolved_findings=[{"id": "F1", "evidence": "rates.py now applies the agreed factor"}],
+    )
+    expect_rejected(
+        validate_with(validator, bundle2, older, temp / "delta-older-head-check.json"),
+        "head must equal the reviewed head",
+        "delta ending at an older head",
+    )
+    # A delta whose --path filter hides that auth change: DELTA reads only the
+    # delta patch, so the validator and the scaffold both refuse it.
+    hidden = build_out(builder, repo, temp / "delta-hidden-d", "--mode", "range", "--range", f"{head0}..{head2}", "--path", "src/rates.py")
+    expect_rejected(
+        validate_with(validator, bundle2, {**older, "review_basis": {**older["review_basis"], "delta_bundle": str(hidden)}}, temp / "delta-hidden-check.json"),
+        "path filters must match the bundle",
+        "path-filtered delta",
+    )
+    base_args2 = ("--bundle", str(bundle2), "--base-review", str(report0_path), "--base-bundle", str(bundle0))
+    for name, delta_arg, marker in (
+        ("older", delta, "head must equal the reviewed head"),
+        ("hidden", hidden, "path filters must match the bundle"),
+    ):
+        refused = scaffold_report(temp / f"delta-{name}-refused.json", *base_args2, "--delta-bundle", str(delta_arg))
+        if refused.returncode != 2 or "rebuild the delta" not in refused.stderr or marker not in refused.stderr:
+            raise RuntimeError(f"scaffold accepted a {name} delta: {refused.stderr}")
+    # A commit target is always reviewed FULL, even for a small untagged delta.
+    commit_b0 = build_out(builder, repo, temp / "delta-commit-b0", "--mode", "commit", "--commit", head0)
+    make_receipt(temp / "receipts-c0", "CMD-001", "TARGET", "echo commit-one")
+    commit_r0_path = temp / "delta-commit-r0.json"
+    if scaffold_report(commit_r0_path, "--bundle", str(commit_b0), "--receipts-dir", str(temp / "receipts-c0")).returncode != 0:
+        raise RuntimeError("commit-target scaffold failed")
+    commit_r0 = fill_judgment(json.loads(commit_r0_path.read_text(encoding="utf-8")), "CHANGES_REQUIRED")
+    commit_r0["findings"] = copy.deepcopy(report0["findings"])
+    commit_r0["decision"]["remaining_corrections"] = ["F1"]
+    if validate_with(validator, commit_b0, commit_r0, commit_r0_path).returncode != 0:
+        raise RuntimeError("commit-target base review was rejected")
+    run(["git", "switch", "-q", "-c", "amended", head0], repo)
+    write_files(repo, {"src/rates.py": "def rate(amount):\n    return amount * 3\n"})
+    run(["git", "add", "-A"], repo)
+    run(["git", "commit", "-q", "--amend", "--no-edit"], repo)
+    amended = run(["git", "rev-parse", "HEAD"], repo).stdout.strip()
+    commit_b1 = build_out(builder, repo, temp / "delta-commit-b1", "--mode", "commit", "--commit", amended)
+    commit_delta = build_out(builder, repo, temp / "delta-commit-d", "--mode", "range", "--range", f"{head0}..{amended}")
+    base_args = ("--base-review", str(commit_r0_path), "--base-bundle", str(commit_b0))
+    refused = scaffold_report(temp / "delta-commit.json", "--bundle", str(commit_b1), *base_args, "--delta-bundle", str(commit_delta))
+    if refused.returncode != 2 or "cannot be delta-reviewed" not in refused.stderr:
+        raise RuntimeError(f"scaffold allowed a DELTA review of a commit target: {refused.stderr}")
+    commit_full_path = temp / "delta-commit-full.json"
+    if scaffold_report(commit_full_path, "--bundle", str(commit_b1), *base_args).returncode != 0:
+        raise RuntimeError("commit-target FULL scaffold with a base review failed")
+    claimed = json.loads(commit_full_path.read_text(encoding="utf-8"))
+    claimed["review_basis"].update(mode="DELTA", delta_bundle=str(commit_delta))
+    expect_rejected(
+        validate_with(validator, commit_b1, claimed, temp / "delta-commit-check.json"),
+        "cannot be delta-reviewed",
+        "commit-target DELTA",
+    )
+
+    # Full-review triggers: a risk-tagged delta (including the fail-safe substring
+    # hints the precise tags skip, e.g. rwlock), or a delta larger than the change.
+    for label, files, marker in (
+        ("risk", {"src/auth/guard.py": "ALLOW = False\n"}, "risk-tagged paths"),
+        ("hint", {"src/sync/rwlock.rs": "// shared lock\n"}, "risk-tagged paths: src/sync/rwlock.rs"),
+        ("size", {"src/rates.py": "".join(f"# note {n}\n" for n in range(12)) + "def rate(amount):\n    return amount * 3\n"}, "larger than the original change"),
+    ):
+        run(["git", "switch", "-q", "-c", f"fix-{label}", head0], repo)
+        write_files(repo, files)
+        head_x = commit_all(repo, f"{label} correction")
+        bundle_x = build_out(builder, repo, temp / f"delta-{label}-b", "--mode", "branch", "--base", "trunk", "--head", head_x)
+        delta_x = build_out(builder, repo, temp / f"delta-{label}-d", "--mode", "range", "--range", f"{head0}..{head_x}")
+        refused = scaffold_report(
+            temp / f"delta-{label}.json",
+            "--bundle", str(bundle_x),
+            "--base-review", str(report0_path),
+            "--base-bundle", str(bundle0),
+            "--delta-bundle", str(delta_x),
+        )
+        if refused.returncode != 2 or "FULL review required" not in refused.stderr or marker not in refused.stderr:
+            raise RuntimeError(f"{label}: scaffold allowed a DELTA review: {refused.stderr}")
+        full_path = temp / f"delta-{label}-full.json"
+        if scaffold_report(full_path, "--bundle", str(bundle_x), "--base-review", str(report0_path), "--base-bundle", str(bundle0)).returncode != 0:
+            raise RuntimeError(f"{label}: FULL scaffold with a base review failed")
+        claimed = json.loads(full_path.read_text(encoding="utf-8"))
+        claimed["review_basis"].update(mode="DELTA", delta_bundle=str(delta_x))
+        expect_rejected(
+            validate_with(validator, bundle_x, claimed, temp / f"delta-{label}-check.json"),
+            f"DELTA review not allowed (delta {'is ' if label == 'size' else 'touches '}",
+            f"{label} trigger",
+        )
+
+    # A base review must target the same mode, base, and path filters, even for FULL.
+    filtered = build_out(builder, repo, temp / "delta-filtered-b", "--mode", "branch", "--base", "trunk", "--head", head1, "--path", "src/rates.py")
+    refused = scaffold_report(temp / "delta-filtered-refused.json", "--bundle", str(filtered), "--base-review", str(report0_path), "--base-bundle", str(bundle0))
+    if refused.returncode != 2 or "targets another review" not in refused.stderr:
+        raise RuntimeError(f"scaffold accepted a base review for another target: {refused.stderr}")
+    make_receipt(temp / "receipts-filtered", "CMD-001", "TARGET", "echo filtered")
+    filtered_path = temp / "delta-filtered.json"
+    if scaffold_report(filtered_path, "--bundle", str(filtered), "--receipts-dir", str(temp / "receipts-filtered")).returncode != 0:
+        raise RuntimeError("filtered FULL scaffold failed")
+    mismatched = fill_judgment(json.loads(filtered_path.read_text(encoding="utf-8")), "CHANGES_REQUIRED")
+    mismatched["findings"] = copy.deepcopy(report0["findings"])
+    mismatched["decision"]["remaining_corrections"] = ["F1"]
+    mismatched["scope"]["review_cycle"] = 2
+    mismatched["review_basis"].update(base_review=str(report0_path), base_bundle=str(bundle0))
+    expect_rejected(
+        validate_with(validator, filtered, mismatched, temp / "delta-filtered-check.json"),
+        "base_review targets another review (path filters changed",
+        "FULL with a base review of another target",
+    )
+    # FULL without a usable base still records a prior finding the correction fixed
+    # as resolved (never REJECTED); it cannot also stay open, and nothing carries.
+    fallback = copy.deepcopy(mismatched)
+    fallback["findings"] = []
+    fallback["decision"].update(result="APPROVE", remaining_corrections=[])
+    fallback["review_basis"].update(
+        base_review=None,
+        base_bundle=None,
+        resolved_findings=[{"id": "F1", "evidence": "rates.py now applies the agreed factor"}],
+    )
+    fallback_path = temp / "delta-fallback.json"
+    accepted = validate_with(validator, filtered, fallback, fallback_path)
+    if accepted.returncode != 0:
+        raise RuntimeError(f"FULL review without a base rejected a resolved prior finding: {accepted.stderr}")
+    still_open = copy.deepcopy(fallback)
+    still_open["findings"] = copy.deepcopy(report0["findings"])
+    still_open["decision"].update(result="CHANGES_REQUIRED", remaining_corrections=["F1"])
+    expect_rejected(
+        validate_with(validator, filtered, still_open, fallback_path),
+        "resolved finding F1 must not remain in findings",
+        "resolved and still open without a base",
+    )
+    fallback["review_basis"]["carried_forward"] = ["src/rates.py"]
+    expect_rejected(
+        validate_with(validator, filtered, fallback, fallback_path),
+        "review_basis.carried_forward requires base_review",
+        "carry-forward without a base",
+    )
+
+    # The shared-receipts-directory flow must fail closed: cycle-one receipts are
+    # stale proof for the new head, and overwriting them breaks the base review.
+    make_receipt(temp / "receipts-r0", "CMD-002", "TARGET", "echo shared-dir")
+    stale = scaffold_report(temp / "delta-shared.json", "--bundle", str(bundle1), "--receipts-dir", str(temp / "receipts-r0"), "--base-review", str(report0_path), "--base-bundle", str(bundle0))
+    if stale.returncode != 2 or "predates the bundle" not in stale.stderr:
+        raise RuntimeError(f"scaffold prefilled receipts that predate the bundle: {stale.stderr}")
+    for receipt_id in ("CMD-001", "CMD-002"):
+        shared_path = temp / "receipts-r0" / f"{receipt_id}.receipt.json"
+        shared_argv = json.loads(shared_path.read_text(encoding="utf-8"))["argv"]
+        shared_row = {
+            "command": " ".join(shared_argv),
+            "status": "PASS",
+            "classification": "TARGET",
+            "reason": "Reused directory",
+            "receipt": str(shared_path),
+        }
+        expect_rejected(
+            validate_with(validator, bundle1, variant(lambda r: r["validations"].append(shared_row)), check_path),
+            "in a base review's receipts directory",
+            f"receipt {receipt_id} from the base review's directory",
+        )
+    make_receipt(temp / "receipts-r0", "CMD-001", "TARGET", "echo overwritten")
+    expect_rejected(
+        validate_with(validator, bundle1, report1, check_path),
+        "review_basis.base_review is not VALID",
+        "base review whose receipt was overwritten",
+    )
+
 
 def main() -> int:
     args = parse_args()
@@ -1405,7 +2010,8 @@ def main() -> int:
         print(
             f"PASS: {len(FIXTURES)} semantic fixtures; target modes, path filters, "
             "rename/delete, Git isolation, bundle safety, strict semantic scoring, "
-            "proposal publication states, and report validation"
+            "proposal publication states, report validation, --out ledger, risk-tag "
+            "precision, fail-closed scaffold, and DELTA re-review gates"
         )
         return 0
     except (OSError, RuntimeError, json.JSONDecodeError) as error:

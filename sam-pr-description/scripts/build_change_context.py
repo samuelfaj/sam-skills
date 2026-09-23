@@ -51,11 +51,20 @@ SENSITIVE_SUFFIXES = {".pem", ".p12", ".pfx", ".jks", ".key"}
 
 
 def is_within(path: Path, boundary: Path) -> bool:
+    """Compare identity, not spelling: a case-insensitive filesystem must not let a
+    differently cased path escape the check."""
     try:
         path.relative_to(boundary)
+        return True
     except ValueError:
-        return False
-    return True
+        pass
+    for candidate in (path, *path.parents):
+        try:
+            if candidate.exists() and os.path.samefile(candidate, boundary):
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def enclosing_worktree_hint(repo_hint: Path) -> Path | None:
@@ -320,7 +329,7 @@ def fingerprint(value: dict[str, Any]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def build_context(args: argparse.Namespace) -> dict[str, Any]:
+def build_context(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
     repo_hint = Path(args.repo).resolve()
     if not repo_hint.is_dir():
         raise ValueError(f"repository does not exist: {repo_hint}")
@@ -338,7 +347,7 @@ def build_context(args: argparse.Namespace) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="sam-pr-description-index-") as temporary:
         index_file = Path(temporary) / "index"
         shutil.copyfile(source_index, index_file)
-        return build_context_with_index(args, git, repo, index_file)
+        return build_context_with_index(args, git, repo, index_file), repo
 
 
 def build_context_with_index(
@@ -401,7 +410,8 @@ def build_context_with_index(
     )
     if len(patch_bytes) > args.max_patch_bytes:
         raise ValueError(
-            f"patch is {len(patch_bytes)} bytes, above limit {args.max_patch_bytes}; split by coherent scope"
+            f"patch is {len(patch_bytes)} bytes, above limit {args.max_patch_bytes}; "
+            "refusing rather than truncating (final: report BLOCKED)"
         )
     if resembles_secret(patch_bytes):
         raise ValueError(
@@ -475,16 +485,126 @@ def parse_args() -> argparse.Namespace:
         "--comparison", choices=("merge-base", "direct"), default="merge-base"
     )
     parser.add_argument("--max-patch-bytes", type=int, default=5_000_000)
+    parser.add_argument(
+        "--out",
+        help=(
+            "Directory outside the repository: write context.json (unchanged JSON), "
+            "patch.diff, and a report.json scaffold when absent; print a compact summary."
+        ),
+    )
     return parser.parse_args()
 
 
+def report_scaffold(context: dict[str, Any], body_path: Path) -> dict[str, Any]:
+    """Mechanical report fields; judgment fields stay empty so validation fails."""
+    head = context["target"]["head_sha"]
+    return {
+        "schema_version": 1,
+        "target": {
+            "base_sha": context["target"]["base_sha"],
+            "head_sha": head,
+            "context_fingerprint": context["context_fingerprint"],
+        },
+        "language": "EN-US",
+        "change_types": [],
+        "file_coverage": [
+            {"path": item["path"], "section": "", "summary": ""}
+            for item in context["files"]
+        ],
+        "evidence": [],
+        "claims": [],
+        "body_file": str(body_path),
+        "remote_update": {
+            "requested": False,
+            "expected_head_sha": head,
+            "observed_head_sha": head,
+            "status": "NOT_REQUESTED",
+            "receipts": [],
+            "error": None,
+        },
+    }
+
+
+def write_out(context: dict[str, Any], raw_out: str, repo: Path) -> str:
+    out = Path(raw_out).resolve()
+    if is_within(out, repo):
+        raise ValueError(f"--out must be outside the repository: {out}")
+    context_path, patch_path = out / "context.json", out / "patch.diff"
+    report_path, body_path = out / "report.json", out / "body.md"
+    if context_path.exists():
+        try:
+            previous = json.loads(context_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            previous = {}
+        if (
+            not isinstance(previous, dict)
+            or previous.get("context_fingerprint") != context["context_fingerprint"]
+        ):
+            raise ValueError(
+                f"refusing to overwrite a different context in {out}; use a new --out directory"
+            )
+    out.mkdir(parents=True, exist_ok=True)
+    context_path.write_text(
+        json.dumps(context, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    patch_path.write_bytes(context["patch"].encode("utf-8"))
+    report_note = "kept existing"
+    if not report_path.exists():
+        report_path.write_text(
+            json.dumps(report_scaffold(context, body_path), indent=2) + "\n",
+            encoding="utf-8",
+        )
+        report_note = "scaffold"
+    target = context["target"]
+    lines = [
+        f"context: {context_path}",
+        f"patch: {patch_path}",
+        f"report: {report_path} ({report_note}; body_file {body_path})",
+        f"fingerprint: {context['context_fingerprint']}",
+        (
+            f"target: base={target['base_sha']} head={target['head_sha']} "
+            f"comparison={target['comparison']} requested_base={target['requested_base_sha']}"
+        ),
+        "references: " + (", ".join(context["reference_candidates"]) or "none"),
+        "commits:",
+        *(f"{item['sha']} {item['subject']}" for item in context["commits"]),
+        "files:",
+        *(
+            " ".join(
+                [item["status"], item["path"]]
+                + (
+                    [f"<- {item['old_path']}"]
+                    if item["old_path"] and item["old_path"] != item["path"]
+                    else []
+                )
+                + (["binary"] if item.get("binary") else [])
+            )
+            for item in context["files"]
+        ),
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def main() -> int:
+    args = parse_args()
     try:
-        context = build_context(parse_args())
-    except ValueError as exc:
+        context, repo = build_context(args)
+        summary = write_out(context, args.out, repo) if args.out else None
+    except (ValueError, OSError) as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1
-    print(json.dumps(context, indent=2, ensure_ascii=False))
+    if summary is None:
+        print(json.dumps(context, indent=2, ensure_ascii=False))
+    else:
+        sys.stdout.write(summary)
+    print(
+        f"build_change_context: fingerprint={context['context_fingerprint']} "
+        f"base={context['target']['base_sha']} head={context['target']['head_sha']} "
+        f"files={len(context['files'])} commits={len(context['commits'])} "
+        f"patch_bytes={len(context['patch'].encode('utf-8'))} "
+        f"patch_sha256={context['patch_sha256']}",
+        file=sys.stderr,
+    )
     return 0
 
 

@@ -1,95 +1,28 @@
 # Output Contract
 
-Write `$GOAL_DIR/goal-report.json`, then validate it:
+Write `<goal>/goal-report.json` with the fields marked **you**. `validate_goal_report.py --derive` overwrites the **derive** fields from the gate files, `DELEGATION.md`, and process env, rewrites the file, then validates. Without `--derive`, every field is required as written.
 
-```bash
-python3 -B scripts/validate_goal_report.py "$GOAL_DIR/goal-report.json"
-```
-
-```json
-{
-  "schema_version": 1,
-  "workflow": "goal",
-  "goal": "Add a native date field to the booking form",
-  "action": "execute",
-  "intensity": "full",
-  "mode": "solo",
-  "tree_depth": 2,
-  "goal_dir": "/abs/path/goal",
-  "host": {
-    "key": "grok",
-    "status": "DETECTED",
-    "detected_from": "env:GROK_AGENT"
-  },
-  "units": {
-    "counted": 1,
-    "gate": "closed",
-    "reason": "single-agent: 1 unit, below threshold"
-  },
-  "ladder": {
-    "rung": 4,
-    "rationale": "native date input covers the request",
-    "skipped": ["date-picker package", "wrapper component"],
-    "new_dependencies": [],
-    "authorized_dependencies": []
-  },
-  "gates": {
-    "path": "/abs/path/goal/GATES.md",
-    "total": 3,
-    "met": 3,
-    "abandoned": 0,
-    "unmet": [],
-    "abandoned_ids": []
-  },
-  "delegation": null,
-  "overbuild_review": {
-    "lean_already": true,
-    "net_lines": 0,
-    "findings": []
-  },
-  "checks": {
-    "gates": {"exit_code": 0, "summary": "ALL MET (3 met)"},
-    "ledger": null
-  },
-  "evidence": [
-    {
-      "id": "E1",
-      "status": "PASS",
-      "detail": "python3 -B scripts/check_gates.py --status: ALL MET (3 met)"
-    }
-  ],
-  "decision": {"result": "COMPLETE", "remaining": []}
-}
-```
-
-## Allowed values
-
-- `action`: `execute` | `review` | `audit`
-- `intensity`: `lite` | `full` | `ultra`
-- `mode`: `solo` | `delegated`
-- `units.gate`: `open` | `closed`
-- `evidence[].status`: `PASS` | `FAIL` | `BLOCKED` | `NOT_RUN` | `INFO`
-- `decision.result`: `COMPLETE` | `IN_PROGRESS` | `BLOCKED`
-- `host.key`: `claude-code` | `codex` | `grok` | `null`
-- `host.status`: `DETECTED` | `OVERRIDE` | `UNKNOWN` | `CONFLICT` | `INVALID`
-
-`delegation` is `null` in solo mode. In delegated mode it is an object
-with `path`, `units`, `verified`, `pending`, `complete`.
+| Field | Source | Rule |
+| --- | --- | --- |
+| `schema_version`, `workflow` | derive | `1`, `"goal"` |
+| `goal` | you | Non-empty text |
+| `action` | you | `execute` \| `review` \| `audit` |
+| `intensity` | you | `lite` \| `full` \| `ultra` |
+| `mode` | you | `solo` \| `delegated`; `delegated` if and only if `units.gate` is `open` |
+| `tree_depth` | you | Integer ≥ 1 |
+| `goal_dir` | derive | Absolute: the report's directory. A typed `goal_dir` naming another directory is an error |
+| `host` | derive | `{key, status, detected_from}` from env. A typed `OVERRIDE` with a listed `key` and `detected_from` `override:<key>` (a `detect_host.py --host` result) is kept, with the env detection added as `env`. `status`: `DETECTED` \| `OVERRIDE` \| `UNKNOWN` \| `CONFLICT` \| `INVALID`. `key`: `claude-code` \| `codex` \| `grok` for `DETECTED`/`OVERRIDE`, else `null`. `detected_from` non-empty |
+| `units` | you | `{counted ≥ 1, gate: open \| closed, reason}`; `reason` is the step-3 line |
+| `ladder` | you | `{rung 1-7, rationale, skipped[], new_dependencies[], authorized_dependencies[]}`; lists of non-empty strings |
+| `gates` | derive | `{path (absolute), total, met, abandoned, unmet[], abandoned_ids[]}`; `met + abandoned + len(unmet) == total`; `abandoned == len(abandoned_ids)`; ids outside `GATES.md` are prefixed `<file>:` |
+| `delegation` | derive | `null` in solo. Delegated: `{path (absolute), units ≥ 1, verified, pending, complete: bool}`; `verified + pending ≤ units` |
+| `overbuild_review` | you | `{lean_already: bool, net_lines: int, findings: [one entry per cut]}`; `true` forbids findings, `false` needs at least one |
+| `checks` | derive | `{gates: {exit_code, summary}, ledger: {exit_code, summary} \| null}`; `gates` required on `execute`; `ledger` `null` in solo |
+| `evidence` | you + derive | Non-empty `[{id (unique), status, detail}]`; `status`: `PASS` \| `FAIL` \| `BLOCKED` \| `NOT_RUN` \| `INFO`. Derive replaces `gates-check` and `ledger-check` |
+| `decision` | you | `{result: COMPLETE \| IN_PROGRESS \| BLOCKED, remaining[]}` |
 
 ## Invariants
 
-- `mode` is `delegated` if and only if `units.gate` is `open`.
-- `COMPLETE` requires empty `decision.remaining`, empty `gates.unmet`,
-  `checks.gates.exit_code == 0`, every `new_dependencies` entry listed in
-  `authorized_dependencies`, and at least one `PASS` evidence item.
-- Delegated `COMPLETE` also requires `delegation.complete`,
-  `delegation.verified == delegation.units`, and
-  `checks.ledger.exit_code == 0`.
-- `review` / `audit` `COMPLETE` still needs the overbuild object and
-  passing validation; they may have zero implementation gates only when
-  `action` is not `execute`. `lean_already: true` forbids findings;
-  `lean_already: false` requires at least one.
+- `execute` needs at least one gate; `review` and `audit` may have none.
+- `COMPLETE` requires empty `decision.remaining`, empty `gates.unmet`, every `new_dependencies` entry listed in `authorized_dependencies`, and at least one `PASS` evidence item. On `execute` it also requires `checks.gates.exit_code == 0`. Delegated also requires `delegation.complete`, `delegation.verified == delegation.units`, and `checks.ledger.exit_code == 0`.
 - `IN_PROGRESS` and `BLOCKED` require a non-empty `remaining` list.
-- `goal_dir` and `gates.path` are absolute.
-- `host.key` is required when `host.status` is `DETECTED` or `OVERRIDE`.
-  It must be `null` for `UNKNOWN`, `CONFLICT`, and `INVALID`.

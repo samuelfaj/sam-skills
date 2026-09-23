@@ -1,92 +1,39 @@
 # Closure Loop
 
-## Contents
+After `sam-work` is `COMPLETE`, iterate until both gates are clean on one final head, or stop fail-closed. Neither gate substitutes for the other.
 
-1. Purpose
-2. Gate pair
-3. Pass criteria
-4. Correction rules
-5. Stop conditions
+## Iteration (one frozen head)
 
-## Purpose
-
-After `sam-work` reports `COMPLETE`, hunt residual defects with independent
-code review and plan/change falsification. Fix what is material. Repeat until
-both gates are clean on one final head—or stop fail-closed.
-
-## Gate pair
-
-Each closure iteration runs **both** skills against the same frozen head:
-
-1. `sam-review` — local/branch/head target only; no publication; no questions.
-2. `sam-council` — falsify the delivered thesis (frozen goal + plan thesis +
-   current diff/receipts). Default profile `fast`; use `full` when council
-   triggers fire (security, migration, irreversible, production-critical).
-
-Do not treat one gate as a substitute for the other. Review finds code/diff
-defects; council finds weak assumptions, failure modes, and false readiness.
+1. **Adversarial ledger pass** (≤1 turn, contract-only): check acceptance criteria without step/proof linkage in the freeze, material assumptions without probe or acceptance reason, open findings without named correction receipts, and evidence hedges labeled as facts. Record results in residuals; skip with an explicit residual reason when cost exceeds value. It is not a phase or terminal and never alone changes `CLEAN`.
+2. **Review:** `sam-review`, branch mode against the frozen base, local-only. When the `sam-work` ledger's review report has the identical key (`sam-review`, branch mode, frozen base, this head), as in iteration 1 and after every fix's ledger refresh, cite it as `review_reused_from` and re-run only its validator. Any key difference means a fresh review (`review_report_path`) in `<RUN_DIR>/closure-<n>/review/`.
+3. **Council:** only after review `APPROVE` on that head; otherwise record `council_status: NOT_RUN`. `sam-council` falsifies the delivered thesis (frozen goal, plan thesis, current diff and receipts), profile `fast` by default, `full` when council triggers fire (security, migration, irreversible, production-critical). Its report's `packet_head` must be this iteration's head.
 
 ## Pass criteria
-
-An iteration is clean only when all hold:
 
 | Gate | Required terminal | Extra |
 | --- | --- | --- |
 | Review | `APPROVE` | Zero accepted `BLOCKER`/`IMPORTANT`; no required test gap |
-| Council | `TRIAGE_PASS` (fast) or `APPROVED` / `APPROVED_WITH_CONDITIONS` (full) | No open supported blocker/high; conditions owned and closed or explicit owner accept recorded before plan freeze only—post-delivery highs must be mitigated |
+| Council | `TRIAGE_PASS` (fast) or `APPROVED` / `APPROVED_WITH_CONDITIONS` (full) | No open supported blocker/high; post-delivery highs must be mitigated |
 
-`COMMENT_ONLY`, `CHANGES_REQUIRED`, `REVISE`, `ESCALATE_TO_FULL` (unresolved),
-`BLOCKED`, and unvalidated reports never close the loop.
+`COMMENT_ONLY`, `CHANGES_REQUIRED`, `REVISE`, unresolved `ESCALATE_TO_FULL`, `BLOCKED`, and unvalidated reports never close the loop. `APPROVED_WITH_CONDITIONS` closes only when every condition is owned and mitigated in the diff with proof, or is a non-blocking residual explicitly listed and accepted by the frozen owner boundary of the original task, recorded before plan freeze (never invented mid-loop).
 
-`APPROVED_WITH_CONDITIONS` closes only when every condition is mitigated in the
-diff with proof, or is non-blocking residual explicitly listed and accepted by
-the frozen owner boundary from the original task (not invented mid-loop).
+## Corrections
 
-## Correction rules
+Only accepted in-scope `BLOCKER`/`IMPORTANT` findings on the frozen goal, or council-supported blockers/highs that break frozen acceptance, force a fix. `FOLLOW_UP`, suggestions, and newly discovered items outside frozen acceptance are parked on the findings ledger and never start another iteration. Never "approve away" a supported in-scope finding to force exit.
 
-When either gate fails:
+When a gate fails:
 
 1. Merge findings into a deduplicated material set (by failure mechanism).
-2. Apply the smallest in-scope fix via `sam-fix-bug` or `sam-create-feature`
-   contracts (match original classification unless the finding proves a bug in
-   new code—still keep task ownership).
-3. Record correction receipts and re-run validators/tests for the change.
-4. Refresh stale `sam-work` gates for the new head (see phase-contract).
-5. Start a new closure iteration with a new review bundle and new council run.
+2. Apply the smallest in-scope fix through the `sam-fix-bug` or `sam-create-feature` contract (keep the original classification unless the finding proves a bug in new code; keep task ownership).
+3. Record correction receipts and re-run validators/tests for the change. A finding open in iteration N and absent in N+1 must be named in iteration N `correction_receipts` (normalized substring match).
+4. Refresh the `sam-work` ledger for the new head: record the fix's implementation report (`finalize` anchors it at the fix commit) and re-run every stale gate per `sam-work` § Completion (never skip proposal remote-head equality when a proposal exists). The refreshed review is the next iteration's cited review.
+5. Only then start the next iteration on the new frozen head.
 
-Only accepted in-scope `BLOCKER`/`IMPORTANT` items (or council supported
-blockers/highs that break frozen acceptance) force a fix iteration.
-`FOLLOW_UP`, suggestions, and newly discovered adjacent issues are parked
-on the findings ledger; they do not start another iteration.
-
-Fix forward on the same task branch. Do not create a new worktree or discard
-the delivered head because a gate failed or the integration base moved.
-
-Never “approve away” a supported in-scope finding to force exit. Suggestions
-alone do not force another iteration; blockers and importants do.
+Fix forward on the same task branch: keep the branch and prior receipts for unchanged files; never create a new worktree, discard the delivered head, or rebuild from a moved integration ref because a gate failed or the base moved.
 
 ## Stop conditions
 
-- **Success:** one iteration where both gates pass on `final_head_sha` →
-  closure status `CLEAN`.
-- **Cap:** default max `5` closure iterations. Exhaustion without cleanliness →
-  workflow `BLOCKED` with open findings ledger.
-- **Child stop:** if review or council returns unrecoverable `BLOCKED`, or
-  child retry limits exhaust without new evidence → workflow `BLOCKED`.
-- **Scope escape:** `STOP_AND_ESCALATE` or out-of-scope redesign → `BLOCKED`
-  with the exact decision needed; do not silently expand the task.
-
-## Adversarial ledger pass (contract-only)
-
-Before the first review of a closure iteration (budget ≤1 turn), run a self-check
-over structural gap categories and record results in residuals (not a new phase
-or terminal):
-
-1. Acceptance criteria without step/proof linkage in the freeze
-2. Material assumptions without probe or acceptance reason
-3. Open findings without named correction receipts
-4. Evidence claims that look like hedges labeled as facts
-
-Skip with an explicit residual reason when cost exceeds value. This pass never
-alone changes `CLEAN`; review + council gates still own the terminal.
-
+- **Success:** one iteration where both gates pass on `final_head_sha` → closure `CLEAN`.
+- **Cap:** max 5 iterations; exhaustion without cleanliness → workflow `BLOCKED` with the open findings ledger.
+- **Child stop:** unrecoverable review or council `BLOCKED`, or child retry limits exhausted without new evidence → `BLOCKED`.
+- **Scope escape:** `STOP_AND_ESCALATE` or out-of-scope redesign → `BLOCKED` with the exact decision needed; never silently expand the task.

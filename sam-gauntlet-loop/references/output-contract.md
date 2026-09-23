@@ -1,59 +1,18 @@
 # Output Contract
 
-Write a temporary JSON report, then validate it with
-`scripts/validate_gauntlet.py`. Keep it outside the repository.
+`scripts/compile_prompt.py` builds and self-validates this report; `--report <path>` saves it outside the repository. After a hand-fix, run `python3 -B <skill>/scripts/validate_gauntlet.py <report>`. Fix from the validator's error lines and patch the report in place; do not read validator source or rewrite the whole report.
 
-```json
-{
-  "schema_version": 1,
-  "goal": "Landing page for a running brand",
-  "bar": {
-    "name": "Nike current running campaign page",
-    "locator": "https://www.nike.com/running",
-    "fetch_method": "screenshot",
-    "kind": "visual"
-  },
-  "host": {
-    "key": "grok",
-    "status": "DETECTED",
-    "detected_from": "env:GROK_AGENT"
-  },
-  "mode": "PROMPT_ONLY",
-  "prompt": "Build a landing page...",
-  "pieces": [],
-  "rounds": [],
-  "decision": {
-    "result": "PROMPT_READY",
-    "critic_pick": null,
-    "remaining": []
-  }
-}
-```
+Exact keys, no extras: `schema_version`, `goal`, `bar`, `host`, `mode`, `prompt`, `pieces`, `rounds`, `decision`.
 
-## Allowed values
+| Field | Rule |
+| --- | --- |
+| `schema_version` | `1` |
+| `goal` | Non-empty text |
+| `mode` | `PROMPT_ONLY` only; never a `RUN` report |
+| `bar` | Exact keys `name`, `locator`, `fetch_method`, `kind`, all strings. `fetch_method`: `screenshot` \| `read` \| `run` \| `open`. `kind`: `visual` \| `writing` \| `code` \| `research` \| `other` |
+| `host` | Exact keys `key`, `status`, `detected_from`. `status`: `DETECTED` \| `OVERRIDE` \| `UNKNOWN` \| `CONFLICT` \| `INVALID`. `key`: `claude-code` \| `codex` \| `grok` when `DETECTED` or `OVERRIDE`, else `null`. `detected_from`: non-empty (`env:<KEY>`, `override:<host>`, `user:<host>`, `none`, `conflict`) |
+| `prompt` | `PROMPT_READY`: 80-220 words that pass the host token rules. `BLOCKED`: `""` |
+| `pieces`, `rounds` | `[]` |
+| `decision` | Exact keys `result`, `critic_pick`, `remaining`. `result`: `PROMPT_READY` \| `BLOCKED`. `critic_pick`: `ours` \| `bar` \| `unfetched` \| `null`; `unfetched` requires `BLOCKED`. `remaining`: list of non-empty strings |
 
-- `host.key`: `claude-code` | `codex` | `grok`
-- `host.status`: `DETECTED` | `OVERRIDE`
-- `bar.fetch_method`: `screenshot` | `read` | `run` | `open`
-- `bar.kind`: `visual` | `writing` | `code` | `research` | `other`
-- `mode`: `PROMPT_ONLY`
-- `decision.result`: `PROMPT_READY` | `BLOCKED`
-- `decision.critic_pick`: `ours` | `bar` | `unfetched` | `null`
-
-## Invariants
-
-- This skill only returns `PROMPT_ONLY`. Never emit a `RUN` report.
-- `PROMPT_ONLY` may only return `PROMPT_READY` or `BLOCKED`.
-- `pieces` and `rounds` stay empty.
-- `BLOCKED` requires a concrete remaining item (`host_unknown`,
-  `host_conflict`, `vague_bar`, `compound_bar`, or a named gap).
-- The stored `prompt` must pass the host token rules in
-  [prompt-contract.md](prompt-contract.md).
-
-## Rendered return
-
-The compiled prompt as one fenced block the user can copy, edit, and paste.
-Name the bound host and the bar on one line under the block. That line must
-say pasting does not launch a run or save a workflow. Do not claim the later
-session will run until the work is perfect. Do not offer to run it. Do not
-start it.
+`PROMPT_READY` also requires a bar that passes the bar checks and `host.status` `DETECTED` or `OVERRIDE`. `BLOCKED` requires at least one `remaining` item; the compiler writes each as `<code>: <detail>` with code `host_unknown`, `host_conflict`, `host_invalid`, `host_mismatch`, `missing_bar`, `vague_bar`, `compound_bar`, `bad_bar`, `prompt_invalid`, or another named gap.

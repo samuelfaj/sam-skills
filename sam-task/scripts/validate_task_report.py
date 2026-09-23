@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -51,6 +54,23 @@ REVISION = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 LEARNING_ID = re.compile(r"^L-\d{3}$")
 ADVISOR_ID = re.compile(r"^A-\d{3}$")
 ADVISOR_SKILL = re.compile(r"^sam-[a-z0-9]+(?:-[a-z0-9]+)*-advisor$")
+COUNCIL_NOT_RUN = "NOT_RUN"
+PLACEHOLDER = "SCAFFOLD:"
+SKILLS_ROOT = Path(__file__).resolve().parents[2]
+CHILD_VALIDATORS = {
+    "sam-plan": "validate_plan_report.py",
+    "sam-work": "validate_work_report.py",
+    "sam-review": "validate_review.py",
+    "sam-council": "validate_council_report.py",
+    "sam-refine-task": "validate_report.py",
+}
+# Flags a parent may pass to a child validator (each takes one absolute path);
+# --scaffold/--from are excluded because they make the child rewrite its report.
+VALIDATOR_FLAGS = {
+    "sam-review": {"--bundle"},
+    "sam-refine-task": {"--baseline", "--current"},
+}
+CHILD_TIMEOUT_SECONDS = 600
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -73,6 +93,85 @@ def string_list(value: Any, *, nonempty: bool = False) -> bool:
         and (not nonempty or bool(value))
         and all(nonempty_string(item) for item in value)
     )
+
+
+def sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def absolute_or_none(value: Any) -> bool:
+    return value is None or (nonempty_string(value) and Path(str(value)).is_absolute())
+
+
+def validator_args_ok(args: Any, skill: str) -> bool:
+    """True when args are exactly the skill's flags, each `--flag <abs>` or `--flag=<abs>`."""
+    if not isinstance(args, list) or not all(isinstance(arg, str) for arg in args):
+        return False
+    seen: set[str] = set()
+    index = 0
+    while index < len(args):
+        flag, sep, value = args[index].partition("=")
+        if not sep:
+            if index + 1 >= len(args):
+                return False
+            value = args[index + 1]
+            index += 1
+        index += 1
+        if flag not in VALIDATOR_FLAGS[skill] or flag in seen or not Path(value).is_absolute():
+            return False
+        seen.add(flag)
+    return seen == VALIDATOR_FLAGS[skill]
+
+
+def run_child_validator(
+    skill: str, args: list[str], report_path: Path, cwd: str | None = None
+) -> tuple[int, str]:
+    """Re-run a sibling skill's validator; return (exit code, last output line)."""
+    return run_script(
+        SKILLS_ROOT / skill / "scripts" / CHILD_VALIDATORS[skill], args, report_path, cwd
+    )
+
+
+def repo_cwd(target: dict[str, Any]) -> str | None:
+    """The target repo, where a DELTA council's ancestry check must run its git."""
+    root = target.get("repo_root")
+    return str(root) if isinstance(root, str) and Path(root).is_absolute() and Path(root).is_dir() else None
+
+
+def run_script(
+    script: Path, args: list[str], report_path: Path, cwd: str | None = None
+) -> tuple[int, str]:
+    """Run a validator from cwd (the target repo for checks that ask git there)."""
+    if not script.is_file():
+        return 127, f"child validator is missing: {script}"
+    try:
+        result = subprocess.run(
+            [sys.executable, "-B", str(script), *args, str(report_path)],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"),
+            timeout=CHILD_TIMEOUT_SECONDS,
+            cwd=cwd,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return 124, f"child validator did not finish: {exc}"
+    # Decode bytes with replacement: non-UTF-8 child output never raises or breaks printing.
+    lines = result.stdout.decode("utf-8", "replace").strip().splitlines()
+    if result.returncode != 0:
+        lines = result.stderr.decode("utf-8", "replace").strip().splitlines() or lines
+    return result.returncode, (lines[-1].strip() if lines else "no output")
+
+
+def find_placeholders(value: Any, path: str, found: list[str]) -> None:
+    if isinstance(value, str) and value.startswith(PLACEHOLDER):
+        found.append(path or "$")
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            find_placeholders(item, f"{path}.{key}" if path else str(key), found)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            find_placeholders(item, f"{path}[{index}]", found)
 
 
 def validate_iteration(
@@ -221,9 +320,12 @@ def validate_closure(closure: Any, final_head: Any, workflow_status: str, errors
         }:
             errors.append(f"{prefix} review_status is invalid")
         council_status = item.get("council_status")
+        council_ran = nonempty_string(council_status) and council_status != COUNCIL_NOT_RUN
         if not nonempty_string(council_status):
             errors.append(f"{prefix} council_status is required")
-        if not nonempty_string(item.get("council_profile")):
+        if council_ran and review_status != "APPROVE":
+            errors.append(f"{prefix} ran council before review APPROVE on that head")
+        if council_ran and not nonempty_string(item.get("council_profile")):
             errors.append(f"{prefix} council_profile is required")
         if not string_list(item.get("open_findings")):
             errors.append(f"{prefix} open_findings must be a string array")
@@ -231,10 +333,26 @@ def validate_closure(closure: Any, final_head: Any, workflow_status: str, errors
             errors.append(f"{prefix} correction_receipts must be a string array")
         if not nonempty_string(item.get("review_receipt")):
             errors.append(f"{prefix} review_receipt is required")
-        if not nonempty_string(item.get("council_receipt")):
+        if council_ran and not nonempty_string(item.get("council_receipt")):
             errors.append(f"{prefix} council_receipt is required")
         if not string_list(item.get("evidence"), nonempty=True):
             errors.append(f"{prefix} requires evidence")
+        fresh, reused = item.get("review_report_path"), item.get("review_reused_from")
+        if not absolute_or_none(fresh) or not absolute_or_none(reused) or (fresh is None) == (
+            reused is None
+        ):
+            errors.append(
+                f"{prefix} needs exactly one absolute review_report_path or review_reused_from"
+            )
+        if fresh is not None and not validator_args_ok(item.get("review_validator_args"), "sam-review"):
+            errors.append(
+                f"{prefix} review_validator_args must be `--bundle <absolute path>` (no other flags)"
+            )
+        council_path = item.get("council_report_path")
+        if not absolute_or_none(council_path) or (council_path is None) == council_ran:
+            errors.append(
+                f"{prefix} council_report_path must be absolute when council ran and null otherwise"
+            )
 
         open_findings = item.get("open_findings") if isinstance(item.get("open_findings"), list) else []
         corrections = (
@@ -575,9 +693,179 @@ def validate_child_artifacts(
         )
 
 
+def _decision(report: dict[str, Any]) -> Any:
+    decision = report.get("decision")
+    return decision.get("result") if isinstance(decision, dict) else decision
+
+
+def _receipt_matches(
+    label: str,
+    skill: str,
+    args: list[str],
+    path: Path,
+    recorded: Any,
+    errors: list[str],
+    cwd: str | None = None,
+) -> None:
+    code, line = run_child_validator(skill, args, path, cwd)
+    if code != 0:
+        errors.append(f"{label} failed the {skill} validator: {line}")
+    elif recorded != line:
+        errors.append(f"{label} receipt does not match a fresh {skill} validator run ({line})")
+
+
+def validate_cited_reports(
+    report: dict[str, Any], target: dict[str, Any], status: str, errors: list[str]
+) -> None:
+    """On COMPLETE, prove phase receipts from the cited files, not typed strings."""
+    if status != "COMPLETE" or not isinstance(report.get("phases"), list):
+        return
+    phases = {p.get("id"): p for p in report["phases"] if isinstance(p, dict)}
+    plan = report.get("plan") if isinstance(report.get("plan"), dict) else {}
+    files: dict[str, Path] = {}
+    for phase_id, raw in (
+        ("plan", plan.get("freeze_path")),
+        ("refine", report.get("refine_report_path")),
+        ("work", report.get("work_report_path")),
+    ):
+        if nonempty_string(raw) and Path(str(raw)).is_absolute() and Path(str(raw)).is_file():
+            files[phase_id] = Path(str(raw))
+            iterations = phases.get(phase_id, {}).get("iterations")
+            last = iterations[-1] if isinstance(iterations, list) and iterations else {}
+            if isinstance(last, dict) and last.get("output_fingerprint") != sha256_file(files[phase_id]):
+                errors.append(
+                    f"phase {phase_id} final iteration output_fingerprint must equal sha256 of its report file"
+                )
+
+    if "plan" in files:
+        recorded = plan.get("validator_receipt")
+        receipts = phases.get("plan", {}).get("validator_receipts")
+        if not isinstance(receipts, list) or not receipts or receipts[-1] != recorded:
+            errors.append("plan.validator_receipt must equal the plan phase's last validator receipt")
+        _receipt_matches("plan freeze", "sam-plan", [], files["plan"], recorded, errors)
+
+    work: dict[str, Any] = {}
+    if "work" in files:
+        receipts = phases.get("work", {}).get("validator_receipts")
+        recorded = receipts[-1] if isinstance(receipts, list) and receipts else None
+        _receipt_matches("work report", "sam-work", [], files["work"], recorded, errors)
+        loaded = _load_json_object(files["work"], "work_report_path", [])
+        work = loaded or {}
+        work_target = work.get("target") if isinstance(work.get("target"), dict) else {}
+        for key in ("repo_root", "base_sha", "final_head_sha", "final_change_fingerprint"):
+            if work_target.get(key) != target.get(key):
+                errors.append(f"work report target.{key} must equal target.{key}")
+        work_request = work.get("request") if isinstance(work.get("request"), dict) else {}
+        request = report.get("request") if isinstance(report.get("request"), dict) else {}
+        if work_request.get("prompt_sha256") != request.get("prompt_sha256"):
+            errors.append("work report request.prompt_sha256 must equal request.prompt_sha256")
+
+    if "refine" in files:
+        args = report.get("refine_validator_args")
+        receipts = phases.get("refine", {}).get("validator_receipts")
+        if not validator_args_ok(args, "sam-refine-task"):
+            errors.append(
+                "refine_validator_args must be `--baseline`/`--current` <absolute path> pairs"
+            )
+        else:
+            recorded = receipts[-1] if isinstance(receipts, list) and receipts else None
+            _receipt_matches("refine report", "sam-refine-task", list(args), files["refine"], recorded, errors)
+
+    closure = report.get("closure") if isinstance(report.get("closure"), dict) else {}
+    iterations = closure.get("iterations")
+    if not isinstance(iterations, list) or not iterations or not isinstance(iterations[-1], dict):
+        return
+    # Superseded iterations stay tied to the files they cited when current.
+    for index, item in enumerate(iterations[:-1], start=1):
+        if not isinstance(item, dict):
+            continue
+        cited = item.get("review_reused_from") or item.get("review_report_path")
+        if not nonempty_string(cited):
+            continue
+        path = Path(str(cited))
+        review = _load_json_object(path, f"closure iteration {index} review", errors)
+        if review is None:
+            continue
+        review_target = review.get("target") if isinstance(review.get("target"), dict) else {}
+        pinned = item.get("review_report_sha256")
+        if (
+            review_target.get("head_sha") != item.get("head_sha")
+            or _decision(review) != item.get("review_status")
+            or (pinned is not None and pinned != sha256_file(path))
+        ):
+            errors.append(
+                f"closure iteration {index} cited review changed after it was recorded"
+            )
+    last = iterations[-1]
+    prefix = "final closure iteration"
+    head = last.get("head_sha")
+    reused, fresh = last.get("review_reused_from"), last.get("review_report_path")
+    if nonempty_string(reused):
+        work_phases = work.get("phases") if isinstance(work.get("phases"), list) else []
+        work_review = next(
+            (p for p in work_phases if isinstance(p, dict) and p.get("id") == "review"), {}
+        )
+        cited = work_review.get("report_path")
+        if not nonempty_string(cited) or Path(str(cited)).resolve() != Path(str(reused)).resolve():
+            errors.append(f"{prefix} review_reused_from must cite the sam-work review report")
+        else:
+            review = _load_json_object(Path(str(reused)), "review_reused_from", errors) or {}
+            review_target = review.get("target") if isinstance(review.get("target"), dict) else {}
+            if (
+                review_target.get("head_sha") != head
+                or review_target.get("base_sha") != target.get("base_sha")
+                or review_target.get("mode") != "branch"
+            ):
+                errors.append(
+                    f"{prefix} reused review key (branch mode, head, base) does not match this iteration"
+                )
+            if _decision(review) != last.get("review_status"):
+                errors.append(f"{prefix} review_status must match the cited review decision")
+            receipts = work_review.get("validator_receipts")
+            if not isinstance(receipts, list) or not receipts or last.get("review_receipt") != receipts[-1]:
+                errors.append(f"{prefix} review_receipt must equal the cited sam-work review receipt")
+    elif nonempty_string(fresh):
+        path = Path(str(fresh))
+        review = _load_json_object(path, "review_report_path", errors)
+        if review is not None:
+            review_target = review.get("target") if isinstance(review.get("target"), dict) else {}
+            if review_target.get("head_sha") != head:
+                errors.append(f"{prefix} review report head does not match head_sha")
+            if review_target.get("mode") != "branch" or review_target.get("base_sha") != target.get(
+                "base_sha"
+            ):
+                errors.append(f"{prefix} fresh review must be branch mode against target.base_sha")
+            if _decision(review) != last.get("review_status"):
+                errors.append(f"{prefix} review_status must match the review report decision")
+            args = last.get("review_validator_args")
+            args = [str(a) for a in args] if isinstance(args, list) else []
+            _receipt_matches(f"{prefix} review", "sam-review", args, path, last.get("review_receipt"), errors)
+    council_path = last.get("council_report_path")
+    if nonempty_string(council_path):
+        path = Path(str(council_path))
+        council = _load_json_object(path, "council_report_path", errors)
+        if council is not None:
+            if council.get("status") != last.get("council_status"):
+                errors.append(f"{prefix} council_status must match the council report status")
+            if council.get("packet_head") != head:
+                errors.append(f"{prefix} council packet_head must equal head_sha")
+            _receipt_matches(
+                f"{prefix} council",
+                "sam-council",
+                [],
+                path,
+                last.get("council_receipt"),
+                errors,
+                repo_cwd(target),
+            )
+
 
 def validate(report: dict[str, Any]) -> list[str]:
     errors: list[str] = []
+    placeholders: list[str] = []
+    find_placeholders(report, "", placeholders)
+    for location in placeholders[:10]:
+        errors.append(f"unfilled scaffold placeholder at {location}")
     if report.get("schema_version") != 3:
         errors.append("schema_version must be 3")
     if report.get("workflow") != "task":
@@ -663,6 +951,7 @@ def validate(report: dict[str, Any]) -> list[str]:
 
     validate_child_artifacts(report, str(status), errors)
     validate_web_and_video_evidence(report, target, str(status), errors)
+    validate_cited_reports(report, target, str(status), errors)
     validate_advisor_consults(report, errors)
 
     if not string_list(report.get("residuals")):

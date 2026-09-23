@@ -1,195 +1,159 @@
 ---
 name: sam-plan
-description: "Conduct task study and emit a machine freeze plan (goal, thesis, steps, evidence, status) plus a required light-theme HTML pack for humans; assertive investigation first, council only on risk triggers. Use when the user runs /sam-plan, asks for an implementation plan, or needs pre-implementation planning before sam-task/sam-work."
+description: "Study a task and emit a validated plan freeze plus a rendered light-theme HTML plan pack; council only on risk triggers. Use when the user runs /sam-plan, asks for an implementation plan, or needs pre-implementation planning before sam-task/sam-work."
 ---
 
 # Sam Plan
 
-## Purpose
-
-Turn one planning prompt into a **conducted inquiry + decision freeze**, not a
-document factory. Investigate the repo, freeze decisions, and emit:
-
-1. Machine freeze: `plan-report.json` for parents (`sam-task`, validators)
-2. **Human plan pack: light-theme HTML** under `$PLAN_DIR` so people can read
-   the plan without parsing JSON
-
-Default human presentation is always HTML (light theme). Chat/Markdown may
-summarize, but the durable human artifact is the HTML pack.
+Turn one planning prompt into a conducted inquiry and decision freeze:
+`plan-report.json` (the parent and validator gate) plus an HTML pack for humans.
 
 ## Non-Negotiable Contract
 
-Honesty and scope only—presentation form for humans is HTML light pack.
+- Plan only: no production code edits, commits, PRs, deploys, or external
+  writes beyond the plan directory and local scratch.
+- Separate `FACT`, `ASSUMPTION`, and `UNKNOWN`. Never invent locators, promote
+  guesses to facts, or raise confidence by repetition; prefer `UNKNOWN`.
+  Absent external systems, guessed production state, and imagined APIs are
+  not facts.
+- Every terminal plan has a validated `plan-report.json` and an HTML pack made
+  only by `scripts/render_plan_html.py` (light theme; it escapes all text).
+  Never write HTML or CSS yourself; wireframes stay textual unless the user
+  provides or requests images.
+- Fail closed: `NOT_CONFIDENT` (useful plan, but material unknowns,
+  unaccepted assumptions, or `NOT_RUN` proofs remain) or `BLOCKED` (missing
+  access, owner decision, unsafe scope, or council/runtime capability prevents
+  a defensible plan) beats a false `READY_TO_EXECUTE`. Never claim a finished
+  plan without `VALID` from the `--require-html` run.
+- Council only on risk triggers or explicit user request, never on depth
+  labels. One council run per freeze; an author-revised thesis is not another
+  round.
+- Redact secrets, credentials, tokens, and private customer data from all plan
+  artifacts.
 
-- Do not implement the target system. No production code edits, commits, PRs,
-  deploys, or external writes beyond the plan output directory and local
-  scratch/report files.
-- Separate `FACT`, `ASSUMPTION`, and `UNKNOWN`. Never invent locators or promote
-  guesses to facts.
-- Always emit a validated machine freeze (`plan-report.json`) **and** a rendered
-  light-theme HTML pack (`scripts/render_plan_html.py` + `--require-html`).
-- Fail closed: `NOT_CONFIDENT` or `BLOCKED` beats a false `READY_TO_EXECUTE`.
-- Council only on risk triggers or explicit user request—not on depth labels.
-  One council run per freeze; an author-revised thesis is not another round.
-- Redact secrets and private data from all plan artifacts.
-- Prefer the smallest plan that still makes implementation decisions explicit
-  ([references/simplicity-rules.md](references/simplicity-rules.md)).
+## Resources
 
-## Machine freeze (always)
+| Read | When |
+| --- | --- |
+| `references/output-contract.md` | Workflow step 3, when drafting the freeze (holds the risk-flag catalog) |
+| `references/complexity-routing.md` | Before choosing `simple`, or when depth is ambiguous |
+| `references/council-integration.md`; then `../sam-council/SKILL.md` (full; never emulate) only if you run council yourself (standalone or inline in the controller) | Workflow step 4: a risk flag fires or the user requests council |
+| `references/chapter-taxonomy.md` | Only when authoring `chapters[]` |
 
-For any terminal plan, write `$PLAN_DIR/plan-report.json` with the **hard core**
-in [references/output-contract.md](references/output-contract.md):
+Re-read a file only after compaction or when you cannot quote the section you
+need.
 
-- Frozen goal, success, invariants, no-go
-- `study` receipts: `tools_used`, `surfaces_mapped` (and optional `repo_root`)
-- Thesis (approach + rejected alternatives)
-- Ordered steps with DoD and proof methods
-- Material FACT/ASSUMPTION/UNKNOWN with **real** locators on facts
-- `acceptance_trace` mapping each success criterion → steps/proofs
-- Status, residuals, blockers, risk flags (include heuristic matches)
-- Council policy for risk triggers (run or explicit skip reason)
+## Study Loop
 
-Chat or Markdown is a **projection** of this freeze. It does not replace it for
-`sam-task` or other parents. HTML is the human-readable projection and is
-required on every terminal plan.
+Workflow step 2. Investigate with tools first; ask the user only when
+standalone and a material unknown blocks planning.
 
-## Resources (load on demand)
+1. **Freeze intent**: goal, non-goals, success criteria, invariants,
+   constraints, and no-go from the prompt and explicit owner decisions.
+2. **Revalidate durable context**: repository instructions and user-approved
+   host context are leads, not proof; a `FACT` needs a current locator.
+3. **Map surfaces**: inspect only what planning needs (repo files, tests,
+   schemas, issue text, safe local runtime observations, user constraints);
+   record `study.surfaces_mapped` and `study.tools_used`. A host code graph is
+   advisory: if used, record callers/dependents as evidence (e.g. kind
+   `graph-impact`) and cite the query in `tools_used`; if unavailable, record
+   a residual or a non-material `UNKNOWN` with a probe. Never fabricate graph
+   use or gate on it.
+4. **Ledger**: give each material claim a stable ID and link dependent steps
+   and risks to it. A claim is material when a wrong answer would change
+   steps, risk, scope, or verification; non-material color needs no ID.
+   `FACT`: code, tests, logs, config, authoritative docs, or a recorded user
+   decision, with a locator (`path[:line[:col]]`, `symbol @ path:line`,
+   `user decision: …`, `decision: …`, or `command: …`). `ASSUMPTION`:
+   plausible, unverified. `UNKNOWN`: missing or contradictory evidence. Mark
+   an assumption or risk `ACCEPTED` only on explicit owner acceptance.
+5. **Thesis**: a falsifiable approach plus at least one simpler path rejected
+   with a reason.
+6. **Steps**: ordered, each with why, imperative `how[]` (2-7 concrete bullets
+   naming files, behaviors, and what not to touch), surfaces (repo paths), an
+   observable DoD, and proof IDs, so a READY step is implementable without
+   re-deriving the procedure.
+7. **Gates**: risks (accepted or mitigated), open material unknowns,
+   `acceptance_trace`, and residuals (risk flags and council: Workflow steps
+   3-4).
 
-Always:
+**Simplicity** (before READY): prefer the smallest plan that still makes
+implementation decisions explicit. Drop a step if the goal holds without it or
+another step has the same DoD; prefer existing modules, paths, patterns, and
+repo standards over new abstractions or re-planning; plan one happy path plus
+material failure modes; reject alternatives or layers that only add unproven
+flexibility (speculative flags, adapters, "future-proof" layers). Record
+`simplicity.cuts` (deferred work, with reason) and
+`retained_complexity_justifications` (only when a simpler option failed for a
+falsifiable reason: compatibility, safety, measured constraint), including any
+complex path kept against a council simplification objection. HTML and
+chapters are never proof of study.
 
-1. [references/output-contract.md](references/output-contract.md) — freeze + READY invariants
-2. [references/simplicity-rules.md](references/simplicity-rules.md)
-3. [references/html-shell.md](references/html-shell.md) — required light HTML pack
+## Depth and Risk Flags
 
-When classifying effort or risk:
+Depth (`simple|standard|deep`) is a signal only; it never forces chapters or
+council. Default `standard` when uncertain; prefer `simple` over ceremony (no
+large templates for tiny bugs).
 
-4. [references/complexity-routing.md](references/complexity-routing.md)
-5. [references/evidence-policy.md](references/evidence-policy.md)
-
-When risk triggers fire or the user requests council:
-
-6. [references/council-integration.md](references/council-integration.md)
-7. `../sam-council/SKILL.md` (full; do not emulate)
-
-When enriching the HTML pack with extra lenses:
-
-8. [references/chapter-taxonomy.md](references/chapter-taxonomy.md) — optional lenses only
-
-Runtime scripts (invoke; do not reimplement):
-
-- `scripts/scaffold_plan_dir.py`
-- `scripts/validate_plan_report.py`
-- `scripts/render_plan_html.py` (required human pack)
-
-## Study loop (assertive conduct)
-
-Run this **before** drafting the freeze. Ask the user only when a material
-unknown blocks planning; otherwise investigate with tools first.
-
-1. **Freeze intent** — goal, non-goals, success criteria, invariants, constraints, no-go from the prompt and explicit owner decisions.
-2. **Revalidate durable context** — inspect repository instructions and any
-   user-approved durable context supplied by the host. Treat it as a lead, not
-   current proof: confirm it against the live repository and record it as a
-   `FACT` only with a current locator; otherwise use `ASSUMPTION` or `UNKNOWN`.
-3. **Map surfaces** — locate code, tests, configs, and seams; record them in
-   `study.surfaces_mapped` and note tools in `study.tools_used`.
-4. **Ledger** — material FACT / ASSUMPTION / UNKNOWN with stable IDs; FACT needs a
-   locator that exists in the repo (`path` or `path:line`) or `user decision: …`.
-5. **Thesis** — falsifiable approach plus at least one simpler path rejected with reason.
-6. **Steps** — ordered work with why, **how[]** (imperative procedure), surfaces,
-   DoD, and proof method IDs. Each READY step must be implementable without
-   re-deriving the procedure from thesis alone.
-7. **Gates** — risks, risk flags (do not under-flag migration/auth/etc.),
-   `acceptance_trace`, residuals; what must be true for `READY_TO_EXECUTE`.
-
-Decision points that must appear in the freeze (not empty template pages):
-
-- Chosen approach and rejected alternatives
-- Risks accepted or mitigated
-- Open material unknowns (if any → not READY)
-- Council required vs skipped with concrete reason
+Set every risk flag that applies (catalog: output contract). Any flag means
+council. With none, record a concrete `council.skip_reason`: a self-critical
+pass is enough, but if it surfaces a material failure mode, add the flag and
+run council. Do not under-flag to skip council; dismiss a validator flag
+suggestion only as a keyword false positive, per the output contract.
 
 ## Workflow
 
-```bash
-SAM_PLAN_DIR="<absolute directory containing this SKILL.md>"
-PLAN_DIR="${PLAN_DIR:-$PWD/plan}"
+Invoke the scripts; never reimplement them. Write every command with literal
+absolute paths (`<skill-dir>` is this SKILL.md's absolute directory). Run
+`scripts/test_plan_harness.py` only when changing this skill.
+
+1. **Scaffold** (`PLAN_DIR` defaults to `<cwd>/plan`; a parent may set it):
+
+   ```bash
+   python3 -B <skill-dir>/scripts/scaffold_plan_dir.py --out <PLAN_DIR> \
+     --prompt-file <file with the exact prompt> --repo-root <REPO_ROOT>
+   ```
+
+   Under a parent, pass `--prompt-hash <parent prompt sha256>` instead of
+   `--prompt-file`. It writes a fail-closed skeleton `plan-report.json`, or
+   reuses the existing freeze of the same prompt; on reuse, delete a
+   `00`/`plano` chapter you did not author (an old renderer persisted it).
+2. **Study** (loop above); set depth.
+3. **Draft** the freeze in place per the output contract, with risk flags.
+4. **Council** when flagged (Resources row).
+5. **Render and validate** in one command; rerun after every edit:
+
+   ```bash
+   python3 -B <skill-dir>/scripts/render_plan_html.py <PLAN_DIR>/plan-report.json --out <PLAN_DIR> \
+     && python3 -B <skill-dir>/scripts/validate_plan_report.py <PLAN_DIR>/plan-report.json \
+       --repo-root <REPO_ROOT> --require-html
+   ```
+
+   Omit `--repo-root` only when the target tree is unavailable; then prefer
+   `BLOCKED` or `NOT_CONFIDENT` over fake paths. Fix from the validator's error
+   lines and patch the report in place; do not read validator source or rewrite
+   the whole report. Do not read the rendered HTML back.
+
+Match the user's language for prose and the HTML body when practical. Remove
+scratch outside the plan directory when done.
+
+## Return
+
+Child mode (a parent or phase worker invoked this skill): never ask the user;
+the final message is exactly this block.
+
+```
+RESULT sam-plan <READY_TO_EXECUTE|NOT_CONFIDENT|BLOCKED|COUNCIL_REQUIRED>
+report: <absolute PLAN_DIR>/plan-report.json
+validator: <exact last line of the validator output>
+head: <target repo HEAD sha|n/a> fingerprint: n/a
+open: <n>
+- <one line per open required item, max 10>
 ```
 
-### 1. Scaffold
+`COUNCIL_REQUIRED` is the phase-worker handoff in council-integration.md.
 
-```bash
-python3 -B "$SAM_PLAN_DIR/scripts/scaffold_plan_dir.py" --out "$PLAN_DIR"
-```
-
-Only the plan directory is a write surface for artifacts.
-
-### 2. Study, then draft freeze
-
-Build `plan-report.json` from the study loop. Record depth signal
-(`simple` | `standard` | `deep`) as rationale only—it does **not** force a
-chapter matrix or automatic council.
-
-Set `risk_flags` from [references/council-integration.md](references/council-integration.md).
-If any risk trigger is present, run `sam-council` and record the run; do not
-require council merely because depth is `standard`.
-
-### 3. Validate freeze (hard core)
-
-Prefer resolving locators against the target repo:
-
-```bash
-REPO_ROOT="${REPO_ROOT:-$PWD}"
-python3 -B "$SAM_PLAN_DIR/scripts/validate_plan_report.py" \
-  "$PLAN_DIR/plan-report.json" \
-  --repo-root "$REPO_ROOT"
-```
-
-`--repo-root` enables path/line checks for FACT locators. Omit only when the
-target tree is unavailable (`BLOCKED` / `NOT_CONFIDENT` is better than fake
-paths).
-
-### 4. Required HTML pack (light theme, for humans)
-
-Always render a human-readable light-theme HTML pack after a valid freeze:
-
-- Optionally attach `chapters[]` (lenses from the taxonomy catalog—not a required set).
-- If `chapters` is empty, the renderer synthesizes a single compact page from the freeze.
-- Theme is light (soft page background, white cards)—never emit a dark-only pack.
-
-```bash
-python3 -B "$SAM_PLAN_DIR/scripts/render_plan_html.py" \
-  "$PLAN_DIR/plan-report.json" --out "$PLAN_DIR"
-python3 -B "$SAM_PLAN_DIR/scripts/validate_plan_report.py" \
-  "$PLAN_DIR/plan-report.json" --require-html
-```
-
-Open the primary HTML file (e.g. `00-plano.html` or the first entry in
-`output.html_files`) as the human plan. Parents still consume `plan-report.json`.
-
-### 5. Return
-
-Report:
-
-1. Terminal status: `READY_TO_EXECUTE` | `NOT_CONFIDENT` | `BLOCKED`
-2. Depth signal and complexity rationale
-3. Absolute `PLAN_DIR`, primary HTML path(s), and freeze path
-4. Thesis summary and step count
-5. Council skipped (reason) or terminal council result
-6. Residuals, blockers, risk flags
-7. Validator result (`VALID` with HTML on disk required before claiming a finished plan)
-
-Do not claim a finished plan without a passing freeze validator **and** rendered
-HTML under `$PLAN_DIR`. Remove scratch outside the plan directory when done.
-
-## Operating notes
-
-- Locale: match the user's language for prose projections and HTML body when practical.
-- Parent workflows may set `PLAN_DIR`. Default is `$PWD/plan`.
-- `sam-task` advances on validated freeze core (`plan-report.json`); HTML is the
-  required human artifact of this skill, not the parent machine gate.
-- Step anti-pattern: `title` only or `how` that restates the title. Prefer 2–7
-  concrete bullets naming files/behaviors and what not to touch when relevant.
-- Chat return (short): status · thesis (1 line) · N steps · primary HTML path ·
-  freeze path · blockers/residuals · council skip/result · VALID.
-- Run `scripts/test_plan_harness.py` only when changing this skill.
+Standalone: at most 15 lines (status, depth and its rationale, one-line
+thesis and step count, council skip reason or result, residuals, blockers,
+risk flags, validator line, absolute `PLAN_DIR`, primary HTML, and freeze
+paths). Never paste the JSON.

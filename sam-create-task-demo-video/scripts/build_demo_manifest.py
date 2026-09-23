@@ -15,6 +15,8 @@ import sys
 import tempfile
 from typing import Any
 
+PATHS_SHOWN = 40
+
 MAX_PATCH_BYTES = 4 * 1024 * 1024
 SENSITIVE_NAMES = {
     ".env",
@@ -508,7 +510,9 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     source_index = repository_index(executable, root)
     with tempfile.TemporaryDirectory(prefix="sam-demo-git-index-") as temporary:
         index_file = pathlib.Path(temporary) / "index"
-        shutil.copyfile(source_index, index_file)
+        # copy2 keeps the index mtime: a fresh mtime disables Git's racy-entry
+        # content check, hiding same-size edits made in the index's last second.
+        shutil.copy2(source_index, index_file)
         return build_with_index(args, executable, root, index_file)
 
 
@@ -535,6 +539,19 @@ def main() -> int:
         return 2
     json.dump(result, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
+    # Compact lines so callers never need to open the patch-bearing manifest.
+    paths = [item["path"] for item in result["files"]]
+    more = f" more={len(paths) - PATHS_SHOWN}" if len(paths) > PATHS_SHOWN else ""
+    print(f"changed_paths={json.dumps(paths[:PATHS_SHOWN])}{more}", file=sys.stderr)
+    target = result["target"]
+    print(
+        f"manifest fingerprint={result['fingerprint']} base={target['base_sha']} "
+        f"head={target['head_sha']} mode={target['mode']} files={len(result['files'])} "
+        f"command_definitions={len(result['command_definitions'])} "
+        f"patch_bytes={len(result['patch'].encode())} "
+        f"patch_sha256={result['patch_sha256']}",
+        file=sys.stderr,
+    )
     return 0
 
 

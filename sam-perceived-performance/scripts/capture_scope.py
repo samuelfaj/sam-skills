@@ -460,7 +460,7 @@ def capture(repo: Path, requested_paths: list[str]) -> JsonObject:
     with tempfile.TemporaryDirectory(prefix="sam-delivery-git-index-") as temporary:
         index_file = Path(temporary) / "index"
         if source_index.is_file():
-            shutil.copyfile(source_index, index_file)
+            shutil.copy2(source_index, index_file)
         return capture_with_index(
             executable,
             root,
@@ -488,6 +488,12 @@ def main() -> int:
         return 2
     json.dump(result, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
+    # One-line summary so agents never need to open the bundle file.
+    print(
+        f"scope: head={result['head_sha']} fingerprint={result['fingerprint']} "
+        f"files={result['file_count']}",
+        file=sys.stderr,
+    )
     return 0
 
 

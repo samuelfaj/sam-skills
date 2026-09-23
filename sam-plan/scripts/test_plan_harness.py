@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -60,7 +61,7 @@ def render(report: Path, out: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def scaffold(out: Path) -> subprocess.CompletedProcess[str]:
+def scaffold(out: Path, *extra: str) -> subprocess.CompletedProcess[str]:
     return run(
         [
             sys.executable,
@@ -69,6 +70,7 @@ def scaffold(out: Path) -> subprocess.CompletedProcess[str]:
             "--out",
             str(out),
             "--json",
+            *extra,
         ],
         check=False,
     )
@@ -256,6 +258,9 @@ def base_standard_report(plan_dir: str) -> JsonObject:
 
 def base_risk_council_report(plan_dir: str) -> JsonObject:
     report = base_simple_report(plan_dir)
+    council_report = Path(plan_dir).parent / f"{Path(plan_dir).name}-council-report.json"
+    council_report.parent.mkdir(parents=True, exist_ok=True)
+    council_report.write_text(json.dumps({"status": "TRIAGE_PASS"}), encoding="utf-8")
     report.update(
         {
             "depth": "standard",
@@ -275,7 +280,7 @@ def base_risk_council_report(plan_dir: str) -> JsonObject:
                         "profile": "fast",
                         "status": "TRIAGE_PASS",
                         "thesis_id": "T-001",
-                        "report_path": "scratch/council-report.json",
+                        "report_path": str(council_report),
                         "material_objections_closed": True,
                     }
                 ],
@@ -397,6 +402,73 @@ def main() -> int:
         if compact_criterion not in html:
             raise AssertionError("compact HTML missing success criterion in acceptance")
 
+        # One render+validate pass per edit: locator checks apply to the final artifact.
+        assert_valid(rendered_report, require_html=True, repo_root=repo)
+
+        # Stale-chapter regression: the synthesized page must stay in memory, so a
+        # re-render after an edit shows the edited freeze, not the first render.
+        persisted = json.loads(rendered_report.read_text(encoding="utf-8"))
+        if persisted.get("chapters") != []:
+            raise AssertionError("renderer persisted a synthesized chapter into the freeze")
+        persisted["steps"][0]["how"][0] = "Guard total with an explicit null branch first"
+        write_report(rendered_report, persisted)
+        render_result = render(rendered_report, plan_dir)
+        if render_result.returncode != 0:
+            raise AssertionError(render_result.stderr)
+        html = (plan_dir / "00-plano.html").read_text(encoding="utf-8")
+        if "explicit null branch" not in html or "Guard total before format/render" in html:
+            raise AssertionError("re-render reused a stale chapter instead of the edited freeze")
+        assert_valid(rendered_report, require_html=True, repo_root=repo)
+
+        # Scaffold skeleton: prompt_hash derived from the real prompt bytes, never
+        # overwritten, and fail-closed until the planner fills it.
+        prompt_file = root / "prompt.txt"
+        prompt_file.write_bytes("Fix the invoice null crash.".encode("utf-8"))
+        skeleton_dir = root / "plan-skeleton"
+        skeleton_result = scaffold(
+            skeleton_dir, "--prompt-file", str(prompt_file), "--repo-root", str(repo)
+        )
+        if skeleton_result.returncode != 0:
+            raise AssertionError(skeleton_result.stderr)
+        skeleton_payload = json.loads(skeleton_result.stdout)
+        if not skeleton_payload.get("report_created") or not Path(
+            skeleton_payload["plan_dir"]
+        ).is_dir():
+            raise AssertionError("scaffold with a prompt must create plan-report.json")
+        skeleton_path = skeleton_dir / "plan-report.json"
+        skeleton = json.loads(skeleton_path.read_text(encoding="utf-8"))
+        expected_hash = hashlib.sha256(prompt_file.read_bytes()).hexdigest()
+        if skeleton["frozen"]["prompt_hash"] != expected_hash:
+            raise AssertionError("scaffold prompt_hash must be sha256 of the prompt bytes")
+        if skeleton["output"]["plan_dir"] != str(skeleton_dir.resolve()):
+            raise AssertionError("scaffold must prefill output.plan_dir")
+        if skeleton["study"].get("repo_root") != str(repo.resolve()):
+            raise AssertionError("scaffold must prefill study.repo_root")
+        assert_invalid(skeleton_path, "status must be one of")
+        skeleton["frozen"]["goal"] = "planner-authored goal"
+        write_report(skeleton_path, skeleton)
+        # Refine-again on the same prompt reuses the freeze untouched.
+        rerun = scaffold(skeleton_dir, "--prompt-file", str(prompt_file))
+        if rerun.returncode != 0 or json.loads(rerun.stdout).get("report_created"):
+            raise AssertionError("scaffold must reuse, not overwrite, a same-prompt freeze")
+        # Another prompt's freeze (e.g. a stale <cwd>/plan) is refused, never planned on.
+        other = scaffold(skeleton_dir, "--prompt-hash", "0" * 64)
+        if other.returncode == 0 or "different prompt" not in other.stderr:
+            raise AssertionError("scaffold reused a freeze of a different prompt")
+        if json.loads(skeleton_path.read_text(encoding="utf-8"))["frozen"]["goal"] != (
+            "planner-authored goal"
+        ):
+            raise AssertionError("scaffold rewrote planner-authored fields")
+        legacy_dir = root / "plan-legacy"
+        legacy_dir.mkdir()
+        legacy = deepcopy(skeleton)
+        del legacy["frozen"]["prompt_hash"]
+        write_report(legacy_dir / "plan-report.json", legacy)
+        if scaffold(legacy_dir, "--prompt-file", str(prompt_file)).returncode == 0:
+            raise AssertionError("scaffold reused a freeze with no prompt_hash")
+        if scaffold(root / "plan-bad-hash", "--prompt-hash", "abc").returncode == 0:
+            raise AssertionError("scaffold accepted a malformed --prompt-hash")
+
         # Standard without forced council
         standard_dir = root / "plan-standard"
         standard_path = root / "standard.json"
@@ -433,6 +505,145 @@ def main() -> int:
         no_council_path = root / "no-council.json"
         write_report(no_council_path, no_council_run)
         assert_invalid(no_council_path, "council.runs must not be empty")
+
+        # A non-terminal council status (e.g. a pending run) must not satisfy READY.
+        pending_council = deepcopy(risk_ok)
+        pending_council["council"]["runs"][0]["status"] = "PENDING"
+        pending_council_path = root / "pending-council.json"
+        write_report(pending_council_path, pending_council)
+        assert_invalid(pending_council_path, "council.runs[0].status must be a council terminal")
+        # The council run is proven by its report on disk, not by the typed status.
+        for name, change, snippet in (
+            ("council-no-report", lambda run: run.pop("report_path"), "report_path must be an absolute path"),
+            ("council-relative-report", lambda run: run.update(report_path="council.json"), "report_path must be an absolute path"),
+            ("council-missing-report", lambda run: run.update(report_path=str(root / "absent.json")), "report_path is unreadable"),
+            ("council-status-mismatch", lambda run: run.update(status="APPROVED"), "must equal its council report status"),
+        ):
+            case = deepcopy(risk_ok)
+            change(case["council"]["runs"][0])
+            case_path = root / f"{name}.json"
+            write_report(case_path, case)
+            assert_invalid(case_path, snippet)
+        bad_profile = deepcopy(risk_ok)
+        bad_profile["council"]["runs"][0]["profile"] = "medium"
+        bad_profile_path = root / "bad-council-profile.json"
+        write_report(bad_profile_path, bad_profile)
+        assert_invalid(bad_profile_path, "council.runs[0].profile must be one of")
+
+        # Keyword-heuristic false positive: a UI-only path segment named "session".
+        timer = repo / "src" / "session" / "Timer.tsx"
+        timer.parent.mkdir(parents=True)
+        timer.write_text("export const Timer = () => null;\n", encoding="utf-8")
+        session_path = "src/session/Timer.tsx"
+        session_hit = deepcopy(simple)
+        session_hit["study"]["surfaces_mapped"].append(session_path)
+        session_hit["steps"][0]["surfaces"].append(session_path)
+        session_hit_path = root / "session-hit.json"
+        write_report(session_hit_path, session_hit)
+        assert_invalid(session_hit_path, "missing risk_flags suggested by heuristics")
+
+        dismissed = deepcopy(session_hit)
+        dismissed["evidence"].append(
+            {
+                "id": "E-002",
+                "kind": "CODE",
+                "classification": "FACT",
+                "claim": "Timer.tsx renders a countdown with no login, role, or identity logic.",
+                "locator": f"{session_path}:1",
+            }
+        )
+        dismissed["risk_flag_dismissals"] = [
+            {
+                "flag": "auth_boundary",
+                "reason": "'session' is a UI folder name; no auth or identity code is touched.",
+                "evidence_ids": ["E-002"],
+            }
+        ]
+        dismissed_path = root / "dismissed.json"
+        write_report(dismissed_path, dismissed)
+        assert_valid(dismissed_path, repo_root=repo, check_locators=True)
+
+        no_reason = deepcopy(dismissed)
+        no_reason["risk_flag_dismissals"][0]["reason"] = ""
+        no_reason_path = root / "dismissal-no-reason.json"
+        write_report(no_reason_path, no_reason)
+        assert_invalid(no_reason_path, "risk_flag_dismissals[0].reason")
+
+        non_fact = deepcopy(dismissed)
+        non_fact["evidence"][1]["classification"] = "ASSUMPTION"
+        non_fact_path = root / "dismissal-non-fact.json"
+        write_report(non_fact_path, non_fact)
+        assert_invalid(non_fact_path, "requires FACT evidence with locator")
+
+        migration_dismissal = deepcopy(risk_ok)
+        migration_dismissal["risk_flags"] = ["data_migration"]
+        migration_dismissal["risk_flag_dismissals"] = [
+            {
+                "flag": "irreversible",
+                "reason": "Backfill is idempotent.",
+                "evidence_ids": ["E-001"],
+            }
+        ]
+        migration_dismissal_path = root / "dismissal-migration.json"
+        write_report(migration_dismissal_path, migration_dismissal)
+        assert_invalid(migration_dismissal_path, "cannot be dismissed for case_type=MIGRATION")
+
+        # A dismissal is a typed claim only when backed by known FACT evidence, and
+        # only for a keyword false positive; each mutation must stay INVALID.
+        def dismissal_case(name: str, snippet: str, edit: Any) -> None:
+            case = deepcopy(dismissed)
+            edit(case)
+            case_path = root / f"dismissal-{name}.json"
+            write_report(case_path, case)
+            assert_invalid(case_path, snippet)
+
+        dismissal_case(
+            "empty-evidence",
+            "risk_flag_dismissals[0].evidence_ids must not be empty",
+            lambda r: r["risk_flag_dismissals"][0].update(evidence_ids=[]),
+        )
+        dismissal_case(
+            "missing-evidence",
+            "risk_flag_dismissals[0].evidence_ids must not be empty",
+            lambda r: r["risk_flag_dismissals"][0].pop("evidence_ids"),
+        )
+        dismissal_case(
+            "unknown-evidence",
+            "risk_flag_dismissals[0].evidence_ids unknown id E-999",
+            lambda r: r["risk_flag_dismissals"][0].update(evidence_ids=["E-999"]),
+        )
+        dismissal_case(
+            "not-keyword",
+            "flag material_uncertainty is not a dismissible keyword-heuristic flag",
+            lambda r: r["risk_flag_dismissals"][0].update(flag="material_uncertainty"),
+        )
+        dismissal_case(
+            "repeat",
+            "risk_flag_dismissals repeats flag auth_boundary",
+            lambda r: r["risk_flag_dismissals"].append(deepcopy(r["risk_flag_dismissals"][0])),
+        )
+        # With a known repo, a dismissal's proof of absence is a file in it: a
+        # bare word or a path outside the repo proves nothing about this code.
+        for name, locator in (("bare-word-locator", "ui-only"), ("outside-repo-locator", "/etc/hosts:1")):
+            dismissal_case(
+                name,
+                "risk_flag_dismissals[0] requires a FACT path locator under the repo; E-002 is not",
+                lambda r, locator=locator: r["evidence"][1].update(locator=locator),
+            )
+
+        def flag_and_dismiss(case: JsonObject) -> None:
+            case["risk_flags"] = ["auth_boundary"]
+            case["council"] = deepcopy(risk_ok["council"])
+
+        dismissal_case(
+            "also-flagged", "flag auth_boundary is also listed in risk_flags", flag_and_dismiss
+        )
+        # The user's own goal wording is intent, not a keyword false positive.
+        dismissal_case(
+            "intent",
+            "flag auth_boundary matches frozen.goal or prompt_summary",
+            lambda r: r["frozen"].update(goal="Fix the session timer countdown display."),
+        )
 
         # READY with material unknown
         unknown_ready = deepcopy(simple)

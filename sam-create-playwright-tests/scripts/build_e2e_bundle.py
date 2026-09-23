@@ -54,6 +54,11 @@ SECRET_PATTERNS = (
     re.compile(r"(?i)bearer\s+[a-z0-9._~+/-]{20,}"),
     re.compile(r"https?://[^/\s:@]+:[^@\s/]+@"),
 )
+# Risk markers match as substrings, aligned with the coverage builder. Only
+# audited false-positive words (whole camelCase or separator-delimited words)
+# are removed first.
+NON_RISK_WORDS = {"block", "blocker", "capital", "clock", "rapid"}
+WORD = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|[0-9]+")
 PLACEHOLDER_MARKERS = (
     "example",
     "sample",
@@ -331,7 +336,10 @@ def parse_name_status(raw: bytes) -> list[tuple[str, str, str | None]]:
 
 
 def risk_tags(path: str) -> list[str]:
-    lower = path.lower()
+    lower = WORD.sub(
+        lambda word: "/" if word.group().lower() in NON_RISK_WORDS else word.group(),
+        path,
+    ).lower()
     tags: set[str] = set()
     mapping = {
         "auth": ("auth", "permission", "role", "session"),
@@ -560,17 +568,59 @@ def parser() -> argparse.ArgumentParser:
         default="unknown",
     )
     value.add_argument("--environment-id", default="unverified")
+    value.add_argument(
+        "--out",
+        help="directory outside the repository for bundle.json and bundle.patch; "
+        "stdout then stays empty",
+    )
     return value
 
 
+def summary_line(bundle: dict[str, Any], written: list[pathlib.Path]) -> str:
+    """One stderr line with the freeze fields; never any patch content."""
+    target = bundle["target"]
+    fields = [
+        f"fingerprint={bundle['fingerprint']}",
+        f"mode={target['mode']}",
+        f"base={target['base_sha']}",
+        f"head={target['head_sha']}",
+        f"files={len(bundle['files'])}",
+        f"tests={sum(1 for item in bundle['files'] if item['is_test'])}",
+        "command_definitions=" + json.dumps(bundle["command_definitions"]),
+        "risk_tags=" + json.dumps(bundle["risk_tags"]),
+        f"patch_bytes={len(bundle['patch'].encode())}",
+        f"patch_sha256={bundle['patch_sha256']}",
+    ]
+    fields.extend(f"{path.suffix[1:]}={path}" for path in written)
+    return "bundle " + " ".join(fields)
+
+
+def write_outputs(bundle: dict[str, Any], out: str | None) -> list[pathlib.Path]:
+    """Print the bundle JSON, or with --out write bundle.json and bundle.patch."""
+    text = json.dumps(bundle, indent=2, sort_keys=True) + "\n"
+    if not out:
+        sys.stdout.write(text)
+        return []
+    directory = pathlib.Path(out).resolve()
+    if is_within(directory, pathlib.Path(bundle["repository"])):
+        raise BundleError(f"--out must be outside the repository: {directory}")
+    directory.mkdir(parents=True, exist_ok=True)
+    json_path = directory / "bundle.json"
+    patch_path = directory / "bundle.patch"
+    json_path.write_text(text, encoding="utf-8")
+    patch_path.write_text(bundle["patch"], encoding="utf-8")
+    return [json_path, patch_path]
+
+
 def main() -> int:
+    args = parser().parse_args()
     try:
-        result = build(parser().parse_args())
+        result = build(args)
+        written = write_outputs(result, args.out)
     except (BundleError, OSError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    json.dump(result, sys.stdout, indent=2, sort_keys=True)
-    sys.stdout.write("\n")
+    print(summary_line(result, written), file=sys.stderr)
     return 0
 
 

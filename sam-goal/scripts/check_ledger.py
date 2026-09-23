@@ -106,17 +106,23 @@ def evidence_present(lines: list[str], header_idx: int) -> bool:
 
 
 def inspect(path: Path) -> tuple[int, str]:
+    code, report, _ = analyze(path)
+    return code, report
+
+
+def analyze(path: Path) -> tuple[int, str, dict[str, int]]:
+    """Return (exit code, report text, counts); counts is empty on exit 2."""
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as error:
-        return 2, f"ledger: cannot read {path}: {error}"
+        return 2, f"ledger: cannot read {path}: {error}", {}
     lines = text.splitlines()
     try:
         header_idx, rows, malformed = parse_rows(lines)
     except ValueError as error:
-        return 2, f"ledger: {path} is {error}"
+        return 2, f"ledger: {path} is {error}", {}
     if not rows:
-        return 2, f"ledger: {path} has a table header but no unit rows"
+        return 2, f"ledger: {path} has a table header but no unit rows", {}
     counts = {"pending": 0, "done": 0, "verified": 0, "other": 0}
     unverified: list[Row] = []
     for row in rows:
@@ -157,7 +163,8 @@ def inspect(path: Path) -> tuple[int, str]:
         if complete
         else "  -> ledger INCOMPLETE."
     )
-    return (0 if complete else 1), "\n".join(report)
+    counts["units"] = len(rows)
+    return (0 if complete else 1), "\n".join(report), counts
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

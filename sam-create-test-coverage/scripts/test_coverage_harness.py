@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import copy
+import importlib.util
 import json
 import os
 import pathlib
@@ -18,6 +19,7 @@ BUILDER = HERE / "build_test_impact.py"
 AUDITOR = HERE / "audit_test_diff.py"
 RUN_CHECKED = HERE / "run_checked.py"
 VALIDATOR = HERE / "validate_coverage_report.py"
+SCAFFOLD = HERE / "scaffold_report.py"
 
 
 def run(
@@ -255,6 +257,111 @@ def verify_base_resolution() -> None:
             raise AssertionError("non-main remote default branch was not used")
 
 
+def load_builder() -> Any:
+    sys.dont_write_bytecode = True
+    spec = importlib.util.spec_from_file_location("coverage_builder", BUILDER)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def verify_risk_tags() -> None:
+    """Risk tags feed the elevated-risk floor, so both directions matter: an
+    audited false-positive word or a dependency lockfile must not force HIGH
+    proof, and every other substring match (flatcase compounds included) must
+    still force it."""
+    builder = load_builder()
+    false_positives = {
+        "yarn.lock": "concurrency",
+        "package-lock.json": "concurrency",
+        "src/Clock.tsx": "concurrency",
+        "src/block/Blocker.tsx": "concurrency",
+        "src/rapid/capital.py": "contract",
+    }
+    for path, tag in false_positives.items():
+        if tag in builder.risk_tags(path):
+            raise AssertionError(f"substring over-match tagged {path} as {tag}")
+    true_positives = {
+        "src/auth/session.py": {"security"},
+        "src/oauth2/callback.py": {"security"},
+        "src/AuthController.ts": {"security", "contract"},
+        "src/api/routes.py": {"contract"},
+        "src/APIClient.ts": {"contract"},
+        "db/migrations/001_init.sql": {"data"},
+        "workers/queue_consumer.py": {"concurrency"},
+        "src/locks/mutex.py": {"concurrency"},
+        "src/async-helpers.ts": {"concurrency"},
+        "src/jobs/enqueue.py": {"concurrency"},
+        "Dockerfile": {"delivery"},
+        ".github/workflows/ci.yml": {"delivery"},
+        "middleware/basicauth.go": {"security"},
+        "src/reauthorize.py": {"security"},
+        "src/csrftoken.py": {"security"},
+        "src/accesstoken.ts": {"security"},
+        "src/filelock.py": {"concurrency"},
+        "src/taskqueue.py": {"concurrency"},
+        "config/redis_lock.json": {"concurrency"},
+        "src/httpclient.go": {"contract"},
+        "src/approutes.py": {"contract"},
+    }
+    for path, tags in true_positives.items():
+        found = set(builder.risk_tags(path))
+        if not tags <= found:
+            raise AssertionError(f"elevated risk lost for {path}: {sorted(found)}")
+
+
+def risk_floor_bundle(paths: list[str]) -> dict[str, Any]:
+    """Build a real bundle whose only changes are the given paths."""
+    with tempfile.TemporaryDirectory(prefix="sam-coverage-risk-") as temporary:
+        root = pathlib.Path(temporary)
+        run("git", "init", "-q", cwd=root)
+        run("git", "config", "user.email", "fixture@example.invalid", cwd=root)
+        run("git", "config", "user.name", "Fixture", cwd=root)
+        (root / "README.md").write_text("base\n", encoding="utf-8")
+        run("git", "add", ".", cwd=root)
+        run("git", "commit", "-qm", "base", cwd=root)
+        for name in paths:
+            target = root / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("changed = 1\n", encoding="utf-8")
+        return json.loads(run(sys.executable, str(BUILDER), "--repo", str(root)).stdout)
+
+
+def check(
+    bundle_path: pathlib.Path,
+    report_path: pathlib.Path,
+    report: dict[str, Any],
+    expected: int,
+    expect: str | None = None,
+    baseline_path: pathlib.Path | None = None,
+) -> None:
+    dump(report_path, report)
+    result = run(
+        sys.executable,
+        str(VALIDATOR),
+        "--baseline",
+        str(baseline_path or bundle_path),
+        "--bundle",
+        str(bundle_path),
+        str(report_path),
+        expected=expected,
+    )
+    if expect is not None and expect not in result.stderr:
+        raise AssertionError(f"expected {expect!r}, got:\n{result.stderr}")
+
+
+def rebind(report: dict[str, Any], bundle: dict[str, Any]) -> dict[str, Any]:
+    value = copy.deepcopy(report)
+    value["baseline_fingerprint"] = value["bundle_fingerprint"] = bundle["fingerprint"]
+    value["target"] = {
+        "base_sha": bundle["target"]["base_sha"],
+        "head_sha": bundle["target"]["head_sha"],
+    }
+    value["command_definitions"]["changed"] = bool(bundle["command_definitions"])
+    return value
+
+
 def dump(path: pathlib.Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True), encoding="utf-8")
 
@@ -470,6 +577,36 @@ def main() -> int:
             "fixture",
         )
         bundle = json.loads(bundle_result.stdout)
+        # The stderr summary carries the freeze fields and no patch content.
+        for field in (
+            f"fingerprint={bundle['fingerprint']}",
+            f"base={bundle['target']['base_sha']}",
+            f"head={bundle['target']['head_sha']}",
+            "risk_tags=",
+            "command_definitions=",
+        ):
+            if field not in bundle_result.stderr:
+                raise AssertionError(f"builder summary lacks {field}: {bundle_result.stderr}")
+        if "expect(-1 >= 0)" in bundle_result.stderr:
+            raise AssertionError("builder summary leaked patch content")
+        with tempfile.TemporaryDirectory(prefix="sam-coverage-out-") as out_temp:
+            out_dir = pathlib.Path(out_temp) / "final"
+            builder_args = (
+                sys.executable, str(BUILDER), "--repo", str(root),
+                "--environment-kind", "test", "--environment-id", "fixture",
+            )
+            out_result = run(*builder_args, "--out", str(out_dir))
+            if out_result.stdout:
+                raise AssertionError("--out must keep stdout empty")
+            if json.loads((out_dir / "bundle.json").read_text(encoding="utf-8")) != bundle:
+                raise AssertionError("--out bundle differs from the stdout bundle")
+            if (out_dir / "bundle.patch").read_text(encoding="utf-8") != bundle["patch"]:
+                raise AssertionError("--out patch sidecar differs from the bundle patch")
+            if f"json={out_dir.resolve() / 'bundle.json'}" not in out_result.stderr:
+                raise AssertionError("summary does not name the written bundle")
+            inside = run(*builder_args, "--out", str(root / "out"), expected=2)
+            if "outside the repository" not in inside.stderr:
+                raise AssertionError("--out inside the repository was not refused")
         bundle_path = root / "bundle.json"
         dump(bundle_path, bundle)
         if len(bundle["files"]) != 2 or not bundle["fingerprint"]:
@@ -755,11 +892,354 @@ def main() -> int:
         missing_scenario_artifact_backlink["scenarios"][0]["artifact_ids"] = []
         invalid(bundle_path, report_path, missing_scenario_artifact_backlink)
 
+        # The audit is recomputed from the bundle: a typed PASS cannot hide a
+        # finding, and each real finding needs its own disproof.
+        suspicious_bundle = copy.deepcopy(bundle)
+        suspicious_bundle["files"].append(
+            {"path": "tests/config.test.js", "is_test": True, "command_definition": False}
+        )
+        suspicious_bundle["patch"] += (  # audit-fixture: allow
+            "\n--- a/tests/config.test.js\n+++ b/tests/config.test.js\n"
+            "+  expect(config.timeout(5000)).toBe(5000);\n"
+        )
+        suspicious_path = root / "suspicious-bundle.json"
+        dump(suspicious_path, suspicious_bundle)
+        check(suspicious_path, report_path, valid, 1, "undisproven finding(s): AUD-001 TIMEOUT_INCREASE")
+        wrong_disproof = copy.deepcopy(valid)
+        wrong_disproof["test_diff_audit"]["disproven"] = [
+            {"id": "AUD-001", "kind": "SKIPPED_TEST", "reason": "not a skip"}
+        ]
+        check(suspicious_path, report_path, wrong_disproof, 1, "undisproven finding(s)")
+        disproved = copy.deepcopy(valid)
+        disproved["test_diff_audit"]["disproven"] = [
+            {
+                "id": "AUD-001",
+                "kind": "TIMEOUT_INCREASE",
+                "path": "tests/config.test.js",
+                "reason": "asserts the product timeout value; no runner timeout changed",
+            }
+        ]
+        check(suspicious_path, report_path, disproved, 0)
+
+        # Under a parent that runs the Playwright phase, browser journeys may be
+        # handed off only with the exact delegation reason.
+        journey = {
+            "id": "S-002",
+            "criterion_ids": ["AC-001"],
+            "behavior_ids": ["B-001"],
+            "risk_ids": ["R-001"],
+            "status": "PLANNED",
+            "layer": "E2E",
+            "sufficiency": "browser journey proved by the parent Playwright phase",
+            "test_ids": [],
+            "artifact_ids": [],
+        }
+        delegated = copy.deepcopy(valid)
+        delegated["scenarios"].append(journey)
+        delegated["real_system_proof"] = {
+            "status": "NOT_APPLICABLE",
+            "reason": "delegated to playwright phase",
+            "evidence": "parent runs sam-create-playwright-tests on the final head",
+        }
+        check(bundle_path, report_path, delegated, 0)
+        not_delegated = copy.deepcopy(delegated)
+        not_delegated["real_system_proof"]["reason"] = "browser proof not needed"
+        check(bundle_path, report_path, not_delegated, 1, "FULL with E2E but no proven real system")
+        automated_journey = copy.deepcopy(fake_e2e)
+        automated_journey["real_system_proof"] = copy.deepcopy(delegated["real_system_proof"])
+        check(bundle_path, report_path, automated_journey, 1, "FULL with E2E but no proven real system")
+
+        # Risk floor end to end: audited false positives no longer force HIGH
+        # proof; flatcase compound names still do.
+        low_risk = copy.deepcopy(valid)
+        low_risk["risks"][0]["level"] = "LOW"
+        noisy = risk_floor_bundle(["yarn.lock", "src/Clock.tsx", "src/rapid/capital.py"])
+        if {"security", "data", "contract", "concurrency"} & set(noisy["risk_tags"]):
+            raise AssertionError(f"false-positive paths raised the floor: {noisy['risk_tags']}")
+        noisy_path = root / "noisy-bundle.json"
+        dump(noisy_path, noisy)
+        check(noisy_path, report_path, rebind(low_risk, noisy), 0)
+        real = risk_floor_bundle(["src/taskqueue.py", "middleware/basicauth.go"])
+        real_path = root / "real-risk-bundle.json"
+        dump(real_path, real)
+        check(real_path, report_path, rebind(low_risk, real), 1, "no HIGH or CRITICAL risk is declared")
+
+        # The scaffold derives mechanical fields from real files and fails closed
+        # until the agent fills the ledger and decision.
+        scaffold_path = root / "scaffold-report.json"
+        scaffolded = run(
+            sys.executable, str(SCAFFOLD),
+            "--baseline", str(bundle_path), "--bundle", str(bundle_path),
+            "--receipts-dir", str(receipts), "--wiring", "CMD-900", "CMD-901",
+            "--out", str(scaffold_path),
+        )
+        if "SCAFFOLD" not in scaffolded.stdout:
+            raise AssertionError(f"scaffold did not report: {scaffolded.stdout}")
+        draft = json.loads(scaffold_path.read_text(encoding="utf-8"))
+        for field in ("baseline_fingerprint", "bundle_fingerprint", "target"):
+            if draft[field] != valid[field]:
+                raise AssertionError(f"scaffold derived the wrong {field}")
+        derived = {key: draft["commands"][0][key] for key in ("id", "command", "status", "classification", "receipt")}
+        expected_command = {key: valid["commands"][0][key] for key in derived}
+        expected_command["receipt"] = str(pathlib.Path(expected_command["receipt"]).resolve())
+        if derived != expected_command or len(draft["commands"]) != 1:
+            raise AssertionError(f"scaffold commands differ from receipts: {draft['commands']}")
+        if [draft["test_wiring"][key] for key in ("before_receipt", "after_receipt")] != [
+            str(pathlib.Path(valid["test_wiring"][key]).resolve())
+            for key in ("before_receipt", "after_receipt")
+        ]:
+            raise AssertionError("scaffold wiring receipts differ")
+        if draft["test_diff_audit"]["status"] != "PASS":
+            raise AssertionError("scaffold did not recompute the audit")
+        run(
+            sys.executable, str(VALIDATOR), "--baseline", str(bundle_path),
+            "--bundle", str(bundle_path), str(scaffold_path), expected=1,
+        )
+        for field in ("intent", "environment", "criteria", "behaviors", "risks", "scenarios",
+                      "tests", "artifacts", "cleanup", "real_system_proof", "decision"):
+            draft[field] = copy.deepcopy(valid[field])
+        draft["commands"][0]["test_ids"] = ["T-001"]
+        draft["test_wiring"]["discovered_tests"] = ["rejects_a_negative_amount"]
+        check(bundle_path, report_path, draft, 0)
+        refused = run(
+            sys.executable, str(SCAFFOLD), "--baseline", str(bundle_path),
+            "--bundle", str(bundle_path), "--receipts-dir", str(receipts),
+            "--out", str(report_path), expected=2,
+        )
+        if "refusing to overwrite" not in refused.stderr:
+            raise AssertionError("scaffold overwrote an existing report")
+        run(
+            sys.executable, str(SCAFFOLD), "--baseline", str(bundle_path),
+            "--bundle", str(bundle_path), "--receipts-dir", str(receipts),
+            "--wiring", "CMD-900", "CMD-901", "--previous", str(report_path),
+            "--out", str(report_path),
+        )
+        carried = json.loads(report_path.read_text(encoding="utf-8"))
+        if carried["decision"] != "" or carried["scenarios"] != valid["scenarios"]:
+            raise AssertionError("carry-forward must keep the ledger and reset the decision")
+        carried["decision"] = "FULL"
+        check(bundle_path, report_path, carried, 0)
+
+        # A run that adds no test omits --wiring, but its discovery listings are
+        # still wiring evidence: harvesting them as commands would leave entries
+        # that reference no test, which the validator rejects.
+        unwired_path = root / "scaffold-unwired.json"
+        run(
+            sys.executable, str(SCAFFOLD), "--baseline", str(bundle_path),
+            "--bundle", str(bundle_path), "--receipts-dir", str(receipts),
+            "--out", str(unwired_path),
+        )
+        unwired = json.loads(unwired_path.read_text(encoding="utf-8"))
+        if [item["id"] for item in unwired["commands"]] != ["CMD-001"]:
+            raise AssertionError(f"scaffold harvested discovery receipts: {unwired['commands']}")
+        for field in ("intent", "environment", "criteria", "behaviors", "risks", "scenarios",
+                      "tests", "artifacts", "cleanup", "real_system_proof", "decision"):
+            unwired[field] = copy.deepcopy(valid[field])
+        unwired["commands"][0]["test_ids"] = ["T-001"]
+        unwired["test_wiring"] = {"status": "NOT_APPLICABLE", "reason": "only existing tests changed"}
+        check(bundle_path, unwired_path, unwired, 0)
+
+        # Audit ids are positional: a new earlier file shifts AUD-001, so a
+        # disproof binds to its path and cannot migrate to another finding.
+        def timeout_bundle(paths: list[str], fingerprint: str) -> dict[str, Any]:
+            value = copy.deepcopy(bundle)
+            for name in paths:
+                value["files"].append({"path": name, "is_test": True, "command_definition": False})
+                value["patch"] += f"\n--- a/{name}\n+++ b/{name}\n"
+                value["patch"] += "+  expect(config.timeout(5000)).toBe(5000);\n"  # audit-fixture: allow
+            value["fingerprint"] = fingerprint
+            return value
+
+        only_b = timeout_bundle(["tests/b.test.js"], "b" * 64)
+        a_and_b = timeout_bundle(["tests/a.test.js", "tests/b.test.js"], "c" * 64)
+        only_b_path, a_and_b_path = root / "only-b.json", root / "a-and-b.json"
+        dump(only_b_path, only_b)
+        dump(a_and_b_path, a_and_b)
+        b_disproof = {
+            "id": "AUD-001", "kind": "TIMEOUT_INCREASE", "path": "tests/b.test.js",
+            "reason": "asserts the product timeout value",
+        }
+        previous = rebind(carried, only_b)
+        previous["test_diff_audit"]["disproven"] = [b_disproof]
+        check(only_b_path, report_path, previous, 0)
+        shifted = rebind(previous, a_and_b)
+        shifted["test_diff_audit"]["disproven"] = [b_disproof, {**b_disproof, "id": "AUD-002"}]
+        check(a_and_b_path, report_path, shifted, 1,
+              "undisproven finding(s): AUD-001 TIMEOUT_INCREASE tests/a.test.js")
+
+        # A new head or fingerprint keeps only the ledger: the previous receipts
+        # dir is refused, proof/evidence/artifacts/disproofs reset, and the
+        # original CMD-900 before-receipt is reused.
+        dump(report_path, previous)
+        moved_head = copy.deepcopy(only_b)
+        moved_head["target"]["head_sha"] = "f" * 40
+        moved_head_path = root / "moved-head.json"
+        dump(moved_head_path, moved_head)
+        for changed_path in (moved_head_path, a_and_b_path):
+            stale = run(
+                sys.executable, str(SCAFFOLD), "--baseline", str(changed_path),
+                "--bundle", str(changed_path), "--receipts-dir", str(receipts),
+                "--wiring", "CMD-900", "CMD-901", "--previous", str(report_path),
+                "--out", str(report_path), expected=2,
+            )
+            if "use a fresh --receipts-dir" not in stale.stderr:
+                raise AssertionError(f"stale receipts accepted for {changed_path.name}")
+        fresh = root / "receipts-2"
+        make_receipt(fresh, "CMD-001", "TARGET", "echo '1 passed'")
+        make_receipt(
+            fresh, "CMD-901", "ENVIRONMENT",
+            "echo 'collected: rejects_zero rejects_a_negative_amount'", repeat=1,
+        )
+        moved_run = run(
+            sys.executable, str(SCAFFOLD), "--baseline", str(a_and_b_path),
+            "--bundle", str(a_and_b_path), "--receipts-dir", str(fresh),
+            "--wiring", "CMD-900", "CMD-901", "--previous", str(report_path),
+            "--out", str(report_path),
+        )
+        moved = json.loads(report_path.read_text(encoding="utf-8"))
+        wiring = moved["test_wiring"]
+        if (
+            "carried=ledger-only" not in moved_run.stdout
+            or moved["scenarios"] != valid["scenarios"]
+            or moved["real_system_proof"]["status"] != ""
+            or moved["environment"]["evidence"] != ""
+            or moved["test_diff_audit"]["disproven"] != []
+            or any(item["status"] or item["safety_review"] for item in moved["artifacts"])
+            or wiring["before_receipt"]
+            != str(pathlib.Path(valid["test_wiring"]["before_receipt"]).resolve())
+            or wiring["after_receipt"] != str((fresh / "CMD-901.receipt.json").resolve())
+            or [(item["receipt"], item["test_ids"]) for item in moved["commands"]]
+            != [(str((fresh / "CMD-001.receipt.json").resolve()), ["T-001"])]
+            # Counterfactual proof from the old head is re-established, never carried.
+            or any(item["regression_proof"] != {"status": "", "evidence": ""} for item in moved["tests"])
+            or not any(str(fresh.resolve()) in item["resource"] for item in moved["cleanup"])
+        ):
+            raise AssertionError(f"changed inputs must keep only the ledger: {moved}")
+        check(a_and_b_path, report_path, moved, 1)
+        for field in ("environment", "artifacts", "real_system_proof"):
+            moved[field] = copy.deepcopy(valid[field])
+        for item, source in zip(moved["tests"], valid["tests"]):
+            item["regression_proof"] = copy.deepcopy(source["regression_proof"])
+        moved["test_diff_audit"]["status"] = "PASS"
+        moved["test_diff_audit"]["disproven"] = [
+            {**b_disproof, "path": "tests/a.test.js"}, {**b_disproof, "id": "AUD-002"},
+        ]
+        moved["decision"] = "FULL"
+        check(a_and_b_path, report_path, moved, 0)
+
+        # The same patch on a new head resets disproofs too: the path key cannot
+        # show that the flagged line is unchanged.
+        dump(report_path, previous)
+        run(
+            sys.executable, str(SCAFFOLD), "--baseline", str(moved_head_path),
+            "--bundle", str(moved_head_path), "--receipts-dir", str(fresh),
+            "--wiring", "CMD-900", "CMD-901", "--previous", str(report_path),
+            "--out", str(report_path),
+        )
+        if json.loads(report_path.read_text(encoding="utf-8"))["test_diff_audit"]["disproven"]:
+            raise AssertionError("a disproof survived a head change")
+
+        # A previous report without wiring still cites the once-per-work CMD-900
+        # receipt as a command; a later --wiring must reuse it, not demand a
+        # re-capture that would list the new tests as already present.
+        unwired = copy.deepcopy(previous)
+        unwired["test_wiring"] = {"status": "NOT_APPLICABLE", "reason": "no test added"}
+        unwired["commands"].append(
+            {"id": "CMD-900", "status": "PASS", "receipt": valid["test_wiring"]["before_receipt"]}
+        )
+        dump(report_path, unwired)
+        run(
+            sys.executable, str(SCAFFOLD), "--baseline", str(a_and_b_path),
+            "--bundle", str(a_and_b_path), "--receipts-dir", str(fresh),
+            "--wiring", "CMD-900", "CMD-901", "--previous", str(report_path),
+            "--out", str(report_path),
+        )
+        reused = json.loads(report_path.read_text(encoding="utf-8"))["test_wiring"]
+        if reused["before_receipt"] != str(
+            pathlib.Path(valid["test_wiring"]["before_receipt"]).resolve()
+        ):
+            raise AssertionError(f"previous CMD-900 command not reused: {reused}")
+
+        # A FAIL is never re-run under its id: after a fix the next receipts dir
+        # re-runs every command except CMD-900, captured once before any test
+        # changed. An early unwired scaffold still cites CMD-900, and later
+        # scaffolds find it in --previous or an earlier receipts-<n> instead of
+        # demanding a re-capture that would list the new tests as present.
+        phase = root / "phase"
+        first, second = phase / "receipts-1", phase / "receipts-2"
+        make_receipt(first, "CMD-900", "ENVIRONMENT", "echo 'collected: rejects_zero'", repeat=1)
+        make_receipt(first, "CMD-001", "TARGET", "echo 'failed'; exit 1")
+        early_path = phase / "early.json"
+        run(
+            sys.executable, str(SCAFFOLD), "--baseline", str(bundle_path),
+            "--bundle", str(bundle_path), "--receipts-dir", str(first),
+            "--out", str(early_path),
+        )
+        early = json.loads(early_path.read_text(encoding="utf-8"))
+        first_before = str((first / "CMD-900.receipt.json").resolve())
+        if early["test_wiring"].get("before_receipt") != first_before:
+            raise AssertionError(f"unwired scaffold did not cite CMD-900: {early['test_wiring']}")
+        make_receipt(second, "CMD-001", "TARGET", "echo '1 passed'")
+        make_receipt(
+            second, "CMD-901", "ENVIRONMENT",
+            "echo 'collected: rejects_zero rejects_a_negative_amount'", repeat=1,
+        )
+        fixed_path = phase / "fixed.json"
+        run(
+            sys.executable, str(SCAFFOLD), "--baseline", str(bundle_path),
+            "--bundle", str(bundle_path), "--receipts-dir", str(second),
+            "--wiring", "CMD-900", "CMD-901", "--out", str(fixed_path),
+        )
+        fixed = json.loads(fixed_path.read_text(encoding="utf-8"))
+        if fixed["test_wiring"]["before_receipt"] != first_before or [
+            (item["id"], item["status"]) for item in fixed["commands"]
+        ] != [("CMD-001", "PASS")]:
+            raise AssertionError(f"rerun after a fix lost CMD-900 or kept the FAIL: {fixed}")
+        for field in ("intent", "environment", "criteria", "behaviors", "risks", "scenarios",
+                      "tests", "artifacts", "cleanup", "real_system_proof", "decision"):
+            fixed[field] = copy.deepcopy(valid[field])
+        fixed["commands"][0]["test_ids"] = ["T-001"]
+        fixed["test_wiring"]["discovered_tests"] = ["rejects_a_negative_amount"]
+        check(bundle_path, fixed_path, fixed, 0)
+        # Re-invoked in a parent's fresh phase dir, only the early report's
+        # citation can supply CMD-900.
+        other = root / "phase-2" / "receipts-1"
+        make_receipt(other, "CMD-001", "TARGET", "echo '1 passed'")
+        make_receipt(
+            other, "CMD-901", "ENVIRONMENT",
+            "echo 'collected: rejects_zero rejects_a_negative_amount'", repeat=1,
+        )
+        again_path = root / "phase-2" / "report.json"
+        run(
+            sys.executable, str(SCAFFOLD), "--baseline", str(bundle_path),
+            "--bundle", str(bundle_path), "--receipts-dir", str(other),
+            "--wiring", "CMD-900", "CMD-901", "--previous", str(early_path),
+            "--out", str(again_path),
+        )
+        again = json.loads(again_path.read_text(encoding="utf-8"))["test_wiring"]
+        if again["before_receipt"] != first_before:
+            raise AssertionError(f"re-invocation did not reuse the cited CMD-900: {again}")
+        # A cleanup entry for receipts-10 does not name receipts-1.
+        early["cleanup"] = [
+            {"id": "CL-001", "resource": str(first.resolve()) + "0", "status": "CLEANED"}
+        ]
+        dump(early_path, early)
+        run(
+            sys.executable, str(SCAFFOLD), "--baseline", str(bundle_path),
+            "--bundle", str(bundle_path), "--receipts-dir", str(first),
+            "--previous", str(early_path), "--out", str(early_path),
+        )
+        cleanup = json.loads(early_path.read_text(encoding="utf-8"))["cleanup"]
+        if [item["resource"].endswith(str(first.resolve())) for item in cleanup] != [False, True]:
+            raise AssertionError(f"receipts-10 entry hid the receipts-1 RETAINED entry: {cleanup}")
+
+    verify_risk_tags()
     verify_git_isolation()
     verify_base_resolution()
     print(
-        "PASS: coverage bundle, Git isolation/base resolution, reciprocal graph, "
-        "layer, audit, proof, environment, and decision fixtures"
+        "PASS: coverage bundle, summary/--out, risk tags, Git isolation/base "
+        "resolution, reciprocal graph, layer, recomputed audit, delegation, scaffold "
+        "carry-forward, proof, environment, and decision fixtures"
     )
     return 0
 

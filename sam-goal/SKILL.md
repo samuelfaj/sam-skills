@@ -1,19 +1,11 @@
 ---
 name: sam-goal
-description: "Finish a software goal completely with the smallest correct change: write checkable gates first, split independent units onto workers when the gate opens, verify every unit yourself, and never add a dependency. Use when the user runs /sam-goal, $sam-goal, or @sam-goal on claude-code, codex, or grok, says tree N, asks to finish a goal, fan out, write gates, or stop over-building."
+description: "Finish a software goal with the smallest correct change: gates first, independent units on workers, every unit verified, no new dependencies. Use when the user runs /sam-goal, $sam-goal, or @sam-goal, says tree N, finish a goal, fan out, write gates, or stop over-building."
 ---
 
 # Sam Goal
 
-Finish the asked goal. Prove it against files. Ship the first rung that holds.
-
-Three failures this skill closes:
-
-- reporting done at 80 percent
-- doing ten independent units in one tired thread
-- adding code, layers, or packages the goal did not need
-
-Completeness applies to the asked outcomes. Minimality applies to the implementation of each outcome. Never trade one for the other.
+Finish the asked goal, prove it against files, and ship the first rung that holds. Completeness applies to the asked outcomes; minimality applies to each outcome's implementation. Never trade one for the other.
 
 ## Non-Negotiable Contract
 
@@ -31,135 +23,79 @@ Completeness applies to the asked outcomes. Minimality applies to the implementa
 
 ## Resources
 
-Always:
+| Reference | Read when |
+| --- | --- |
+| [references/gates.md](references/gates.md) | Step 4, before writing gates |
+| [references/ladder.md](references/ladder.md) | Step 5 on `execute`; step 7 on `review` or `audit` |
+| [references/method.md](references/method.md) | Choosing tree depth: the user said tree N, or the goal may need depth 4+ |
+| [references/orchestration.md](references/orchestration.md) | The split gate is open or tree depth is 4+ |
+| [references/output-contract.md](references/output-contract.md) | Step 9, before writing the report |
 
-1. [references/output-contract.md](references/output-contract.md)
-2. [references/host-runtime.md](references/host-runtime.md)
-3. [references/method.md](references/method.md)
-4. [references/ladder.md](references/ladder.md)
-5. [references/gates.md](references/gates.md)
+Read each file once; re-read only after context compaction or when you cannot quote the section you need.
 
-When the split gate is open, or tree depth is 4+:
-
-6. [references/delegation.md](references/delegation.md)
-7. [references/orchestration.md](references/orchestration.md)
-
-Runtime scripts (invoke; do not reimplement):
-
-- `scripts/detect_host.py`
-- `scripts/scaffold_goal_dir.py`
-- `scripts/check_gates.py`
-- `scripts/check_ledger.py`
-- `scripts/validate_goal_report.py`
+Invoke the stdlib `python3` scripts on every host; never reimplement them or wrap them in a plugin, hook, or package. Replace `<skill>` (this SKILL.md's directory) and `<goal>` (default `<cwd>/goal`) with literal absolute paths, not shell variables.
 
 ## Workflow
 
-```bash
-SAM_GOAL_DIR="<absolute directory containing this SKILL.md>"
-GOAL_DIR="${GOAL_DIR:-$PWD/goal}"
-```
-
-Intensity: `lite` | `full` (default) | `ultra`. Persist until the user changes it.
-Action: `execute` (default) | `review` (diff only) | `audit` (whole tree). `review` and `audit` list cuts; they do not edit.
-Invoke: `/sam-goal` on claude-code and grok; `$sam-goal` or `@sam-goal` on codex.
+Intensity: `lite` | `full` (default) | `ultra`; it persists until the user changes it. Action: `execute` (default) | `review` (diff only) | `audit` (whole tree). `review` and `audit` list cuts; they never edit.
 
 ### 1. Bind the host
 
-```bash
-python3 -B "$SAM_GOAL_DIR/scripts/detect_host.py"
-```
+`python3 -B <skill>/scripts/detect_host.py`
 
-Honor `SAM_GOAL_HOST` or `SAM_ACTIVE_HOST`. Never infer the host from clients on disk. Read [references/host-runtime.md](references/host-runtime.md) and use only that host's spawn primitive. On `UNKNOWN` or `CONFLICT`, do not fan out: walk the briefs yourself. Record `host` in the report.
+Honor `SAM_GOAL_HOST` or `SAM_ACTIVE_HOST`. Never infer the host from clients on disk. Any status other than `DETECTED` or `OVERRIDE` (exit 2): never fan out; walk the briefs yourself.
 
 ### 2. Scaffold
 
-```bash
-python3 -B "$SAM_GOAL_DIR/scripts/scaffold_goal_dir.py" --out "$GOAL_DIR"
-```
+`python3 -B <skill>/scripts/scaffold_goal_dir.py --out <goal>`
 
-Add `--mode delegated` when the split gate is already known open. Add `--tree N` when depth is 4 or more.
+Add `--mode delegated --workers N` once the split gate is open, and `--tree N` when depth is 4+. Re-running keeps existing files.
 
 ### 3. Understand, then count
 
-Read the request and the live flow it touches. Then count independent units (neither needs the other's in-progress state).
-
-Split gate opens on any of: **3+ independent units**, **5+ files**, or **30+ minutes**. Write `gate open: N units` or `single-agent: N units, below threshold` into the report either way.
-
-Do not invent a split inside sequential work. One large sequential unit stays one unit.
+Trace the live flow the request touches; for a bug, grep every caller and fix the shared function once. Count independent units: neither needs the other's in-progress state. The split gate opens on any of **3+ independent units**, **5+ files**, or **30+ minutes**. Record `gate open: N units` or `single-agent: N units, below threshold` either way. Never invent a split inside sequential work; one large sequential unit stays one unit.
 
 ### 4. Write the ledgers before deliverable work
 
-Replace the scaffold placeholders.
+Replace every scaffold placeholder.
 
-- Always: `$GOAL_DIR/GATES.md` per [references/gates.md](references/gates.md). Outcomes, not activities. Prefer a `CHECK`/`EXPECT` pair. Any number you will report gets its own measuring gate.
-- Split gate open: `$GOAL_DIR/DELEGATION.md` next, before any deliverable file, per [references/delegation.md](references/delegation.md). Non-overlapping file ownership. Checkable acceptance per row. Status starts `pending`.
-- Tree 4+ or a build beyond one sitting: `$GOAL_DIR/PLAN.md` plus one gates file per leaf and branch under `$GOAL_DIR/gates/`. Fix interfaces and file ownership before fan-out.
+- Always: `<goal>/GATES.md` per gates.md.
+- Split gate open: `<goal>/DELEGATION.md` and one brief per row, per orchestration.md.
+- Tree 4+ or a build beyond one sitting: `<goal>/PLAN.md` plus one gates file per leaf and branch under `<goal>/gates/`.
 
 ### 5. Climb the ladder, then implement
 
-After the ledgers exist, stop at the first rung that holds. Full rungs, intensity, and the overbuild tags live in [references/ladder.md](references/ladder.md).
-
-Each leaf or solo stretch uses four passes on that minimal solution: implement fully, expert re-read, defect hunt, free polish. No placeholders. A pass that finds nothing, plus a fully checked gates file, is the finish line.
-
-`lite`: build what was asked and name the lazier alternative in one line.
-`full`: the ladder is mandatory.
-`ultra`: delete first; ship the one-liner and challenge leftover requirement in the same breath.
+Stop at the first ladder.md rung that holds and implement it fully, no placeholders. Then run one review pass on the diff, inside the frozen gates: expert re-read plus defect hunt (edge cases, error paths, every caller, the never-optional items). Repeat it only when the previous pass changed code, at most two repeats. No polish pass; step 7 shrinks.
 
 ### 6. Work the units
 
-**Solo** (gate closed, tree 3 or less): do the work yourself. Update `GATES.md` as checks pass.
+**Solo** (gate closed, tree 3 or less): do the work yourself. Run step 8's `check_gates.py` without `--recheck` as checks start to pass.
 
-**Delegated** (gate open): you are the coordinator. Do not silently implement an assigned unit. For each row, write a brief (`$GOAL_DIR/briefs/worker-<n>.md`) with goal, owned files, forbidden files, pasted context, acceptance, verify commands, and isolation. Spawn one worker per independent row with the bound host primitive in [references/host-runtime.md](references/host-runtime.md). Workers never spawn. If the primitive is missing or host status is `UNKNOWN`/`CONFLICT`, walk the briefs yourself. Isolation: one writer per worktree or disjoint files. Workers never merge.
+**Delegated** (gate open): you are the coordinator; run the driver loop in orchestration.md. Do not silently implement an assigned unit.
 
-After each unit returns:
+### 7. Overbuild pass
 
-1. Re-run its acceptance check.
-2. Set the row to `verified` only after that re-run, or fix/reassign and then verify.
-3. Append what you ran and saw under `## Evidence` in `DELEGATION.md`.
-4. Run the integration checks yourself. Finished parts can still be a broken whole.
+On the current diff (`execute`, `review`) or the whole tree (`audit`), list cuts per ladder.md § Overbuild tags. On `execute`, apply only the cuts that preserve every gate. On `review` or `audit`, list them, edit nothing, and continue to step 8.
 
-### 7. Check the files
+### 8. Check the final tree
 
 ```bash
-python3 -B "$SAM_GOAL_DIR/scripts/check_gates.py" --timeout 120 "$GOAL_DIR"
+python3 -B <skill>/scripts/check_gates.py --recheck --timeout 120 <goal>
+python3 -B <skill>/scripts/check_ledger.py <goal>/DELEGATION.md   # delegated only
 ```
 
-When a ledger exists:
-
-```bash
-python3 -B "$SAM_GOAL_DIR/scripts/check_ledger.py" "$GOAL_DIR/DELEGATION.md"
-```
-
-Exit 0 is the only complete ledger. A checked box with `EVIDENCE: pending` is unmet. An impossible gate stays in the file as `ABANDON: <id> <reason>`.
-
-If you catch yourself writing the status summary while boxes or rows are open, stop and take the next unmet item.
-
-### 8. Overbuild pass
-
-On the current diff (`review` / `execute`) or the whole tree (`audit`), list cuts only: location, tag, what to delete, what replaces it. Tags: `delete`, `stdlib`, `native`, `yagni`, `shrink`. End with `net: -<N> lines possible.` Nothing to cut: `Lean already. Ship.` Do not flag the one required runnable check as bloat.
-
-On `execute`, apply only the cuts that preserve every gate. On `review` / `audit`, list and stop.
+`--recheck` re-runs every `CHECK` on the final tree, met or not, and unchecks failures: it is the report-time re-measure. Re-measure each listed `MANUAL` gate by hand. Only exit 0 is complete. Caught writing the status summary while boxes or rows are open: stop and take the next unmet item.
 
 ### 9. Report
 
-Write `$GOAL_DIR/goal-report.json` from [references/output-contract.md](references/output-contract.md). Re-measure every number. Paste checker summaries into `checks`. Then:
+Write `<goal>/goal-report.json` with the fields output-contract.md marks as yours, then:
 
-```bash
-python3 -B "$SAM_GOAL_DIR/scripts/validate_goal_report.py" "$GOAL_DIR/goal-report.json"
-```
+`python3 -B <skill>/scripts/validate_goal_report.py --derive <goal>/goal-report.json`
 
-`COMPLETE` is allowed only when that validator prints `VALID`.
+`COMPLETE` is allowed only when it prints `VALID`. Fix from the validator's error lines and patch the report in place; do not read validator source or rewrite the whole report.
 
 ## Return
 
-1. `COMPLETE`, `IN_PROGRESS`, or `BLOCKED`
-2. Bound host (`claude-code` | `codex` | `grok` | unknown) and spawn primitive used
-3. Intensity, action, mode, unit count, split-gate decision
-4. Ladder rung taken, what was skipped, authorized new packages (must be none unless the user named them)
-5. Gates: N of N, abandoned ids, checker summary
-6. If delegated: ledger N of N, what you verified, evidence
-7. Overbuild `net` line
-8. Absolute `GOAL_DIR` and validator result
-9. Exact remaining work or blockers
+At most 15 lines (goal-report.json holds the rest): `COMPLETE`, `IN_PROGRESS`, or `BLOCKED`; the absolute goal directory and validator line; the spawn primitive used, or `walked briefs`; gates N of N, abandoned ids, and ledger N of N when delegated; the ladder rung and new packages (none unless the user named them); the overbuild `net` line; exact remaining work or blockers.
 
-Trivial one-line factual answers do not need this machinery. An explicit `/sam-goal` on a tiny task still gets one solo gate and a validated report.
+Trivial one-line factual answers skip this machinery. An explicit `/sam-goal` on a tiny task still gets one solo gate and a validated report.

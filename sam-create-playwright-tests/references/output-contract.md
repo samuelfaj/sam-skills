@@ -1,58 +1,50 @@
 # Output Contract
 
-Draft JSON before rendering the final response.
+`scripts/scaffold_report.py` writes every key and derives fingerprints, `target`, `command_definitions.changed`, `commands[]` (not `test_ids`), wiring receipts, and `test_diff_audit`. `+` = non-empty; `*_ids` = resolving string IDs.
 
-Required top-level fields:
+| Field | Contents |
+| --- | --- |
+| intent | summary+, invariants list, no_go list |
+| environment | kind unknown/local/test/dev/staging/production, identity+, real_data bool, evidence+ (identity proof plus the exact boot, auth, and seed commands, without secrets; the demo phase reuses them) |
+| authorization | publish_requested bool (true for any UPLOADED artifact) |
+| command_definitions | inspected true and evidence+ when changed |
+| criteria | id, text+ |
+| risks | id, criterion_ids, level (step 2), evidence+ or description+ |
+| scenarios | id, criterion_ids, risk_ids, status (step 2), test_ids, artifact_ids, reason |
+| tests | id, scenario_ids, command_ids, path+, name+, regression_proof {status (step 3), evidence+} |
+| commands | id, test_ids, command+, status, classification, receipt, evidence+ |
+| artifacts | id, scenario_ids, status LOCAL/UPLOADED/NOT_CREATED, safety_review true, receipt and readback_verified true when UPLOADED |
+| cleanup | id, resource+, status CLEANED/RETAINED/BLOCKED, reason unless CLEANED |
+| test_diff_audit | status PASS/FAIL, evidence+, disproven [{id, kind, path, reason+}] |
+| test_wiring | status PROVEN/NOT_PROVEN/NOT_APPLICABLE, before_receipt, after_receipt, discovered_tests, reason unless PROVEN |
+| behavior_proof | status PROVEN/NOT_PROVEN/FALLBACK, evidence+ |
+| decision | COMPLETE/PARTIAL/BLOCKED |
 
-- `baseline_fingerprint`, `bundle_fingerprint`
-- `target`: `base_sha`, `head_sha`
-- `intent`: `summary`, `invariants`, `no_go`
-- `environment`: `kind`, `identity`, `real_data`, `evidence`
-- `authorization`: `publish_requested`
-- `command_definitions`: `changed`, `inspected`, `evidence`
-- `criteria`, `risks`, `scenarios`, `tests`, `commands`, `artifacts`, `cleanup`
-- `test_diff_audit`: `status`, `evidence`
-- `test_wiring`: `status`, plus receipts and names when `PROVEN`
-- `behavior_proof`: `status`, `evidence`
-- `decision`: `COMPLETE`, `PARTIAL`, or `BLOCKED`
+- IDs are unique report-wide. Every ledger from criteria to cleanup is non-empty (nothing produced: one `NOT_CREATED` artifact linked to a scenario). Every `*_ids` list is non-empty except scenario `artifact_ids`, and scenario `test_ids` unless `AUTOMATED`. Reciprocal links: scenario/test, test/command, scenario/artifact. `MANUAL_PROOF`/`REDUNDANT`/`NOT_COVERED` need `reason` or `evidence`.
+- `behavior_proof` `PROVEN` means the real product UI and linked backend path.
+- Commands: `PASS`/`FAIL` match their cited absolute receipt, whose hashes and exit codes are recomputed; `NOT_RUN` has a reason and no receipt.
+- Wiring `PROVEN`: non-empty `discovered_tests`, each absent from the before log and present in the after log.
+- Audit: `PASS` over findings needs a `disproven` entry matching each finding's `id`, `kind`, and `path`.
 
-Use IDs `AC-###`, `R-###`, `S-###`, `T-###`, `CMD-###`, `ART-###`, and
-`CL-###`. Every reference must be a string and every scenario/test,
-test/command, and scenario/artifact link must be reciprocal. Criteria require
-nonempty text; risks require evidence or description. Use command status `PASS`,
-`FAIL`, or `NOT_RUN`; classify it as `TARGET`, `BASELINE`, `ENVIRONMENT`, or
-`EXTERNAL`.
+## Decision
 
-Each test must include a nonempty path and name plus `regression_proof.status`:
-`RED_GREEN`, `MUTATION`, `CONTRACT`, or `NOT_PROVEN`, with evidence. Each
-artifact must include linked scenario IDs, local or remote status, safety
-review, and receipt when uploaded.
+`COMPLETE` requires: no `NOT_COVERED` scenario; no `NOT_PROVEN` test; every `TARGET` `PASS`; no `FLAKY` command; audit `PASS`; wiring `PROVEN` or `NOT_APPLICABLE`; `behavior_proof` `PROVEN`; no `BLOCKED` cleanup; when publication was requested, every uploaded video or image in host player/image markup with passing readback (never hyperlink-only or committed media).
 
-## Execution receipts and wiring
+`PARTIAL`: honest residual gaps. `BLOCKED`: unsafe environment, scope, authorization, or execution conditions.
 
-Every command with status `PASS` or `FAIL` requires `receipt`: the absolute path
-of the `scripts/run_checked.py` receipt. `commands[].command` must equal the
-receipt argv joined by spaces, and status plus classification must match the
-receipt. `NOT_RUN` carries a reason and no receipt. The validator recomputes
-`receipt_sha256` and every captured `log_sha256`; an edited receipt or log fails.
-A `PASS` whose receipt records a non-zero exit code fails. `TARGET` commands must
-record at least two runs, and differing exit codes mark the command `FLAKY`.
+## Re-invocation
 
-`test_wiring.status` is `PROVEN`, `NOT_PROVEN`, or `NOT_APPLICABLE`; the last two
-require a `reason`. `PROVEN` requires `before_receipt`, `after_receipt`, and
-`discovered_tests`, where each name is absent from the before-log and present in
-the after-log.
+Rebuild the final bundle. Same head and fingerprint: keep `<receipts>` and run only missing or `NOT_RUN` commands (a `FAIL` only per the step-6 rule); if none remain, re-run only the validator. Otherwise rebuild both bundles, take the next `<receipts>`, re-establish each test's regression proof, and re-run every `PASS`/`FAIL` command, including every `TARGET` spec with video capture. Scaffold with `--previous <previous>`.
 
-`COMPLETE` is invalid when a required scenario is uncovered, target validation
-fails, behavior is unproven, high-risk regression proof is `NOT_PROVEN`, changed
-commands were not inspected, publication lacks authorization or receipt, the
-test-diff audit fails, cleanup is blocked, any command is `FLAKY`, a `TARGET`
-command did not run repeatedly and stably, or test wiring is neither `PROVEN` nor
-`NOT_APPLICABLE`. When publication is requested,
-every uploaded video or image must use host player/image embed markup (never a
-hyperlink-only body or git-committed media) and pass remote readback.
+## Return
 
-`behavior_proof.status` is `PROVEN` only for real product UI + linked backend
-paths. `FALLBACK` requires documented real-system attempts and blockers and is
-not full confidence. Do not claim `COMPLETE` with silent test-only components or
-shells when the real UI was available.
+Child mode (invoked by a parent or phase worker): the final message is exactly this block. Standalone: at most 15 lines plus the report path; never repeat the report.
+
+```
+RESULT sam-create-playwright-tests <COMPLETE|PARTIAL|BLOCKED>
+report: <absolute path>
+validator: <exact last line of the validator output>
+head: <sha> fingerprint: <final bundle fingerprint>
+open: <n>
+- <one line per open required item, max 10>
+```

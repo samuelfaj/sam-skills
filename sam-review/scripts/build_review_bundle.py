@@ -106,17 +106,17 @@ RISK_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     ),
     "concurrency-jobs": (
         re.compile(r"(^|/)(jobs?|workers?|queues?|tasks?|schedulers?)(/|$)", re.I),
-        re.compile(r"(transaction|concurr|parallel|retry|lock)", re.I),
+        re.compile(r"(transaction|concurr|parallel|retry)", re.I),
     ),
     "public-contract": (
         re.compile(r"(^|/)(api|routes?|controllers?|openapi|graphql|proto)(/|$)", re.I),
-        re.compile(r"(schema|contract|public|export)", re.I),
+        re.compile(r"(schema|contract)", re.I),
     ),
     "delivery": (
         re.compile(
             r"(^|/)(\.github|\.gitlab|ci|deploy|infra|terraform|k8s|helm)(/|$)", re.I
         ),
-        re.compile(r"(Dockerfile|Makefile|appcast|notar|sign|release)", re.I),
+        re.compile(r"(Dockerfile|Makefile|appcast|release)", re.I),
     ),
     "integration": (
         re.compile(r"(^|/)(adapters?|clients?|integrations?|providers?)(/|$)", re.I),
@@ -129,6 +129,23 @@ RISK_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
         re.compile(r"\.(tsx|jsx|vue|svelte|html|css|scss)$", re.I),
     ),
 }
+# Whole-word name hints, matched against the camelCase-split lowercase path so
+# "lock" does not fire on Blocked/clock, "sign" on design/signal, "public" on
+# publication, or "export" on exporter.
+RISK_TOKEN_PATTERNS: dict[str, re.Pattern[str]] = {
+    "concurrency-jobs": re.compile(
+        r"(?<![a-z0-9])(?:(?:dead)?lock(?:s|ing|ed)?|mutex(?:es)?|semaphores?)(?![a-z0-9])"
+    ),
+    "public-contract": re.compile(r"(?<![a-z0-9])(?:public|exports?)(?![a-z0-9])"),
+    "delivery": re.compile(
+        r"(?<![a-z0-9])(?:(?:code_?)?sign(?:s|ing|ed)?|notari[sz][a-z]*)(?![a-z0-9])"
+    ),
+}
+LOCKFILE_RE = re.compile(
+    r"(^|/)([^/]+\.lock|[^/]*-lock\.(json|ya?ml)|bun\.lockb|npm-shrinkwrap\.json)$",
+    re.I,
+)
+CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
 HUNK_RE = re.compile(
     r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@"
@@ -183,15 +200,31 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_MAX_BYTES,
         help="Fail rather than truncate when the serialized patch exceeds this size; 0 disables the cap.",
     )
+    parser.add_argument(
+        "--out",
+        help=(
+            "Directory outside the repository: write bundle.json (unchanged JSON) and "
+            "patch.diff there and print a compact ledger instead of the JSON."
+        ),
+    )
     return parser.parse_args()
 
 
 def is_within(path: Path, parent: Path) -> bool:
+    """Compare identity, not spelling: a case-insensitive filesystem must not let a
+    differently cased path escape the check."""
     try:
         path.relative_to(parent)
+        return True
     except ValueError:
-        return False
-    return True
+        pass
+    for candidate in (path, *path.parents):
+        try:
+            if candidate.exists() and os.path.samefile(candidate, parent):
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def enclosing_worktree_hint(repo_hint: Path) -> Path | None:
@@ -784,9 +817,42 @@ def matches_any(path: str, patterns: Iterable[re.Pattern[str]]) -> bool:
 
 
 def risk_tags(path: str) -> list[str]:
-    return sorted(
+    tags = {
         tag for tag, patterns in RISK_PATTERNS.items() if matches_any(path, patterns)
-    )
+    }
+    words = CAMEL_BOUNDARY.sub("_", path).lower()
+    for tag, pattern in RISK_TOKEN_PATTERNS.items():
+        if tag == "concurrency-jobs" and LOCKFILE_RE.search(path):
+            continue
+        if pattern.search(words):
+            tags.add(tag)
+    return sorted(tags)
+
+
+def file_patch_digests(patch: str, files: list[dict[str, Any]]) -> dict[str, str | None]:
+    """Map each bundle path to the SHA-256 of its own patch section.
+
+    None means the section could not be matched unambiguously; callers must then
+    treat the file as changed (it can never be carried forward).
+    """
+    sections: list[tuple[str, list[str]]] = []
+    for line in patch.splitlines(keepends=True):
+        if line.startswith("diff --git "):
+            sections.append((line.rstrip("\r\n"), [line]))
+        elif sections:
+            sections[-1][1].append(line)
+    by_header: dict[str, str | None] = {}
+    for header, lines in sections:
+        digest = hashlib.sha256("".join(lines).encode("utf-8")).hexdigest()
+        by_header[header] = None if header in by_header else digest
+    digests: dict[str, str | None] = {}
+    for record in files:
+        path = record.get("path")
+        if not isinstance(path, str):
+            continue
+        old_path = record.get("old_path") or path
+        digests[path] = by_header.get(f"diff --git a/{old_path} b/{path}")
+    return digests
 
 
 def is_sensitive_path(path: str) -> bool:
@@ -845,7 +911,8 @@ def untracked_snapshot(
     if max_bytes and lstat.st_size > max_bytes:
         raise BundleError(
             f"untracked file {relative} is {lstat.st_size} bytes, above "
-            f"--max-bytes={max_bytes}; review it as a separate target"
+            f"--max-bytes={max_bytes}; refusing rather than truncating (final: report "
+            "BLOCKED; narrow --path or the range only on an explicit user re-scope)"
         )
 
     raw_content = path.read_bytes()
@@ -1057,7 +1124,8 @@ def build_bundle_with_index(
     if args.max_bytes and patch_size > args.max_bytes:
         raise BundleError(
             f"patch is {patch_size} bytes, above --max-bytes={args.max_bytes}; "
-            "split the review with coherent --path targets rather than truncating"
+            "refusing rather than truncating (final: report BLOCKED; narrow --path or "
+            "the range only on an explicit user re-scope)"
         )
 
     aggregate_risks = sorted({tag for record in files for tag in record["risk_tags"]})
@@ -1100,14 +1168,127 @@ def build_bundle_with_index(
     return bundle
 
 
+def format_ranges(ranges: list[list[int]]) -> str:
+    return ",".join(
+        str(start) if start == end else f"{start}-{end}" for start, end in ranges
+    )
+
+
+def ledger_line(record: dict[str, Any]) -> str:
+    """One compact line per changed file: status, path, counts, ranges, hints."""
+    parts = [record["status"], record["path"]]
+    if record.get("old_path"):
+        parts.append(f"<- {record['old_path']}")
+    added, deleted = record.get("added_lines"), record.get("deleted_lines")
+    parts.append(
+        f"+{'-' if added is None else added}/-{'-' if deleted is None else deleted}"
+    )
+    if record.get("new_changed_ranges"):
+        parts.append(f"new={format_ranges(record['new_changed_ranges'])}")
+    if record.get("old_changed_ranges"):
+        parts.append(f"old={format_ranges(record['old_changed_ranges'])}")
+    for key, flag in (
+        ("test", "test"),
+        ("generated", "generated"),
+        ("config", "config"),
+        ("probable_type_only", "type-only"),
+        ("command_definition", "command"),
+        ("binary", "binary"),
+        ("symlink", "symlink"),
+    ):
+        if record.get(key):
+            parts.append(flag)
+    if record.get("risk_tags"):
+        parts.append("risk=" + ",".join(record["risk_tags"]))
+    return " ".join(parts)
+
+
+def one_line_summary(bundle: dict[str, Any]) -> str:
+    """Hashes, counts, and tags only: never paths or patch content."""
+    target, summary = bundle["target"], bundle["summary"]
+    return (
+        f"build_review_bundle: fingerprint={bundle['fingerprint']} "
+        f"mode={target['mode']} base={target['base_sha']} head={target['head_sha']} "
+        f"files={summary['file_count']} "
+        f"non_test_lines={summary['non_test_added_lines'] + summary['non_test_deleted_lines']} "
+        f"patch_bytes={summary['patch_bytes']} "
+        f"risk_tags={','.join(bundle['risk_tags']) or 'none'}"
+    )
+
+
+def write_out(bundle: dict[str, Any], raw_out: str) -> str:
+    """Write bundle.json and patch.diff outside the repository; return the ledger."""
+    out = Path(raw_out).resolve()
+    root = Path(bundle["repository_root"]).resolve()
+    if is_within(out, root):
+        raise BundleError(f"--out must be outside the repository: {out}")
+    bundle_path = out / "bundle.json"
+    patch_path = out / "patch.diff"
+    previous: Any = None
+    if bundle_path.exists():
+        try:
+            previous = json.loads(bundle_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            previous = {}
+        if not isinstance(previous, dict) or previous.get("fingerprint") != bundle["fingerprint"]:
+            raise BundleError(
+                f"refusing to overwrite a different bundle in {out}; use a new --out directory"
+            )
+    # An identical rebuild leaves the files (and the bundle mtime the scaffold uses
+    # to reject receipts that predate the bundle) untouched.
+    if previous != bundle:
+        out.mkdir(parents=True, exist_ok=True)
+        bundle_path.write_text(
+            json.dumps(bundle, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    patch = bundle["patch"].encode("utf-8")
+    if not patch_path.is_file() or patch_path.read_bytes() != patch:
+        patch_path.write_bytes(patch)
+    target, summary = bundle["target"], bundle["summary"]
+    identity = " ".join(
+        f"{key}={target[key]}"
+        for key in ("platform", "repository", "change_id", "comparison")
+        if target.get(key)
+    )
+    lines = [
+        f"bundle: {bundle_path}",
+        f"patch: {patch_path}",
+        f"fingerprint: {bundle['fingerprint']}",
+        (
+            f"target: mode={target['mode']} base={target['base_sha']} "
+            f"head={target['head_sha']} merge_base={target['merge_base_sha']}"
+            + (f" {identity}" if identity else "")
+        ),
+        (
+            f"summary: files={summary['file_count']} tests={summary['test_file_count']} "
+            f"binary={summary['binary_file_count']} "
+            f"non_test=+{summary['non_test_added_lines']}/-{summary['non_test_deleted_lines']} "
+            f"patch_bytes={summary['patch_bytes']}"
+        ),
+        f"risk_tags: {', '.join(bundle['risk_tags']) or 'none'}",
+        "inspect_before_running: "
+        + (", ".join(bundle["command_definitions_requiring_inspection"]) or "none"),
+        "files:",
+        *(ledger_line(record) for record in bundle["files"]),
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def main() -> int:
+    args = parse_args()
     try:
-        bundle = build_bundle(parse_args())
+        bundle = build_bundle(args)
+        ledger = write_out(bundle, args.out) if args.out else None
     except (BundleError, OSError, ValueError) as error:
         print(f"build_review_bundle: {error}", file=sys.stderr)
         return 2
-    json.dump(bundle, sys.stdout, ensure_ascii=False, indent=2, sort_keys=True)
-    sys.stdout.write("\n")
+    if ledger is None:
+        json.dump(bundle, sys.stdout, ensure_ascii=False, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+    else:
+        sys.stdout.write(ledger)
+    print(one_line_summary(bundle), file=sys.stderr)
     return 0
 
 

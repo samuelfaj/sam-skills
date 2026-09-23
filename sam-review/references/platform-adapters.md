@@ -1,38 +1,21 @@
-# Conditional Platform Adapters
+# Platform Adapters
 
-Load only the section for the detected platform. The core workflow depends on
-capabilities, not on a host name or command.
+Depend on capabilities, not host names or commands; use an authenticated connector, API client, or the platform CLI (`gh`, `glab`) only after confirming the platform.
 
-Required read capabilities:
+## Proposal Target
 
-- Proposal metadata, base SHA, head SHA, source and target refs.
-- Changed-file or Git-ref access.
-- Current head refresh immediately before publication.
+Resolve platform, repository identity, proposal ID, draft state, base/head refs and their immutable SHAs, and capabilities. Required reads: proposal metadata, source/target refs, changed-file or Git-ref access, a current-head refresh right before publication. Optional writes: inline diff comment, top-level summary, approve/request-changes state, existing-comment lookup for safe reconciliation. Obtain the exact refs locally, then build with `--mode proposal --base <ref> --head <ref> --platform <kind> --repository <id> --change-id <id> --comparison merge-base` (`direct` only when the platform defines the exact base-to-head range).
 
-Optional write capabilities:
+Standalone with no authorized action, ask one question offering only compatible actions: `APPROVE`: none, comment, or approve; `CHANGES_REQUIRED`: none, comment, or request changes; `BLOCKED`: none or comment the blocker; `COMMENT_ONLY`: none or comment. An answer authorizes only that action.
 
-- Inline diff comment.
-- Top-level summary.
-- Approve or request-changes state.
-- Existing-comment lookup for safe reconciliation.
+## GitHub
 
-## GitHub Adapter
+Inline comments use the frozen commit, changed path, side, and line. Submit review state only when explicitly authorized and supported.
 
-Use an available authenticated connector, API client, or `gh` only after
-confirming the target is GitHub. Resolve the pull request's immutable base and
-head SHAs. For inline comments, use the frozen commit, changed path, side, and
-line. Submit review state only when explicitly authorized and supported.
+## GitLab
 
-## GitLab Adapter
-
-Use an available authenticated connector, API client, or `glab` only after
-confirming the target is GitLab. Preserve base, start, and head diff refs for
-inline positions. Use the old side for deletions and both paths for renames.
-When request-changes state is unavailable, leave authorized unresolved
-discussions plus a summary and record that limitation.
+Keep base, start, and head diff refs for inline positions; use the old side for deletions and both paths for renames. Without request-changes state, leave authorized unresolved discussions plus a summary and record the limitation.
 
 ## Unknown Platform
 
-If read capabilities exist, complete the validated local review. If the user
-requested publication but no safe adapter exists, set publication to `BLOCKED`
-with action `NONE`; do not improvise an API call.
+With read capabilities, complete the validated local review. If publication was requested but no safe adapter exists, set publication `BLOCKED` with action `NONE`; never improvise an API call.

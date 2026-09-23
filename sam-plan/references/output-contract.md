@@ -1,177 +1,94 @@
 # Plan Output Contract
 
-## Contents
+`plan-report.json` is one UTF-8 JSON object. The scaffold prefills mechanical
+fields and the renderer writes `output`; fill the rest in place.
 
-1. Terminal statuses
-2. Hard freeze core
-3. Study and acceptance
-4. Presentation (machine + human HTML)
-5. READY invariants
-6. Validation
-7. Human response
-
-## Terminal statuses
-
-- `READY_TO_EXECUTE`: material claims are factual or explicitly accepted;
-  steps have DoD and verification mapping; no open blocker; study receipts
-  present; council policy for risk triggers is satisfied.
-- `NOT_CONFIDENT`: useful plan exists, but material unknowns, unaccepted
-  assumptions, or `NOT_RUN` proofs remain.
-- `BLOCKED`: missing access, owner decision, unsafe scope, or council/runtime
-  capability prevents a defensible plan.
-
-## Hard freeze core
-
-Write `plan-report.json` (UTF-8 object) with:
-
-- `schema_version`: `1`
-- `workflow`: `plan`
-- `status`, `depth` (`simple|standard|deep` as **signal only**), `case_type`
-- `complexity_rationale` (non-empty)
-- `risk_flags[]` (from the council trigger catalog; may be empty)
-- `study`: see below
-- `frozen`: `prompt_hash`, `prompt_summary`, `goal`, `non_goals`,
-  `success_criteria`, `invariants`, `constraints`, `no_go`
-- `output`: `plan_dir` (absolute); `html_files` (non-empty after render for a finished plan)
-- `evidence[]`: `id`, `kind`, `classification` (`FACT|ASSUMPTION|UNKNOWN`),
-  `claim`, `locator` (required when classification is `FACT`)
-- `assumptions[]`, `unknowns[]` (`material` bool on unknowns)
-- `thesis`: `id`, `summary`, `approach`, `rejected_alternatives`
-- `steps[]`: `id`, `title`, `why`, `how` (imperative procedure bullets),
-  `depends_on`, `surfaces`, `dod`, `proof_ids`, optional `preconditions`
-  (evidence/assumption IDs), optional `simpler_rejected`
-- `risks[]`, `verifications[]` (`PASS|PLANNED|NOT_RUN|BLOCKED|NOT_APPLICABLE`)
-- `acceptance_trace[]`: map success criteria to steps/proofs
-- `council`: `required`, `skip_reason`, `runs[]`
-- `simplicity`: `cuts`, `retained_complexity_justifications`
-- `residuals[]`, `blockers[]`
-
-IDs should be unique within their series (`E-###`, `A-###`, `U-###`, `T-###`,
-`S-###`, `R-###`, `V-###`). Prefer that shape; the hard fail is uniqueness and
-reference integrity, not ceremony.
-
-Optional: `chapters[]` for HTML pack bodies. Empty chapters are valid; the
-renderer then synthesizes a compact light-theme page from the freeze.
-
-## Study and acceptance
-
-### `study` (required for READY)
-
-```json
+```jsonc
 {
-  "tools_used": ["graphify query …", "rg InvoiceDetail"],
-  "surfaces_mapped": ["src/views/InvoiceDetail.tsx"],
-  "prompt_ambiguities": [],
-  "repo_root": "/absolute/target/repo"
+  "schema_version": 1, "workflow": "plan", "status": "READY_TO_EXECUTE|NOT_CONFIDENT|BLOCKED",
+  "depth": "simple|standard|deep", "case_type": "BUG|FEATURE|PRODUCT|MIGRATION|OPS|SPIKE",
+  "complexity_rationale": "", "risk_flags": [],
+  "risk_flag_dismissals": [{"flag": "", "reason": "", "evidence_ids": ["E-001"]}],  // optional
+  "study": {"tools_used": [], "surfaces_mapped": [], "prompt_ambiguities": [], "repo_root": "/abs"},
+  "frozen": {"prompt_hash": "", "prompt_summary": "", "goal": "", "non_goals": [],
+             "success_criteria": [], "invariants": [], "constraints": [], "no_go": []},
+  "output": {"plan_dir": "/abs", "html_files": ["00-plano.html"]},
+  "evidence": [{"id": "E-001", "kind": "CODE", "classification": "FACT|ASSUMPTION|UNKNOWN",
+                "claim": "", "locator": "required for FACT"}],
+  "assumptions": [{"id": "A-001", "claim": "", "state": "UNVERIFIED|ACCEPTED|VERIFIED|REJECTED",
+                   "evidence_ids": [], "decision_reason": ""}],
+  "unknowns": [{"id": "U-001", "claim": "", "material": true, "probe": "", "why_immaterial": ""}],
+  "thesis": {"id": "T-001", "summary": "", "approach": "", "rejected_alternatives": []},
+  "steps": [{"id": "S-001", "title": "", "why": "", "how": [], "depends_on": [], "surfaces": [],
+             "dod": [], "proof_ids": ["V-001"], "preconditions": [], "simpler_rejected": null,
+             "out_of_acceptance": ""}],
+  "risks": [{"id": "R-001", "claim": "", "severity": "low|medium|high|blocker", "mitigation": "",
+             "status": "OPEN|MITIGATED|ACCEPTED|CLOSED"}],
+  "verifications": [{"id": "V-001", "proof": "", "reason": "", "claim_ids": [],
+                     "status": "PASS|PLANNED|NOT_RUN|BLOCKED|NOT_APPLICABLE"}],
+  "acceptance_trace": [{"criterion": "exact success_criteria text", "step_ids": [], "proof_ids": []}],
+  "council": {"required": false, "skip_reason": "",
+              "runs": [{"profile": "fast|full", "status": "", "thesis_id": "T-001", "report_path": "/abs"}]},
+  "simplicity": {"cuts": [], "retained_complexity_justifications": []},
+  "chapters": [], "residuals": [], "blockers": []
 }
 ```
 
-- `tools_used` and `surfaces_mapped` must be non-empty for READY except
-  `case_type=SPIKE`.
-- `repo_root` optional in the file; pass `--repo-root` on validate when possible.
+`frozen.prompt_hash` is the sha256 hex of the exact prompt bytes (scaffold
+`--prompt-file`); under a parent it is the parent's frozen prompt sha256, which
+`sam-task` requires to equal `request.prompt_sha256`. Optional unless a rule
+requires them: `chapters` (schema in chapter-taxonomy.md), `preconditions`
+(evidence/assumption IDs), `simpler_rejected`, `out_of_acceptance`, `probe`,
+`why_immaterial`, `decision_reason`.
 
-### FACT locators
+## Risk Flags
 
-Prefer repo paths: `path`, `path:line`, or `path:line:col`. Exempt forms:
+`risk_flags` holds every flag that applies:
 
-- `user decision: …` / `decision: …`
-- `command: …`
-
-With `--repo-root`, path locators must exist; line numbers must be in range.
-
-### `acceptance_trace` (required for READY when success_criteria set)
-
-Each `frozen.success_criteria` entry must appear as `criterion` with
-`step_ids` / `proof_ids` that exist in the freeze.
-
-## Presentation (machine + human HTML)
-
-| Audience | Artifact | Required |
-| --- | --- | --- |
-| Machine / parents | `plan-report.json` freeze | Always |
-| Humans | Light-theme HTML pack via `render_plan_html.py` | Always on terminal plan |
-| Chat | Short projection of status/thesis | Optional summary |
-
-When `chapters` is empty, the compact HTML page must still project status, goal
-and scope (success/non-goals/invariants/no-go), thesis, rich steps
-(why/how/surfaces/deps/DoD/proofs), acceptance map, risks/open items, and
-evidence/study receipts—not title+DoD only.
-
-Parents (`sam-task`, etc.) advance on the freeze file. Humans open HTML under
-`$PLAN_DIR` (e.g. `00-plano.html`). Never treat HTML alone as proof that study
-happened; never skip HTML on a finished plan.
-
-## READY invariants
-
-`READY_TO_EXECUTE` hard-fails when any of these hold:
-
-1. Non-empty `blockers`
-2. Material `unknowns`
-3. Open risks with severity `high` or `blocker`
-4. Verification status `NOT_RUN` or `BLOCKED`
-5. Assumptions in state `UNVERIFIED`
-6. Empty `thesis.rejected_alternatives`
-7. No FACT evidence with a non-empty locator
-8. A step with empty `dod`
-9. A step with empty `how[]`, or `how` that only restates the step title
-10. A step with empty `surfaces` (except `case_type=SPIKE`)
-11. `council.required` true without at least one run, or runs in
-   `BLOCKED` / `REVISE` / `ESCALATE_TO_FULL`
-12. Non-empty `risk_flags` while `council.required` is false
-13. Missing freeze core fields (goal, thesis approach, ≥1 step)
-14. Missing `study` / empty `surfaces_mapped` or `tools_used` (except SPIKE)
-15. Success criteria without matching `acceptance_trace`
-16. Heuristic risk flags present in goal/steps but absent from `risk_flags`
-17. With `--repo-root`: no FACT locator that resolves under the repo
-
-`PLANNED` proofs are allowed when `reason` states the exact post-implement method.
-
-### Step quality (for humans and implementer agents)
-
-Each READY step must answer:
-
-| Field | Question |
+| Flag | Fire when |
 | --- | --- |
-| `title` | What work unit is this? |
-| `why` | Why does this step exist for the goal? |
-| `how[]` | Imperative bullets: what to change (enough to implement without re-study) |
-| `surfaces` | Where in the repo (paths) |
-| `dod` | When is the step done? |
-| `proof_ids` | How is done proven? |
+| `security_privacy` | Secrets, PII, tenancy, authz, abuse surface |
+| `auth_boundary` | Login, roles, permissions, session, identity change |
+| `data_migration` | Schema, backfill, dual-write, data rewrite |
+| `irreversible` | Hard-to-reverse state, destructive ops, one-way rollout |
+| `public_contract` | Public API/SDK/event compatibility |
+| `multi_service` | Cross-service orchestration or multi-system cutover |
+| `payments` | Charges, payouts, invoices, money movement |
+| `compliance` | Regulated process, audit, retention, jurisdiction |
+| `user_requested_council` | User explicitly asked for council/adversarial review |
+| `material_uncertainty` | Load-bearing unknown or assumption the planner cannot close |
 
-Bad: `title: "Fix auth"`, `how: ["Fix auth"]`, empty surfaces.  
-Good: concrete files, concrete procedure, observable DoD, mapped proof.
+The validator suggests flags from `case_type=MIGRATION` and from goal, summary, step, and surface keywords (READY 14).
 
-## Validation
+## Structural Rules (every status)
 
-```bash
-python3 -B scripts/validate_plan_report.py plan-report.json --repo-root "$PWD"
-# required human pack (light theme):
-python3 -B scripts/render_plan_html.py plan-report.json --out "$PLAN_DIR"
-python3 -B scripts/validate_plan_report.py plan-report.json --require-html
-```
+- Non-empty text: `complexity_rationale`, `frozen.prompt_hash`, `prompt_summary`, `goal`, `output.plan_dir`, thesis `id`/`summary`/`approach`, every item's `claim`, `kind`, `state`, `title`, `why`, `severity`, `mitigation`, `proof`, `status`, and `criterion`, and a FACT's `locator`.
+- String lists hold non-empty, unique strings. IDs are unique per series; an id shaped like a series must match `E-###`, `A-###`, `U-###`, `T-###`, `S-###`, `R-###`, or `V-###` (3+ digits); other short ids are accepted.
+- References resolve: assumption `evidence_ids` to evidence; `depends_on` and trace `step_ids` to steps; step and trace `proof_ids` to verifications.
+- `steps` is non-empty; every step has non-empty `dod`. `unknowns[].material` is boolean. `PLANNED` needs a `reason` with the exact post-implementation method.
+- `council.required=true`: empty `skip_reason` and at least one run, each with `profile` `fast|full`, a council terminal `status` (`TRIAGE_PASS|ESCALATE_TO_FULL|APPROVED|APPROVED_WITH_CONDITIONS|REVISE|BLOCKED`), `thesis_id`, and an absolute `report_path` to a council report whose `status` equals the run's. `required=false`: non-empty `skip_reason`. Non-empty `risk_flags` needs `required=true`.
+- `risk_flag_dismissals[]` (only for a keyword false positive, e.g. a UI-only folder named `session`): unique keyword flags (never `user_requested_council` or `material_uncertainty`), none in `risk_flags`, none matched by `frozen.goal`/`prompt_summary`, and never `data_migration`/`irreversible` under `case_type=MIGRATION`; non-empty `reason`; at least one `evidence_ids`, each a FACT whose locator shows the risk is absent (with a known repo, a file path under it).
+- `output.html_files`: `.html` basenames; with chapters, one `<id>-<slug>.html` each.
+- `NOT_CONFIDENT` and `BLOCKED` need residuals, blockers, material unknowns, or `NOT_RUN`/`BLOCKED` proofs.
+- With `--repo-root` (or a resolvable `study.repo_root`), FACT path locators must exist under the repo with line numbers in range.
+- `--require-html`: `plan_dir` exists and holds `plan-report.json` and every listed HTML file, each containing `<html` and `<nav`.
 
-Re-validate after any report edit. Cite a freeze validator `VALID` result as
-machine proof; cite `--require-html` `VALID` as proof the human pack is on disk.
+## READY Invariants
 
-## Human response
+`READY_TO_EXECUTE` fails when any holds (`case_type=SPIKE` exempt where marked):
 
-Return status, depth signal, plan directory path, primary HTML path(s), freeze
-path, thesis summary, open residuals/blockers, risk flags, study surfaces, and
-council skip or result. Do not claim a finished plan when freeze or HTML
-validation fails.
-
-## Ledger gap engine (READY)
-
-Under `READY_TO_EXECUTE` (except `case_type=SPIKE` where noted):
-
-- `frozen.success_criteria` must be non-empty
-- Each `acceptance_trace` entry needs ≥1 `step_ids` and ≥1 `proof_ids`
-- Steps with `dod` need ≥1 `proof_ids`
-- `steps[].depends_on` must be acyclic
-- Non-simple depth: every step reachable from acceptance_trace or has
-  `out_of_acceptance` reason
-- `ASSUMPTION` with state `ACCEPTED` needs `decision_reason` or `evidence_ids`
-- Material `UNKNOWN` needs `probe`; non-simple immaterial needs `why_immaterial`
-- `FACT` claims must not use hedge language (`appears`, `seems`, `maybe`, …)
-
+1. Non-empty `blockers`.
+2. A material unknown (material unknowns also need `probe`).
+3. A `high` or `blocker` risk with status `OPEN`.
+4. A verification `NOT_RUN` or `BLOCKED`.
+5. An `UNVERIFIED` assumption, or an `ACCEPTED` one without `decision_reason` or `evidence_ids`.
+6. Empty `thesis.rejected_alternatives`.
+7. No FACT with a locator; with `--repo-root`, none that resolves (a `user decision:` locator counts).
+8. A FACT claim with hedge language (appears, seems, maybe, likely, probably, roughly, approximately, might, could be).
+9. Missing `study`, or empty `surfaces_mapped` or `tools_used` (SPIKE exempt).
+10. Empty `frozen.success_criteria` (SPIKE exempt), a criterion absent from `acceptance_trace`, or a trace entry without a `step_ids` and a `proof_ids`.
+11. Depth other than `simple`: a step in no trace `step_ids` and without an `out_of_acceptance` reason, or an immaterial unknown without `why_immaterial`.
+12. A step with `dod` but no `proof_ids`; with empty `how[]` or only bullets that restate the title or are under 8 characters; or with empty `surfaces` (SPIKE exempt).
+13. A `depends_on` cycle.
+14. A heuristic flag suggestion neither in `risk_flags` nor validly dismissed.
+15. A council run with status `BLOCKED`, `REVISE`, or `ESCALATE_TO_FULL`.

@@ -1,160 +1,79 @@
 ---
 name: sam-work
-description: Execute a software task through the complete bug-or-feature implementation, refinement, review, simplification, test-coverage, proposal, browser-proof, and demo-video workflow without asking for permission or confirmation on any step. Use when the user wants end-to-end delivery with no silently skipped phase, fresh proof after every change, a created or updated pull/merge request, and published video evidence.
+description: "Deliver a software task end-to-end with no permission prompts: bug/feature implementation, refinement, review, simplification, coverage, PR/MR, browser proof, and demo video, with fresh proof after every change. Use when the user wants complete verified delivery with a created or updated PR/MR."
 ---
 
 # SAM Work
 
-## Purpose
-
-Turn one user request into a delivered pull or merge request through a fail-closed sequence of implementation and proof gates. Do not treat a child skill as complete merely because it was invoked. Capture and validate its terminal result.
-
-Invoking this skill **is** the explicit user request for every action required by the contract below. It authorizes only these external writes: stage and commit task-owned work on the task branch, push that branch, create or update its proposal, and publish the required Playwright and demo videos on that proposal. It does not authorize merge, deployment, review approval, unrelated comments, destructive cleanup of user work, or production data access.
+Deliver one request as a pull/merge request through fail-closed gates.
 
 ## Non-Negotiable Contract
 
-Execute and prove every canonical phase. Never report `COMPLETE` while a phase is missing, stale, non-terminal, unvalidated, or silently skipped. Playwright may be `NOT_APPLICABLE` only for a proven non-web system; every other unavailable phase blocks completion.
+- Exclusive top pipeline: if this turn also named `sam-goal` or `sam-task` as a user request, do not start this pipeline as the top method; that named parent owns the turn. `sam-task` may still run this ledger. Precedence: `sam-goal` > `sam-task` > `sam-work` > `sam-orchestrate`.
+- Invoking this skill **is** the explicit user request for every required action and authorizes only: commit task-owned work on the task branch, push it, create or update its one proposal, and publish the required Playwright and demo videos there. Never merge, deploy, approve reviews, post unrelated comments, destructively clean user work, or touch production data.
+- Autonomy: never ask for permission or confirmation, or pause for OS screen-recording permission. Child "ask", "stop for approval", or "publish only when authorized" rules become: execute in frozen scope or return `BLOCKED` with receipts. Resolve routine choices from the frozen request and repo evidence; if a required target, permission, tool, or decision is missing, continue independent safe work and report the exact blocker. Never infer scope or authority from a child. Respect host permissions.
+- Prove all eight phases; never `COMPLETE` with one missing, stale, non-terminal, unvalidated, or silently skipped. Only Playwright may be `NOT_APPLICABLE`, only for a proven non-web system.
+- Freeze prompt hash, repo root, base, branch, acceptance, invariants, no-go surfaces, and initial change fingerprint. Never reset, overwrite, or bundle unrelated user work.
+- A child is done only through its terminal plus a stored validator receipt, never because it was invoked or narrated. A missing required child is `BLOCKED`, never emulated. Child retry limits stay; exhaustion is `BLOCKED`, never confidence.
+- A loop ends only on its accepted terminal with zero open required items; findings need correction receipts before the next iteration. `FOLLOW_UP` and `SUGGESTION` items are parked and never reopen a loop.
+- Freshness: a task-branch mutation invalidates proofs tied to the old head, except proof that `finalize` re-anchors (output contract § Proof anchor); re-run affected gates on the new commit of the same branch until all eight phases are current for one final head. Never reset, rebase, or replace the branch or worktree because a gate failed or the base moved.
+- Verified development environments and dedicated data only; never production, customer, or ambiguous targets. Record environment identity before auth or mutation; keep dedicated identities, a mutation ledger, cleanup receipts, redaction proof, and artifact hashes.
+- Never claim "all tests", "simplest possible", or "no issues" without the child terminal plus current-head evidence. Screenshots or text never substitute for a required video.
 
-## Autonomous execution
+## Start
 
-Continue the authorized workflow without re-asking for phase transitions or
-in-scope corrections. Resolve routine choices from the frozen request and
-repository evidence. If a required target, permission, tool, or material decision
-is unavailable, continue independent safe work and report the exact blocker.
-Never infer extra scope or authority from a child skill. Respect host permissions.
+1. Classify `BUG` (→ `sam-fix-bug`) only when expected existing behavior is broken or regressed, else `FEATURE` (→ `sam-create-feature`), from concrete evidence, never labels. Decide web applicability from repo/runtime evidence (under `sam-task`: its `web_surface`).
+2. State one line (classification + evidence, target head, "writes authorized per contract"; under `sam-task`, the freeze path) and continue.
+3. `WORK_DIR` is absolute and outside the repo, or gitignored, in every mode (`mktemp -d`; under `sam-task`, `<RUN_DIR>/work`). Use literal absolute paths; `<SAM_WORK_DIR>` is this skill's directory. Run `python3 -B <SAM_WORK_DIR>/scripts/scaffold_work_report.py init --out <WORK_DIR>/work-report.json --repo <repo> --base-ref <ref> --base-sha <frozen base> --classification BUG|FEATURE --web-system true|false --prompt-sha256 <hash> --workflow-id <id>`.
 
-## Required skills
+## Phase isolation
 
-Classify the task first. Read the selected implementation skill before editing;
-read each later skill and its applicable resources when that phase starts:
+- With subagents, dispatch each phase to a fresh worker, one at a time; workers never spawn, so parallel seats (`sam-council`) run at controller level. Without subagents, or with nesting exhausted, run the phase inline under the same contract.
+- Every phase run gets a new `<phase dir>` (for this skill's phases `<WORK_DIR>/<phase>-<k>/`, k = that phase's run count). Never overwrite a cited report or its validator inputs; a DELTA review keeps its base review and uses a fresh receipts directory.
+- Before dispatch write `<phase dir>/handoff.json`: the frozen ledger with current head and fingerprint, authorization scope, prior report paths, open items, and report path (`<phase dir>/report.json` unless the child fixes it).
+- The worker (or you, inline) reads only the child's `../<child>/SKILL.md` and needed refs when the phase starts, runs it in child mode, writes the report, its validator inputs, and `validator-args.json` (JSON array of the child validator's arguments before the report, e.g. `["--bundle", "/abs/bundle.json"]`) into the phase dir, and validates; a worker returns only its `RESULT` block. Child cleanup never deletes the report or its validator inputs (captures, bundles, contexts, manifests, logs, final media) before the parent's final validation.
+- Never read the worker transcript; re-run the child validator for your receipt: `python3 -B <SAM_WORK_DIR>/scripts/scaffold_work_report.py record <WORK_DIR>/work-report.json --phase <id> --child <report>`.
+- Re-read a file already read in this context only after compaction or when you cannot quote the needed section; suite-enforced byte-identical sibling copies (shared scripts; `evidence-policy.md` and `risk-lenses.md` among sam-fix-bug, sam-create-feature, sam-refine-task, sam-simplify-task) count as read.
+- **Token Saver:** Pass the host's content-free `RC_TOKEN_SAVER_EXECUTION_RECEIPT_V1` and its capability/lane environment unchanged to every controlled child (nested spawns, retries, resumes, recovery); never reconstruct or widen admission. A missing, malformed, denied, cross-user, or provider-mismatched receipt is raw fail-open input. Never put skills, exact-output commands, prompts, transcripts, secrets, or full responses in it. Skills and exact-output evidence stay lossless; claim no billing or quota savings.
+- **Telemetry (lifetime only):** With `T="${REMOTE_CODE_SUBAGENT_TELEMETRY_COMMAND:-distill}"`, bracket each controlled child: `run=$("$T" subagent begin --node <stable-id> </dev/null)` … `"$T" subagent end --run-id "$run" --status completed|failed|cancelled </dev/null`; keep the run id across retries. If the run's first `begin` fails, record one Subagents proof gap and skip brackets for the rest of the run. Telemetry never invents a Done row or receives skill bodies or exact output.
 
-1. `../sam-fix-bug/SKILL.md` for a bug, or `../sam-create-feature/SKILL.md` for a feature
-2. `../sam-refine-task/SKILL.md`
-3. `../sam-review/SKILL.md`
-4. `../sam-simplify-task/SKILL.md`
-5. `../sam-create-test-coverage/SKILL.md`
-6. `../sam-pr-description/SKILL.md`
-7. `../sam-create-playwright-tests/SKILL.md`
-8. `../sam-create-task-demo-video/SKILL.md`
+## Phases
 
-Require only the children needed for the selected path. A missing required child
-is `BLOCKED`; do not emulate it from memory.
+Canonical order; a correction may rewind gates. Only the selected path's children are required. Child `BLOCKED` blocks the workflow.
 
-State the complete workflow, the bug/feature classification, the target repository, the authorized external writes, and the pass criteria before implementation—then **continue without waiting**.
+| # | id | child | closes on |
+| --- | --- | --- | --- |
+| 1 | `implementation` | `sam-fix-bug` / `sam-create-feature` | `COMPLETE` with acceptance, validation, scope evidence |
+| 2 | `refine` | `sam-refine-task` (implemented strategy + diff) | `HIGH_CONFIDENCE`, no open item |
+| 3 | `review` | `sam-review`, branch mode vs frozen base, local-only (never publish or offer publication) | `APPROVE`, no actionable in-scope finding |
+| 4 | `simplify` | `sam-simplify-task` | `SIMPLEST_DEFENSIBLE` or `NO_CHANGE`, nothing open |
+| 5 | `coverage` | `sam-create-test-coverage` (acceptance, risks, seams, tests) | `FULL`, no uncovered required risk |
+| 6 | `proposal` | `sam-pr-description` | `READY` (validated description) |
+| 7 | `playwright` | `sam-create-playwright-tests` | `COMPLETE` |
+| 8 | `demo` | `sam-create-task-demo-video` | `PUBLISHED` |
 
-## Operating rules
+- **1:** the child records its `code-review`, `coverage`, and `browser-proof` gates `NOT_APPLICABLE`, reason `owned by parent phase`.
+- **1 and 4**, and every correction through the implementation contract: after the child validates, commit exactly its captured delta (never pre-existing dirty work) before the next phase.
+- **2:** `NOT_CONFIDENT` → corrections through the implementation contract, fresh validation, refine again.
+- **3:** `CHANGES_REQUIRED` → fix accepted in-scope `BLOCKER`/`IMPORTANT` only through the implementation contract, then review the new head.
+- **4:** applied simplifications need focused validation plus fresh refine and review proof.
+- **5:** `PARTIAL` → add justified coverage, validate, re-run; commit and push test changes. When phase 7 applies, coverage records `real_system_proof = NOT_APPLICABLE`, reason `delegated to playwright phase`. Production testability changes rewind implementation, refine, review, simplify; test-only changes rewind review and any proof whose bundle changed. Before the proposal, run `finalize` (Completion 1) and re-run and `record` each phase 1-5 it marks stale.
+- **6:** resolve any open proposal for the task branch; run the child on the real base, commits, diff, and proofs; validate the description before any platform write. Create exactly one proposal if none exists, else update it. Push the exact reviewed head, read back per Completion 2-4, and store create/update and readback receipts.
+- **7:** always record applicability; non-web needs repo/runtime evidence. Web: real linked development UI/backend, verified real development data, `COMPLETE`, cleanup, current-head proof. Record video wherever the runner supports it; hash and upload every video to the proposal, each rendering as an inline/native player (a file link fails). On a recording, capture, conversion, or upload failure, finish remaining attempts and cleanup, then report the exact failure. A repo change here: commit, push, refresh the description, and re-run invalidated gates first.
+- **8:** reuse phase 7's environment receipt (identity, boot, auth, seed) when it verified this head; otherwise verify before recording. Require a validated MP4, privacy proof, cleanup, upload receipt, and rendered-player readback. No honest runnable demo after the child's fallbacks, or tooling/OS capture denied: `BLOCKED` with the attempt ledger.
 
-- Exclusive top pipeline: if this turn also named `sam-goal` or `sam-task` as a user request, do not start this pipeline as the top method; that named parent owns the turn. `sam-task` may still invoke this skill as a child. Precedence: `sam-goal` > `sam-task` > `sam-work` > `sam-orchestrate`.
-- Preserve unrelated user work. Never reset, overwrite, or include it in the task bundle.
-- Freeze the original prompt hash, repository root, base, branch, acceptance criteria, invariants, no-go surfaces, and initial change fingerprint.
-- Classify `BUG` only when expected existing behavior is broken or regressed. Otherwise classify `FEATURE`. Record concrete evidence; do not infer from issue labels alone.
-- Use `sam-fix-bug` for `BUG`; use `sam-create-feature` for `FEATURE`.
-- Run phases in the canonical order below. A later correction may rewind invalidated gates, but never removes a phase from the ledger.
-- For every child skill, run its deterministic validator and store the receipt. A narrative claim is not a receipt.
-- A loop ends only on its accepted terminal state with zero open required items. An iteration that finds issues must have correction receipts before the next iteration.
-- Child-skill retry limits remain active. If a child contract requires stopping after repeated cycles without new evidence, mark the workflow `BLOCKED`; never translate exhaustion into confidence.
-- A later correction **on the task branch** invalidates proofs tied to the previous head. Repeat affected later gates on the new commit of that same branch until implementation, refinement, review, simplification, coverage, proposal, browser proof when applicable, and demo proof are current for one final head. Do not reset, rebase, or replace the task branch/worktree because a gate failed or the integration base moved.
-- Use verified development data only for browser tests and recordings. Never use production, customer, or ambiguous targets. Record environment identity before authentication or mutation.
-- Keep dedicated test/demo identities, a mutation ledger, cleanup receipts, redaction proof, and artifact hashes.
-- Do not declare “all tests,” “simplest possible,” or “no issues” without the terminal child result plus current-head evidence.
-- Never interrupt the phase ledger to solicit permission. Execute, prove, or fail closed with receipts.
-
-## Canonical phases
-
-### 1. Implement
-
-Run the selected implementation skill against the original request with parent authorization for task-owned stage/commit on the task branch. Child “do not commit unless asked” and “stop and request approval” rules become: execute in frozen scope, or return `BLOCKED` with receipts—**never ask**. Require complete acceptance, validation, and scope evidence. If blocked, stop with a workflow report.
-
-### 2. Refine loop
-
-Run `sam-refine-task` on the implemented strategy and current diff.
-
-- `HIGH_CONFIDENCE` with no open required item closes the gate.
-- `NOT_CONFIDENT` requires concrete corrections through the selected implementation contract, fresh validation, then another refinement pass.
-- `BLOCKED` blocks the workflow.
-
-### 3. Review loop
-
-Run `sam-review` on an immutable bundle for the current head **local-only**: do not publish review decisions, do not offer publication choices, and do not ask which review action to take.
-
-- `APPROVE` with no actionable in-scope finding closes the gate.
-- `CHANGES_REQUIRED` requires corrections only for accepted in-scope `BLOCKER`/`IMPORTANT` items, then validation, bundle rebuild, and another review.
-- `FOLLOW_UP` and `SUGGESTION` items are parked. They do not reopen this loop.
-- `BLOCKED` blocks the workflow.
-- `COMMENT_ONLY` is not a passing code-review result.
-
-### 4. Simplification loop
-
-Run `sam-simplify-task` on the current change.
-
-- `SIMPLEST_DEFENSIBLE` or `NO_CHANGE`, with no open simplification, closes the gate.
-- Applied simplifications require focused validation and fresh refinement/review proof.
-- `BLOCKED` blocks the workflow.
-
-### 5. Coverage loop
-
-Run `sam-create-test-coverage` against acceptance criteria, risks, changed seams, and existing tests.
-
-- `FULL` with no uncovered required risk closes the gate.
-- `PARTIAL` requires implementing the missing justified coverage, validating it, and running the gate again.
-- Production-code changes made for testability rewind refinement, review, and simplification. Test-only changes rewind review and any proof whose bundle changed.
-- `BLOCKED` blocks the workflow.
-
-Before proposal work, rerun invalidated gates until phases 1-5 all validate the same current head.
-
-### 6. Proposal
-
-Resolve an existing open proposal for the task branch. Run `sam-pr-description` against the real base, commits, diff, and proof set. Validate the description before any platform write.
-
-- If no proposal exists, create exactly one pull or merge request with the validated body—do not ask whether to open it.
-- If one exists, update it instead of creating a duplicate—do not ask whether to update it.
-- Push the exact reviewed head without requesting push permission, then read back proposal URL/ID, rendered description, remote head, and required CI state when configured.
-- Store the creation/update and readback receipts. Do not merge.
-
-### 7. Web browser proof
-
-Always perform and record the applicability decision.
-
-If the delivered system is web-accessible, run `sam-create-playwright-tests` against a real linked development UI/backend and verified real development data. Require `COMPLETE`, cleanup, and current-head proof. **Always enable and capture video** where the runner supports it—do not ask whether to record. Inventory every produced browser-test video, hash it, **upload every video to the proposal without asking**, and read the rendered proposal surface back. Every uploaded artifact must render as an inline/native video player; a file link alone does not pass.
-
-If recording, capture, conversion, or upload fails, keep going through remaining attempts and cleanup, then report the exact failure under this phase. Do not pause for OS screen-recording permission or user confirmation.
-
-If the system is not web-accessible, record `NOT_APPLICABLE` with repository/runtime evidence. This is the only phase that may be not applicable.
-
-If browser-test work changes the repository, push it, refresh the proposal description, and rerun every invalidated gate before continuing.
-
-### 8. Demo video
-
-Run `sam-create-task-demo-video` using the verified real development environment and data with **publication pre-authorized** on the frozen proposal. Require `PUBLISHED`, validated media, privacy proof, cleanup, upload receipt, and rendered-player readback on the proposal. Start recording and upload immediately; never ask for permission to record, convert, or publish.
-
-If the feature cannot be demonstrated honestly in a runnable surface after the child skill's allowed fallback attempts, or media tooling/OS capture denies the run, return `BLOCKED` with the exact attempt ledger. Never replace this phase with screenshots or a textual claim, and never wait for the user to fix permissions mid-flow.
-
-## Freshness and completion
+## Completion
 
 After the last repository mutation:
 
-1. Recompute the final head and change fingerprint.
-2. Repeat every stale phase until all eight phase records are current for that head.
-3. Push and confirm the proposal remote head equals the final local head.
-4. Confirm every required CI check that exists reached a passing terminal state.
-5. Re-read the rendered proposal and verify the validated description plus every expected video player.
-6. Run the workflow validator:
+1. `python3 -B <SAM_WORK_DIR>/scripts/scaffold_work_report.py finalize <WORK_DIR>/work-report.json` derives the final head and change fingerprint, commit anchors, carry-forward, and local video hashes; re-run and `record` every phase it marks stale.
+2. Push; the proposal remote head must equal the final local head.
+3. Every existing required check must pass. Wait in one blocking call bounded by the host tool timeout (or in the background), never polling turn by turn: `gh pr checks <id> --required --watch --fail-fast --interval 30 > <WORK_DIR>/ci.log 2>&1; echo "exit=$?"; tail -n 15 <WORK_DIR>/ci.log` (or the platform's equivalent).
+4. Read back the validated description and every expected player from the body markup via the platform API (`gh pr view <id> --json body -q .body > <WORK_DIR>/body.md`); per Playwright and demo upload run `python3 -B <SAM_WORK_DIR>/../sam-create-task-demo-video/scripts/count_embeds.py <WORK_DIR>/body.md --video-url <url>` and record its `PASS` line. No screenshots.
+5. Read `references/output-contract.md`, fill the remaining `SCAFFOLD:` fields, set `final.result`, and run `python3 -B <SAM_WORK_DIR>/scripts/validate_work_report.py <WORK_DIR>/work-report.json`. Fix from the validator's error lines and patch the report in place; do not read validator source or rewrite the whole report.
 
-```bash
-python3 scripts/validate_work_report.py work-report.json
-```
-
-Read `references/output-contract.md` before creating the report. `COMPLETE` is allowed only when the validator passes. Otherwise return `BLOCKED` or `IN_PROGRESS` with exact remaining work and receipts already obtained.
+`COMPLETE` only when the validator passes; else `BLOCKED` or `IN_PROGRESS` with exact remaining work and receipts obtained.
 
 ## Final response
 
-Report:
-
-1. `COMPLETE`, `BLOCKED`, or `IN_PROGRESS`.
-2. Bug/feature classification and selected implementation skill.
-3. Phase ledger with iteration count, terminal status, current head, and validator receipt.
-4. Tests and required CI results.
-5. Proposal URL and remote-head readback.
-6. Development-environment identity and cleanup status.
-7. Browser-video and demo-video inventory with hashes, upload receipts, and player-readback proof.
-8. Exact blockers or remaining work; never hide a skipped or stale phase.
+Under a parent, exactly these lines: `RESULT sam-work <COMPLETE|BLOCKED|IN_PROGRESS>`, `report: <absolute path>`, `validator: <exact last line>`, `head: <sha> fingerprint: <final change fingerprint>`, `open: <n>`, then ≤10 open-item lines. Standalone: ≤15 lines plus the report path, never the JSON: terminal; classification/implementation skill; phase ledger (terminal, iterations), final head, validator line; tests and required CI; proposal URL, remote head; environment identity, cleanup; video hashes, uploads, player readback; exact blockers or remaining work. Never hide a skipped or stale phase.
