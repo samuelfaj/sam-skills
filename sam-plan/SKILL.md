@@ -1,12 +1,11 @@
 ---
 name: sam-plan
-description: "Study a task and emit a validated plan freeze plus a rendered light-theme HTML plan pack; council only on risk triggers. Use when the user runs /sam-plan, asks for an implementation plan, or needs pre-implementation planning before sam-task/sam-work."
+description: "Study a task and produce a validated plan freeze, a descriptive human-first HTML plan, and an executable agent-plan.md handoff; council only on risk triggers. Use when the user runs /sam-plan, asks for an implementation plan, or needs pre-implementation planning before sam-task/sam-work."
 ---
 
 # Sam Plan
 
-Turn one planning prompt into a conducted inquiry and decision freeze:
-`plan-report.json` (the parent and validator gate) plus an HTML pack for humans.
+Turn one planning prompt into a conducted inquiry and decision freeze with three complementary artifacts: `plan-report.json` as the validated source of truth, a descriptive, human-first HTML plan, and `agent-plan.md` as a concise, executable handoff for coding agents. The HTML and Markdown must communicate the same decisions and scope; neither replaces the JSON gate.
 
 ## Non-Negotiable Contract
 
@@ -16,10 +15,22 @@ Turn one planning prompt into a conducted inquiry and decision freeze:
   guesses to facts, or raise confidence by repetition; prefer `UNKNOWN`.
   Absent external systems, guessed production state, and imagined APIs are
   not facts.
-- Every terminal plan has a validated `plan-report.json` and an HTML pack made
-  only by `scripts/render_plan_html.py` (light theme; it escapes all text).
-  Never write HTML or CSS yourself; wireframes stay textual unless the user
-  provides or requests images.
+- Every terminal plan has a validated `plan-report.json`, a human-first HTML
+  plan rendered only by `scripts/render_plan_html.py`, and `agent-plan.md` in the
+  plan directory. Keep the HTML descriptive and decision-oriented: explain the
+  context, user problem, intended outcome, proposed experience, approach,
+  staged delivery, trade-offs, risks, open decisions, and how success will be
+  recognized. Use authored `chapters[]` to shape the narrative whenever the
+  plan has more than one meaningful topic; do not force a long-form pack for a
+  genuinely small fix. Never write HTML or CSS yourself; wireframes stay
+  textual unless the user provides or requests images.
+- `agent-plan.md` is a Markdown execution handoff, not a copy of the human
+  narrative or the JSON. Include goal and non-goals, decisions and constraints,
+  ordered implementation steps with relevant paths, dependencies, definition
+  of done and proof, plus risks, unresolved items, and explicit stop conditions.
+  Keep its scope and decisions consistent with the validated report and HTML.
+  Write it from the final report after HTML rendering, then validate that it
+  exists and is non-empty before declaring the plan complete.
 - Fail closed: `NOT_CONFIDENT` (useful plan, but material unknowns,
   unaccepted assumptions, or `NOT_RUN` proofs remain) or `BLOCKED` (missing
   access, owner decision, unsafe scope, or council/runtime capability prevents
@@ -121,7 +132,9 @@ absolute paths (`<skill-dir>` is this SKILL.md's absolute directory). Run
 2. **Study** (loop above); set depth.
 3. **Draft** the freeze in place per the output contract, with risk flags.
 4. **Council** when flagged (Resources row).
-5. **Render and validate** in one command; rerun after every edit:
+5. **Render both audience-specific plans and validate** after the report is
+   complete. The renderer writes the human-facing HTML and the agent handoff
+   from that same final report; it also updates the freeze's artifact list.
 
    ```bash
    python3 -B <skill-dir>/scripts/render_plan_html.py <PLAN_DIR>/plan-report.json --out <PLAN_DIR> \
@@ -132,7 +145,9 @@ absolute paths (`<skill-dir>` is this SKILL.md's absolute directory). Run
    Omit `--repo-root` only when the target tree is unavailable; then prefer
    `BLOCKED` or `NOT_CONFIDENT` over fake paths. Fix from the validator's error
    lines and patch the report in place; do not read validator source or rewrite
-   the whole report. Do not read the rendered HTML back.
+   the whole report. Do not read the rendered HTML back. If the report changes,
+   rerun the renderer so both audience-specific artifacts match the final report
+   before validating again.
 
 Match the user's language for prose and the HTML body when practical. Remove
 scratch outside the plan directory when done.
@@ -145,6 +160,8 @@ the final message is exactly this block.
 ```
 RESULT sam-plan <READY_TO_EXECUTE|NOT_CONFIDENT|BLOCKED|COUNCIL_REQUIRED>
 report: <absolute PLAN_DIR>/plan-report.json
+human_plan: <absolute PLAN_DIR>/<primary .html>
+agent_plan: <absolute PLAN_DIR>/agent-plan.md
 validator: <exact last line of the validator output>
 head: <target repo HEAD sha|n/a> fingerprint: n/a
 open: <n>
@@ -155,5 +172,5 @@ open: <n>
 
 Standalone: at most 15 lines (status, depth and its rationale, one-line
 thesis and step count, council skip reason or result, residuals, blockers,
-risk flags, validator line, absolute `PLAN_DIR`, primary HTML, and freeze
-paths). Never paste the JSON.
+risk flags, validator line, absolute `PLAN_DIR`, primary HTML path,
+`agent-plan.md` path, and report path). Never paste the JSON.

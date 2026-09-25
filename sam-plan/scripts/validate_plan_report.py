@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -370,6 +371,16 @@ def validate_report(
     check_locators: bool = False,
 ) -> list[str]:
     errors: list[str] = []
+    hash_report = json.loads(json.dumps(report))
+    hash_output = hash_report.get("output", {})
+    if isinstance(hash_output, dict):
+        hash_output.pop("artifact_sha256", None)
+        source_report_hash = hash_output.pop("rendered_report_sha256", None)
+        source_canonical = json.dumps(hash_report, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+        source_report_hash_actual = hashlib.sha256(source_canonical.encode("utf-8")).hexdigest()
+    else:
+        source_report_hash = None
+        source_report_hash_actual = ""
 
     if report.get("schema_version") != 1:
         errors.append("schema_version must be 1")
@@ -459,6 +470,9 @@ def validate_report(
     for name in html_files:
         if not name.endswith(".html") or "/" in name or "\\" in name:
             errors.append(f"output.html_files entry must be an html basename: {name}")
+    agent_file = output.get("agent_file")
+    if agent_file is not None and (not isinstance(agent_file, str) or not agent_file.endswith(".md") or "/" in agent_file or "\\" in agent_file):
+        errors.append("output.agent_file must be a Markdown basename")
 
     evidence_items = [
         mapping(item, f"evidence[{index}]", errors)
@@ -1116,6 +1130,32 @@ def validate_report(
                     errors.append("plan_dir must contain plan-report.json")
                 if not html_files:
                     errors.append("--require-html needs non-empty output.html_files")
+                if not agent_file:
+                    errors.append("--require-html needs output.agent_file")
+                elif isinstance(agent_file, str):
+                    agent_path = root / agent_file
+                    if not agent_path.is_file():
+                        errors.append(f"missing agent handoff: {agent_file}")
+                    elif not agent_path.read_text(encoding="utf-8").strip():
+                        errors.append(f"agent handoff is empty: {agent_file}")
+                    else:
+                        agent_text = agent_path.read_text(encoding="utf-8")
+                        for required_headings in (("## Goal", "## Objetivo"), ("## Ordered implementation steps", "## Etapas ordenadas de implementação"), ("## Acceptance checks", "## Verificações de aceitação")):
+                            if not any(heading in agent_text for heading in required_headings):
+                                errors.append(f"agent handoff missing section: {required_headings[0]}")
+                expected_artifacts = output.get("artifact_sha256")
+                if not isinstance(expected_artifacts, dict):
+                    errors.append("--require-html needs output.artifact_sha256")
+                else:
+                    for name in [*html_files, str(agent_file or "")]:
+                        path = root / name
+                        expected_hash = expected_artifacts.get(name)
+                        if not path.is_file():
+                            continue
+                        if not isinstance(expected_hash, str) or hashlib.sha256(path.read_bytes()).hexdigest() != expected_hash:
+                            errors.append(f"rendered artifact does not match report: {name}")
+                    if not isinstance(source_report_hash, str) or source_report_hash_actual != source_report_hash:
+                        errors.append("rendered artifacts are stale for this report; rerun the renderer")
                 for name in html_files:
                     path = root / name
                     if not path.is_file():

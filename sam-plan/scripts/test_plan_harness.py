@@ -305,7 +305,7 @@ def assert_valid(
     )
     if result.returncode != 0:
         raise AssertionError(
-            f"expected VALID, got {result.returncode}: {result.stdout}{result.stderr}"
+            f"expected VALID for {path}, got {result.returncode}: {result.stdout}{result.stderr}"
         )
     if "VALID" not in result.stdout:
         raise AssertionError(f"missing VALID marker: {result.stdout}")
@@ -366,6 +366,8 @@ def main() -> int:
         # Compact freeze READY (machine core may validate before HTML render)
         simple_path = root / "simple.json"
         simple = base_simple_report(str(plan_dir), repo_root=str(repo))
+        simple["risks"] = [{"id": "R-001", "claim": "A broad guard could hide malformed totals.", "severity": "low", "mitigation": "Keep the guard limited to null totals.", "status": "MITIGATED"}]
+        simple["frozen"]["non_goals"].append("literal **bold** [link](x) | # heading")
         write_report(simple_path, simple)
         assert_valid(simple_path)
         assert_valid(simple_path, repo_root=repo, check_locators=True)
@@ -377,17 +379,18 @@ def main() -> int:
         rendered_report = plan_dir / "plan-report.json"
         assert_valid(rendered_report, require_html=True)
         html = (plan_dir / "00-plano.html").read_text(encoding="utf-8")
-        if "<nav" not in html or "S-001" not in html:
-            raise AssertionError("rendered HTML missing nav or step content")
+        if "<nav" not in html or "Add null-safe total rendering" not in html:
+            raise AssertionError("rendered HTML missing navigation or readable step content")
         if 'name="color-scheme" content="light"' not in html:
             raise AssertionError("rendered HTML missing light color-scheme meta")
-        if "color-scheme: light" not in html:
+        if "color-scheme:light" not in html:
             raise AssertionError("rendered HTML missing light theme CSS")
         for required_heading in (
-            "Status",
-            "Goal &amp; scope",
-            "Steps (what / how / where / done)",
-            "Acceptance map",
+            "The situation",
+            "What success looks like",
+            "The proposed direction",
+            "1. Add null-safe total rendering",
+            "How we will know it worked",
         ):
             if required_heading not in html:
                 raise AssertionError(
@@ -401,9 +404,133 @@ def main() -> int:
             raise AssertionError("compact HTML missing step surface path")
         if compact_criterion not in html:
             raise AssertionError("compact HTML missing success criterion in acceptance")
+        if "<table" in html.lower():
+            raise AssertionError("human-facing plan should present a narrative, not report tables")
+        if "The situation" not in html or "What happens:" not in html:
+            raise AssertionError("human-facing plan is missing context or a readable delivery sequence")
+        for layout_marker in ('<div class="eyebrow">', 'class="section-nav"', 'class="plan-section step-card"', 'href="#section-4"', 'id="section-4"', '@media(max-width:700px)', 'scroll-margin-top:84px'):
+            if layout_marker not in html:
+                raise AssertionError(f"compact human plan missing responsive/editorial layout marker {layout_marker!r}")
+        if "Risk categories: —" in html:
+            raise AssertionError("compact plan must omit empty risk category labels")
+        agent_plan = (plan_dir / "agent-plan.md").read_text(encoding="utf-8")
+        for required_text in ("## Goal", "## Ordered implementation steps", "Guard total before format/render", "## Acceptance checks"):
+            if required_text not in agent_plan:
+                raise AssertionError(f"agent handoff missing {required_text!r}")
+        if "agent-plan.md" not in render_result.stdout:
+            raise AssertionError("renderer did not report the agent handoff artifact")
+        if r"literal \*\*bold\*\* \[link\]\(x\) \| \# heading" not in agent_plan:
+            raise AssertionError("agent handoff did not escape Markdown syntax in source text")
+        if "V-001" in agent_plan or "S-001" in agent_plan:
+            raise AssertionError("agent handoff should resolve internal proof and step IDs into readable content")
 
+        # Both audience-specific artifacts must be created from the same report and validated together.
         # One render+validate pass per edit: locator checks apply to the final artifact.
         assert_valid(rendered_report, require_html=True, repo_root=repo)
+        (plan_dir / "agent-plan.md").unlink()
+        invalid_artifacts = validate(rendered_report, require_html=True)
+        if invalid_artifacts.returncode == 0 or "missing agent handoff" not in invalid_artifacts.stdout:
+            raise AssertionError("artifact gate must reject a missing agent handoff")
+        render_result = render(rendered_report, plan_dir)
+        if render_result.returncode != 0:
+            raise AssertionError(render_result.stderr)
+        assert_valid(rendered_report, require_html=True, repo_root=repo)
+        changed_report = json.loads(rendered_report.read_text(encoding="utf-8"))
+        changed_report["steps"][0]["how"][0] = "Edited without regenerating the output"
+        write_report(rendered_report, changed_report)
+        stale_report = validate(rendered_report, require_html=True)
+        if stale_report.returncode == 0 or "stale for this report" not in stale_report.stdout:
+            raise AssertionError("artifact gate must reject HTML and Markdown rendered from an older report")
+        render_result = render(rendered_report, plan_dir)
+        if render_result.returncode != 0:
+            raise AssertionError(render_result.stderr)
+        assert_valid(rendered_report, require_html=True, repo_root=repo)
+
+        # Portuguese prompts must produce Portuguese-facing HTML and Markdown.
+        portuguese = deepcopy(simple)
+        portuguese["frozen"]["prompt_summary"] = "Melhorar o desempenho do aplicativo"
+        portuguese["frozen"]["goal"] = "Melhorar o desempenho do aplicativo sem alterar a API."
+        portuguese_dir = root / "plan-portuguese"
+        portuguese["output"]["plan_dir"] = str(portuguese_dir)
+        portuguese_path = root / "portuguese.json"
+        write_report(portuguese_path, portuguese)
+        localized = render(portuguese_path, portuguese_dir)
+        if localized.returncode != 0:
+            raise AssertionError(localized.stderr)
+        localized_html = (portuguese_dir / "00-plano.html").read_text(encoding="utf-8")
+        localized_md = (portuguese_dir / "agent-plan.md").read_text(encoding="utf-8")
+        if '<html lang="pt">' not in localized_html or "Contexto e problema" not in localized_html:
+            raise AssertionError("Portuguese plan HTML did not localize its language and narrative headings")
+        if "## Objetivo" not in localized_md or "## Etapas ordenadas de implementação" not in localized_md:
+            raise AssertionError("Portuguese agent plan headings were not localized")
+        assert_valid(portuguese_dir / "plan-report.json", require_html=True, repo_root=repo)
+
+        authored_blocked = base_standard_report(str(root / "plan-authored-blocked"))
+        authored_blocked["status"] = "BLOCKED"
+        authored_blocked["blockers"] = ["Owner approval is required before rollout."]
+        authored_blocked["chapters"][0]["sections"].append({
+            "heading": "Key decisions",
+            "blocks": [
+                {"type": "callout", "tone": "decision", "text": "Keep the rollout behind the existing permission check."},
+                {"type": "paragraph", "text": "Literal content: <script>alert(1)</script>"},
+            ],
+        })
+        authored_blocked_path = root / "authored-blocked.json"
+        write_report(authored_blocked_path, authored_blocked)
+        authored_dir = Path(authored_blocked["output"]["plan_dir"])
+        rendered_authored = render(authored_blocked_path, authored_dir)
+        if rendered_authored.returncode != 0:
+            raise AssertionError(rendered_authored.stderr)
+        authored_html = (authored_dir / "00-visao-objetivo.html").read_text(encoding="utf-8")
+        if "Owner approval is required before rollout." not in authored_html:
+            raise AssertionError("authored HTML omitted the material blocker from the report")
+        for report_detail in ("Add null-safe total rendering", "Guard total before format/render", "Page renders with a safe empty total state", "Unit or component test for null total render"):
+            if report_detail not in authored_html:
+                raise AssertionError(f"authored HTML omitted report-backed delivery detail {report_detail!r}")
+        for anchor in ("report-step-1", "report-success", "report-acceptance"):
+            if f'id="{anchor}"' not in authored_html or f'href="#{anchor}"' not in authored_html:
+                raise AssertionError(f"authored HTML supplemental detail lacks navigation anchor {anchor!r}")
+        if r"\\n<h3" in authored_html or "Risks and open questions" not in authored_html:
+            raise AssertionError("authored HTML report appendix contains malformed separators")
+        if 'class="section-nav"' not in authored_html or 'class="plan-section decision-card"' not in authored_html:
+            raise AssertionError("authored chapters should render navigable sections and visually distinct decisions")
+        if 'href="#report-status"' not in authored_html or 'id="report-status"' not in authored_html:
+            raise AssertionError("authored section navigation must link to the report’s blocker/risk panel")
+        if "&lt;script&gt;alert(1)&lt;/script&gt;" not in authored_html or "<script>alert(1)</script>" in authored_html:
+            raise AssertionError("authored chapter text must remain escaped as content")
+        if '@media(max-width:700px)' not in authored_html or 'class="plan-section risk-card"' not in authored_html:
+            raise AssertionError("authored chapter is missing responsive styling or the report risk panel")
+        assert_valid(authored_dir / "plan-report.json", require_html=True)
+
+        covered_report = deepcopy(authored_blocked)
+        covered_report["output"]["plan_dir"] = str(root / "plan-authored-covered")
+        covered_report["chapters"][0]["sections"][0]["blocks"].append({
+            "type": "paragraph",
+            "text": "Page renders with a safe empty total state. Add null-safe total rendering. Removes the crash without schema churn. Guard total before format/render in InvoiceDetail. Show an em dash when total is null; keep existing path when present. No throw on null total. Draft invoices still open. src/views/InvoiceDetail.tsx. Unit or component test for null total render.",
+        })
+        covered_path = root / "authored-covered.json"
+        write_report(covered_path, covered_report)
+        covered_dir = Path(covered_report["output"]["plan_dir"])
+        covered_render = render(covered_path, covered_dir)
+        if covered_render.returncode != 0:
+            raise AssertionError(covered_render.stderr)
+        covered_html = (covered_dir / "00-visao-objetivo.html").read_text(encoding="utf-8")
+        for redundant_anchor in ("report-step-1", "report-success", "report-acceptance"):
+            if f'id="{redundant_anchor}"' in covered_html:
+                raise AssertionError(f"covered authored material was duplicated as a report appendix: {redundant_anchor}")
+
+        proof_only_report = deepcopy(covered_report)
+        proof_only_report["output"]["plan_dir"] = str(root / "plan-authored-proof-only")
+        proof_only_report["chapters"][0]["sections"][0]["blocks"][1]["text"] = proof_only_report["chapters"][0]["sections"][0]["blocks"][1]["text"].replace("Page renders with a safe empty total state. ", "")
+        proof_only_path = root / "authored-proof-only.json"
+        write_report(proof_only_path, proof_only_report)
+        proof_only_dir = Path(proof_only_report["output"]["plan_dir"])
+        proof_only_render = render(proof_only_path, proof_only_dir)
+        if proof_only_render.returncode != 0:
+            raise AssertionError(proof_only_render.stderr)
+        proof_only_html = (proof_only_dir / "00-visao-objetivo.html").read_text(encoding="utf-8")
+        if 'id="report-acceptance"' in proof_only_html or proof_only_html.count("Unit or component test for null total render") != 1:
+            raise AssertionError("authored proof text should not be repeated when only the criterion needs a supplement")
 
         # Stale-chapter regression: the synthesized page must stay in memory, so a
         # re-render after an edit shows the edited freeze, not the first render.
