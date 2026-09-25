@@ -22,7 +22,7 @@ description: "Create and validate risk-based Playwright E2E tests with real UI/b
 
 - Use literal absolute paths: `<repo>` the repository root; `<skill>` this directory; `<work>` the parent's phase dir when given, else one `mktemp -d` outside the repository, reused on re-invocation; `<receipts>` is `<work>/receipts-<n>`; `<previous>` this skill's prior report (parent-named, else `<work>/report.json`), if any.
 - Do not re-read a file already read in this context unless context was compacted or you cannot quote the section you need.
-- When a parent workflow is active or the user asked for video or publication, enable video capture before the first run with a temporary config or override outside tracked files. Under `sam-work` or `sam-task` (web system) publication is mandatory; in any publishing run, zero videos is a failed phase.
+- When the user or parent explicitly requests video evidence, enable capture before the first run with a temporary config or override outside tracked files. Publish only when the exact target and publication are authorized; in that case, zero videos is a failed publishing run.
 
 | Reference | Read when |
 | --- | --- |

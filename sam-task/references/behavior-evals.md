@@ -1,6 +1,6 @@
 # Behavioral evaluation pack
 
-This pack scores whether agents using the skills solve representative tasks. Run it manually or on a periodic job, never as a per-commit gate.
+This pack scores the historical structured-report workflows. It does not evaluate the adaptive default of `sam-task`. Run it manually or on a periodic job, never as a per-commit gate.
 
 ## Scenario catalog
 
@@ -8,7 +8,7 @@ This pack scores whether agents using the skills solve representative tasks. Run
 
 ## Recorded run
 
-UTF-8 JSON object: `schema_version: 1`, `suite_id: sam-skills-behavior-v1`, `skill_revision` (tested 40/64-hex revision), `results[]` with one result per scenario:
+UTF-8 JSON object: `schema_version: 1`, `suite_id` matching the catalog, `skill_revision` (tested 40/64-hex revision), `results[]` with one result per scenario:
 
 - `scenario_id`, `terminal`, `validator_receipt`, `report_sha256`
 - `acceptance_checks[]`: exact catalog IDs, boolean `passed`, concrete `evidence`

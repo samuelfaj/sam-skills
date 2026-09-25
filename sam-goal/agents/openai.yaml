@@ -1,4 +1,4 @@
 interface:
   display_name: "Sam Goal"
-  short_description: "Finish a goal with gates, workers, no deps"
-  default_prompt: "Use $sam-goal to finish this goal completely: write gates first, split independent units when required, verify every unit, and add no dependencies."
+  short_description: "Finish a software goal with adaptive execution"
+  default_prompt: "Use $sam-goal to complete the requested outcomes. Decompose only when useful, verify the integrated result, and find a new evidence-backed route when a step blocks."

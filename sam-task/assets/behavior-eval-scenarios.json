@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "suite_id": "sam-skills-behavior-v2",
+  "suite_id": "sam-skills-behavior-v3",
   "scenarios": [
     {
       "id": "B-001",
@@ -146,7 +146,7 @@
       "id": "B-006",
       "skill": "sam-task",
       "category": "learning-empty",
-      "prompt": "Complete a routine task whose evidence does not support a reusable learning rule.",
+      "prompt": "Evaluate an archived five-phase sam-task receipt for a routine task whose evidence does not support a reusable learning rule.",
       "expected_terminals": [
         "COMPLETE"
       ],
@@ -172,7 +172,7 @@
       "id": "B-007",
       "skill": "sam-task",
       "category": "learning-proposal",
-      "prompt": "Complete a task with repeated current-run evidence for one narrow reusable rule.",
+      "prompt": "Evaluate an archived five-phase sam-task receipt for a task with repeated current-run evidence for one narrow reusable rule.",
       "expected_terminals": [
         "COMPLETE"
       ],
@@ -247,7 +247,7 @@
       "id": "B-010",
       "skill": "sam-task",
       "category": "gap-finding-without-reopen",
-      "prompt": "Complete a task whose closure drops a finding without naming it in correction receipts.",
+      "prompt": "Validate a historical five-phase sam-task receipt whose closure drops a finding without naming it in correction receipts.",
       "expected_terminals": [
         "BLOCKED"
       ],
@@ -292,7 +292,7 @@
       "id": "B-012",
       "skill": "sam-task",
       "category": "gap-child-receipt-revalidation",
-      "prompt": "Attempt COMPLETE with plan.validator_receipt VALID while the freeze on disk is NOT_CONFIDENT.",
+      "prompt": "Validate a historical five-phase sam-task receipt marked COMPLETE with plan.validator_receipt VALID while the freeze on disk is NOT_CONFIDENT.",
       "expected_terminals": [
         "BLOCKED"
       ],

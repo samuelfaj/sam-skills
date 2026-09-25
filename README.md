@@ -6,63 +6,33 @@ and orchestration.
 ## Design Principles
 
 - Provider-, model-, host-, and stack-neutral operating contracts.
-- Exact target, intent, scope, invariants, and no-go surfaces before execution.
-- Risk-calibrated proof with explicit `PASS`, `FAIL`, `BLOCKED`, and `NOT_RUN`
-  states.
-- Deterministic validators and adversarial harnesses for every executable
-  workflow.
-- Test results are execution receipts, not claims. Validation commands run
-  through `run_checked.py`, which captures argv, per-run exit codes, and output
-  hashes; report validators recompute those hashes, reject a status that
-  disagrees with its receipt, and refuse to close a gate on a flaky run or on a
-  test the runner never discovers.
-- Local artifacts by default. Publishing, comments, uploads, pushes, and other
-  external writes require explicit user authorization.
+- Understand the requested outcome, scope, and observable success before editing.
+- Select verification by behavior and risk. A test, CI result, remote artifact,
+  and live behavior establish different things.
+- Specialized report validators and adversarial harnesses remain available
+  when a structured audit is requested; ordinary delivery does not require
+  their fixed phase counts or artifacts.
+- External writes require authorization from the request or prior session.
 - No invented evidence, silent scope expansion, test weakening, or unsupported
   completion claims.
-- One top delivery method per turn. If several of `sam-goal`, `sam-task`,
-  `sam-work`, and `sam-orchestrate` are named, run only the highest-precedence
-  winner (`sam-goal` > `sam-task` > `sam-work` > `sam-orchestrate`). Failures
-  fix forward on the same branch; they do not restart from a moving base.
+- One controller per task. Reuse completed work and evidence instead of
+  stacking delivery pipelines. Diagnose a blocker and try a distinct viable
+  route; stop repeating attempts that have no new evidence.
 
-## Shared Mechanisms
+## Evidence
 
-- **Child mode.** Under a parent (`sam-task`, `sam-work`, `sam-orchestrate`,
-  `sam-goal`, or a phase worker) a skill never asks and ends with a six-line
-  `RESULT <skill> <TERMINAL>` block: report path, the validator's last line,
-  head and fingerprint, and at most ten open items. Standalone runs answer in
-  15 lines or fewer plus the report path, never the JSON report.
-  Implementation children leave review, coverage, and browser proof to the
-  parent's own phases.
-- **Phase isolation.** `sam-task` and `sam-work` dispatch each phase to a fresh
-  worker, or run it inline when the host has no subagents. Phases run one at a
-  time, every run writes to its own directory, and the controller re-runs the
-  child validator for its receipt instead of reading the worker transcript.
-- **Reuse and delta review.** Identical input reuses a prior valid report after
-  re-running only its validator. Carrying proof to a new head needs a
-  mechanical check that the phase's inputs did not change, such as a test-only
-  delta. `sam-review` re-reviews corrections as a delta against a valid base
-  review, and runs a full review when the delta touches contracts, security,
-  persistence, shared modules, or risk paths, or outgrows the original change.
-- **Scaffolds.** Skills with large reports ship a scaffold that fills hashes,
-  heads, fingerprints, receipts, file coverage, and fail-closed placeholders
-  from real files. Validators recompute derived fields where cheap and reject
-  typed values that disagree.
-- **Compact script output.** Captures and builders print a one-line summary
-  (`--out` writes the full bundle and patch). `run_checked.py` prints one JSON
-  line and, on failure, a capped, best-effort redacted log tail. Validators
-  print `VALID`/`PASS` or error lines, and reports are fixed in place from
-  those lines.
+Use existing checks first and add focused coverage when needed. Recheck proof
+affected by a later edit. For an explicitly requested structured audit, each
+skill routes to its own scaffold, receipt validator, and harness. A machine
+receipt validates the reported evidence; it does not substitute for observing
+the requested behavior.
 
 ## Skills
 
-- `sam-work`: deliver a bug or feature through mandatory implementation,
-  refinement, review, simplification, coverage, proposal, browser-proof, and
-  published demo-video gates with fresh-head receipts.
-- `sam-goal`: finish a software goal completely with the smallest correct
-  change. Write checkable gates first, split independent units onto workers
-  when the unit gate opens, verify every unit yourself, and add no new
-  dependency. Stdlib-only checkers, host-detected spawn, no other skill.
+- `sam-work`: implement and deliver a software change to a reviewable PR/MR
+  with evidence proportional to the change and accurate remote readback.
+- `sam-goal`: finish a broader software goal with adaptive decomposition,
+  minimal implementation, and integrated verification.
   Invoke as `/sam-goal`, `$sam-goal`, or `@sam-goal`.
 - `sam-create-feature`: deliver a new capability from frozen requirements to
   validated behavior proof.
@@ -88,8 +58,8 @@ and orchestration.
   safe; ask before publishing when no action was explicitly authorized.
 - `sam-pr-description`: generate a traceable pull/merge-request description from
   the real base, commits, diff, and validation evidence.
-- `sam-orchestrate`: coordinate complex work through capability- and risk-based
-  delegation, skeptical verification, and an independent review gate.
+- `sam-orchestrate`: coordinate independent work with native delegation,
+  optional Jev routing in Distill, and verified integration.
 - `sam-gauntlet-loop`: compile a named, fetchable quality-bar prompt with
   host-detected orchestration tokens and return it for the user to copy,
   edit, and paste. Never starts the loop. Use for `/sam-gauntlet-loop`,
@@ -106,9 +76,8 @@ and orchestration.
 - `sam-plan`: conduct task study and emit a machine freeze plan (goal, thesis,
   steps, evidence, status) plus a required light-theme HTML pack for humans;
   assertive investigation first, council only on risk triggers.
-- `sam-task`: run plan → refine → `sam-work` delivery, a closure loop of
-  `sam-review` plus `sam-council`, and a proposal-only learning audit that
-  captures evidence-backed reusable rules without mutating durable memory.
+- `sam-task`: complete a software task through its requested delivery point,
+  using specialized skills only when they improve the result.
 - `sam-council`: rapidly triage or fully falsify consequential
   system-development plans through portable blind reviews, bounded responses,
   maximum safe parallelism, and evidence-weighted decision gates;
@@ -137,22 +106,28 @@ forbidden operational coupling. The second discovers and runs every skill
 harness, including adversarial failure fixtures, and prints only failures plus
 a summary line (`--verbose` lists every harness).
 
-`sam-task` also ships a provider-neutral behavioral evaluation pack with twelve
-versioned scenarios. Run it manually or periodically to compare real task
-outcomes, false completions, corrections, latency, token use, and cost across
-skill revisions; unavailable host metrics remain `null`.
+`sam-task` also ships a provider-neutral evaluation pack for its historical
+structured receipts. It does not yet measure the adaptive default. Run it
+manually or periodically; unavailable host metrics remain `null`.
 
 ## Install
 
-Install each complete `sam-*` directory through the target agent host's normal
-skill-installation mechanism. Preserve the directory name and all bundled
-`agents/`, `references/`, and `scripts/` resources. A host-specific subset of
-the tree will fail closed: the checkers and report validator live in
-`scripts/` and are part of the contract.
+Install each complete `sam-*` directory through the target host's skill
+mechanism (`~/.grok/skills/` for Distill). Preserve the directory name and all
+bundled `agents/`, `references/`, and `scripts/` resources. Structured reports need
+their bundled checkers and validators; the adaptive default does not.
 
 `sam-goal` uses the host's skill dialect (`/sam-goal`, `$sam-goal`, or
-`@sam-goal`). Override the bound host with `SAM_GOAL_HOST` or
-`SAM_ACTIVE_HOST` when process detection is `UNKNOWN` or `CONFLICT`.
+`@sam-goal`). For optional structured delegation, `SAM_GOAL_HOST` or
+`SAM_ACTIVE_HOST` can override an unknown or conflicting host detection.
 
 After installation, restart or reload the host so it discovers the updated
 skills.
+
+In Distill, its configured Jev path can shortlist skills and tools and route
+eligible model and effort decisions. The adaptive delivery skills leave these
+choices to the host when available. Without Jev, they continue with the current
+agent and host defaults. Jev supplies typed suggestions; source
+inspection and behavior checks remain the evidence for completion. The
+[TypeSafe agent skill](https://github.com/typesafe-ai/skills) teaches agents to
+build applications with Jev; it does not replace Distill's execution model.

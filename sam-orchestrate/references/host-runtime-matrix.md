@@ -1,7 +1,16 @@
 # Host Runtime Matrix
 
-Execution and review bindings are the SKILL.md §3 table. sam-task and the
-advisor skills read the advisor rows here.
+This matrix applies only to the optional structured orchestration report.
+The default workflow leaves model and effort selection to the current host.
+sam-task and the advisor skills read the advisor rows here.
+
+| Capability (role) | `codex` | `claude-code` | `grok` |
+| --- | --- | --- | --- |
+| `LIGHT` (`fast_scan`) | `gpt-5.6-luna` / `medium` | `haiku` / `high` | `grok-4.6` / `medium` |
+| `STANDARD` (`routine_worker`) | `gpt-5.6-luna` / `xhigh` | `sonnet` / `high` | `grok-4.6` / `high` |
+| `DEEP` (`deep_worker`) | `gpt-5.6-luna` / `max` | `opus` / `medium` | `grok-4.6` / `xhigh` |
+| `GENIUS` (`genius_worker`) | `gpt-5.6-luna` / `max` | `opus` / `xhigh` | `grok-4.6` / `xhigh` |
+| `REVIEWER` (`reviewer`) | `gpt-6-astra` / `medium` | `opus` / `high` | `grok-4.6` / `high` |
 
 ## Host detection
 

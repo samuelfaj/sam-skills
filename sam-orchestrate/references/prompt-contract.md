@@ -28,7 +28,7 @@ Coordination: other agents may share the workspace; never revert their work
 
 ## Spawn
 
-Use `<run>` from SKILL.md §1. Redirect CLI output to files and read only the
+Use a scratch `<run>` directory outside the repository. Redirect CLI output to files and read only the
 final message:
 
 | CLI | Redirect | Read |

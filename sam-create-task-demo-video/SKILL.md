@@ -78,7 +78,7 @@ The deliverable is MP4 unless the user explicitly changes the request; raw WebM 
 
 ## 6. Publish Only When Authorized
 
-When authorized (including `sam-work` requiring `PUBLISHED`), upload, embed, and verify with `scripts/count_embeds.py` per references/evidence-publishing.md.
+When publication to a known target is authorized, upload, embed, and verify with `scripts/count_embeds.py` per references/evidence-publishing.md.
 
 ## 7. Validate, Clean, Return
 

@@ -1,4 +1,4 @@
 interface:
   display_name: "Sam Task"
-  short_description: "Plan, deliver, close, and audit learning"
-  default_prompt: "Use $sam-task to plan, refine, deliver with $sam-work, close findings through $sam-review and $sam-council, then audit evidence for proposal-only reusable learning. Never ask mid-run; execute fully or report BLOCKED with exact failures."
+  short_description: "Complete a software task with proportional proof"
+  default_prompt: "Use $sam-task to finish the requested task at its requested delivery point. Inspect first, choose the shortest sound route, verify the result, and seek new paths around real blockers."

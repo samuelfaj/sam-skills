@@ -1,4 +1,4 @@
 interface:
   display_name: "Sam Work"
-  short_description: "Run the complete verified delivery workflow"
-  default_prompt: "Use $sam-work to deliver this task through every required gate and prove completion. Never ask for permission or confirmation on any step; execute fully or report BLOCKED with exact failures."
+  short_description: "Deliver a verified software change as a PR or MR"
+  default_prompt: "Use $sam-work to implement and deliver this change as a PR or MR. Verify the relevant behavior, publish the intended diff, and report the exact remote state."

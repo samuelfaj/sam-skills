@@ -1,101 +1,38 @@
 ---
 name: sam-goal
-description: "Finish a software goal with the smallest correct change: gates first, independent units on workers, every unit verified, no new dependencies. Use when the user runs /sam-goal, $sam-goal, or @sam-goal, says tree N, finish a goal, fan out, write gates, or stop over-building."
+description: "Finish a multi-step software goal with adaptive decomposition, minimal implementation, and direct verification. Use when the user invokes /sam-goal or asks to complete a broader engineering outcome."
 ---
 
 # Sam Goal
 
-Finish the asked goal, prove it against files, and ship the first rung that holds. Completeness applies to the asked outcomes; minimality applies to each outcome's implementation. Never trade one for the other.
+Finish every outcome the user asked for with the smallest sound implementation. Treat the goal as complete when its acceptance criteria have current evidence, rather than when a prescribed number of files, workers, or reports exists.
 
 ## Non-Negotiable Contract
 
-- Understand the request and the code it touches before writing a deliverable. The ladder shortens the solution, never the reading.
-- Write gates to disk before deliverable work. Done means every box is checked with evidence, or honestly abandoned.
-- Count independent units before any deliverable. If the split gate is open, write `DELEGATION.md` first, give each unit a written brief, and do not report done on a partial ledger.
-- A worker or self-report is a claim. Re-run that unit's checks yourself and record what you ran.
-- Never add a project dependency, plugin, hook, or package. Use the standard library, a native platform feature, or something already in the tree. A named package in the user request is the only exception, and it must be listed in `authorized_dependencies`.
-- Do not invoke another skill. This package is the whole method. If this turn also named `sam-task`, `sam-work`, `sam-orchestrate`, or a `sam-orchestrate-*` profile, those bodies are context only — execute this skill alone. Exclusive top pipeline precedence: `sam-goal` > `sam-task` > `sam-work` > `sam-orchestrate`.
-- Fix forward on the current branch/tree. A failed gate, missing test, review finding, or moved integration ref (`main`/`production`) is a new commit or a parked note. It is not a new worktree, reset, rebase, or discarded receipt chain.
-- Findings outside frozen gates are parked. They do not become new units in this run.
-- Re-measure every number at report time. A number from memory is unverified.
-- Trust-boundary validation, data-loss handling, security, accessibility, hardware calibration, and anything explicitly requested are never optional.
-- Bug fix means the shared root cause, not a patch on the one path named in the report.
+- Understand the request and trace the relevant implementation before changing it. Identify observable outcomes and constraints; preserve unrelated work and follow repository instructions.
+- Do not claim that a worker's report, a passing unit test, a plan, or a published artifact proves behavior it did not exercise. Verify the integrated result yourself where practical.
+- Do not add speculative dependencies, layers, or configuration. A new dependency is acceptable when it is necessary for the current goal and the existing code or platform cannot reasonably do the job; explain why.
+- Respect authorization and reversibility. Ask before genuinely irreversible actions, and perform external writes only when the request or session authorizes them.
+- Protect secrets and private data in evidence; verify the target environment before any mutating check.
+- Use one controller if multiple workflow skills are named. Reuse completed evidence; do not run a second full pipeline over the same work.
+- In Distill, let configured Jev routing help with eligible skill, tool, model, and effort choices. Give native workers bounded outcomes and evidence without pinning a model or effort unless the user or a concrete requirement calls for it. If Jev is absent, disabled, fails, or defers, make those choices from the task and repository evidence using the current agent and host defaults; keep working. Verify the integrated outcome regardless of how it was routed.
 
-## Resources
+## Work
 
-| Reference | Read when |
-| --- | --- |
-| [references/gates.md](references/gates.md) | Step 4, before writing gates |
-| [references/ladder.md](references/ladder.md) | Step 5 on `execute`; step 7 on `review` or `audit` |
-| [references/method.md](references/method.md) | Choosing tree depth: the user said tree N, or the goal may need depth 4+ |
-| [references/orchestration.md](references/orchestration.md) | The split gate is open or tree depth is 4+ |
-| [references/output-contract.md](references/output-contract.md) | Step 9, before writing the report |
+1. Break the goal into the fewest meaningful outcomes. Order dependent work; delegate only independent units when the expected time saved exceeds briefing, merge, and verification cost. Work directly when that is simpler.
+2. For each outcome, inspect the code path and, for a bug, correct the owning cause across affected callers. Choose the smallest correct change, implement it, and verify its behavior. Use existing tests first. Add a focused test only for meaningful behavior that existing checks miss. Apply additional review, browser/device checks, security checks, or production proof when the outcome's risk warrants them.
+3. Integrate the units and check the final state against the original goal. Recheck only proofs affected by later changes. Resolve in-scope defects found during review; park unrelated findings with a clear note.
 
-Read each file once; re-read only after context compaction or when you cannot quote the section you need.
+## Unblocking and stopping
 
-Invoke the stdlib `python3` scripts on every host; never reimplement them or wrap them in a plugin, hook, or package. Replace `<skill>` (this SKILL.md's directory) and `<goal>` (default `<cwd>/goal`) with literal absolute paths, not shell variables.
+Classify a failure before retrying. Seek a different evidence-backed route when possible: inspect a caller or authoritative system, isolate a broken toolchain, use an existing equivalent capability, reduce the reproduction, or correct the actual defect. Retry only when something material changed or a distinct hypothesis is being tested. If no credible in-scope route remains, keep completed independent outcomes and report the exact remaining dependency or decision. Ask for a required user choice after inspecting what can be resolved autonomously.
 
-## Workflow
-
-Intensity: `lite` | `full` (default) | `ultra`; it persists until the user changes it. Action: `execute` (default) | `review` (diff only) | `audit` (whole tree). `review` and `audit` list cuts; they never edit.
-
-### 1. Bind the host
-
-`python3 -B <skill>/scripts/detect_host.py`
-
-Honor `SAM_GOAL_HOST` or `SAM_ACTIVE_HOST`. Never infer the host from clients on disk. Any status other than `DETECTED` or `OVERRIDE` (exit 2): never fan out; walk the briefs yourself.
-
-### 2. Scaffold
-
-`python3 -B <skill>/scripts/scaffold_goal_dir.py --out <goal>`
-
-Add `--mode delegated --workers N` once the split gate is open, and `--tree N` when depth is 4+. Re-running keeps existing files.
-
-### 3. Understand, then count
-
-Trace the live flow the request touches; for a bug, grep every caller and fix the shared function once. Count independent units: neither needs the other's in-progress state. The split gate opens on any of **3+ independent units**, **5+ files**, or **30+ minutes**. Record `gate open: N units` or `single-agent: N units, below threshold` either way. Never invent a split inside sequential work; one large sequential unit stays one unit.
-
-### 4. Write the ledgers before deliverable work
-
-Replace every scaffold placeholder.
-
-- Always: `<goal>/GATES.md` per gates.md.
-- Split gate open: `<goal>/DELEGATION.md` and one brief per row, per orchestration.md.
-- Tree 4+ or a build beyond one sitting: `<goal>/PLAN.md` plus one gates file per leaf and branch under `<goal>/gates/`.
-
-### 5. Climb the ladder, then implement
-
-Stop at the first ladder.md rung that holds and implement it fully, no placeholders. Then run one review pass on the diff, inside the frozen gates: expert re-read plus defect hunt (edge cases, error paths, every caller, the never-optional items). Repeat it only when the previous pass changed code, at most two repeats. No polish pass; step 7 shrinks.
-
-### 6. Work the units
-
-**Solo** (gate closed, tree 3 or less): do the work yourself. Run step 8's `check_gates.py` without `--recheck` as checks start to pass.
-
-**Delegated** (gate open): you are the coordinator; run the driver loop in orchestration.md. Do not silently implement an assigned unit.
-
-### 7. Overbuild pass
-
-On the current diff (`execute`, `review`) or the whole tree (`audit`), list cuts per ladder.md § Overbuild tags. On `execute`, apply only the cuts that preserve every gate. On `review` or `audit`, list them, edit nothing, and continue to step 8.
-
-### 8. Check the final tree
-
-```bash
-python3 -B <skill>/scripts/check_gates.py --recheck --timeout 120 <goal>
-python3 -B <skill>/scripts/check_ledger.py <goal>/DELEGATION.md   # delegated only
-```
-
-`--recheck` re-runs every `CHECK` on the final tree, met or not, and unchecks failures: it is the report-time re-measure. Re-measure each listed `MANUAL` gate by hand. Only exit 0 is complete. Caught writing the status summary while boxes or rows are open: stop and take the next unmet item.
-
-### 9. Report
-
-Write `<goal>/goal-report.json` with the fields output-contract.md marks as yours, then:
-
-`python3 -B <skill>/scripts/validate_goal_report.py --derive <goal>/goal-report.json`
-
-`COMPLETE` is allowed only when it prints `VALID`. Fix from the validator's error lines and patch the report in place; do not read validator source or rewrite the whole report.
+Finish when the requested outcomes are verified at the requested delivery point. If a human approval, unavailable service, or other external gate remains, distinguish the completed work from that gate; do not loop indefinitely or call it fulfilled.
 
 ## Return
 
-At most 15 lines (goal-report.json holds the rest): `COMPLETE`, `IN_PROGRESS`, or `BLOCKED`; the absolute goal directory and validator line; the spawn primitive used, or `walked briefs`; gates N of N, abandoned ids, and ledger N of N when delegated; the ladder rung and new packages (none unless the user named them); the overbuild `net` line; exact remaining work or blockers.
+State what changed, what evidence verifies each requested outcome, and the exact remaining work, if any. An ordinary run needs no gate files or JSON report.
 
-Trivial one-line factual answers skip this machinery. An explicit `/sam-goal` on a tiny task still gets one solo gate and a validated report.
+## Optional structured ledger
+
+When the user explicitly wants a machine-readable gate ledger or a large delegation needs durable coordination, read `references/gates.md`, `references/orchestration.md`, and `references/output-contract.md`; use `scripts/scaffold_goal_dir.py`, `scripts/check_gates.py`, `scripts/check_ledger.py`, `scripts/detect_host.py`, and `scripts/validate_goal_report.py` as applicable. `references/ladder.md` and `references/method.md` describe the older fixed method; consult them only for an explicitly requested tree/intensity run. The ledger's validator proves its own format, not the broader goal by itself.
