@@ -34,6 +34,9 @@ the requested behavior.
 - `sam-goal`: finish a broader software goal with adaptive decomposition,
   minimal implementation, and integrated verification.
   Invoke as `/sam-goal`, `$sam-goal`, or `@sam-goal`.
+- `sam-pivot`: replan autonomously around blocked methods or stale plans while
+  building the best working version of a requested product. Explicit invocation
+  only: `/sam-pivot`, `$sam-pivot`, or `@sam-pivot`.
 - `sam-create-feature`: deliver a new capability from frozen requirements to
   validated behavior proof.
 - `sam-fix-bug`: reproduce, diagnose, minimally repair, and regression-test
