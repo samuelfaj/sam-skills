@@ -43,38 +43,63 @@ def evidence(
     }
 
 
-DEFAULT_HOST = "grok"
-
-RUNTIME_BY_CAPABILITY = {
-    "LIGHT": {
-        "host": DEFAULT_HOST,
-        "role": "fast_scan",
-        "model": "grok-4.6",
-        "effort": "medium",
-        "fallback_reason": None,
-    },
-    "STANDARD": {
-        "host": DEFAULT_HOST,
-        "role": "routine_worker",
-        "model": "grok-4.6",
-        "effort": "high",
-        "fallback_reason": None,
-    },
-    "DEEP": {
-        "host": DEFAULT_HOST,
-        "role": "deep_worker",
-        "model": "grok-4.6",
-        "effort": "xhigh",
-        "fallback_reason": None,
-    },
-    "REVIEWER": {
-        "host": DEFAULT_HOST,
-        "role": "reviewer",
-        "model": "grok-4.6",
-        "effort": "high",
-        "fallback_reason": None,
-    },
+# profile -> (controller host, {capability: (host, role, model, effort)}, genius row).
+# Hardcoded on purpose: the harness must not read the validator's own tables.
+GROK_ROWS = {
+    "LIGHT": ("grok", "fast_scan", "grok-4.6", "medium"),
+    "STANDARD": ("grok", "routine_worker", "grok-4.6", "high"),
+    "DEEP": ("grok", "deep_worker", "grok-4.6", "xhigh"),
 }
+FIXTURES = {
+    "native": ("grok", {**GROK_ROWS, "REVIEWER": ("grok", "reviewer", "grok-4.6", "high")}, None),
+    "codex-grok": (
+        "codex",
+        {**GROK_ROWS, "REVIEWER": ("codex", "reviewer", "gpt-5.6-sol", "medium")},
+        ("codex", "genius_worker", "gpt-5.6-sol", "high"),
+    ),
+    "codex-glmflash": (
+        "codex",
+        {
+            "LIGHT": ("codex", "fast_scan", "glm-5.3-flash", "max"),
+            "STANDARD": ("codex", "routine_worker", "glm-5.3-flash", "max"),
+            "DEEP": ("codex", "deep_worker", "glm-5.3-flash", "max"),
+            "REVIEWER": ("codex", "reviewer", "gpt-5.6-sol", "medium"),
+        },
+        ("codex", "genius_worker", "gpt-5.6-sol", "high"),
+    ),
+    "claude-grok": (
+        "claude-code",
+        {**GROK_ROWS, "REVIEWER": ("claude-code", "reviewer", "opus", "high")},
+        ("claude-code", "genius_worker", "opus", "xhigh"),
+    ),
+}
+# Producer wording the old per-profile harnesses used in escalation fixtures.
+ATTEMPT_LABEL = {"codex-glmflash": "GLM-5.3-Flash"}
+
+PROFILE = "native"
+DEFAULT_HOST = "grok"
+RUNTIME_BY_CAPABILITY: dict[str, dict[str, Any]] = {}
+CASES = 0
+
+
+def row_runtime(row: tuple[str, str, str, str], fallback: str | None = None) -> dict[str, Any]:
+    host, role, model, effort = row
+    return {"host": host, "role": role, "model": model, "effort": effort,
+            "fallback_reason": fallback}
+
+
+def configure(profile: str) -> None:
+    global PROFILE, DEFAULT_HOST, RUNTIME_BY_CAPABILITY
+    PROFILE = profile
+    DEFAULT_HOST, rows, _ = FIXTURES[profile]
+    RUNTIME_BY_CAPABILITY = {cap: row_runtime(row) for cap, row in rows.items()}
+
+
+def profile_args() -> list[str]:
+    return [] if PROFILE == "native" else ["--profile", PROFILE]
+
+
+configure("native")
 
 
 def node(
@@ -419,7 +444,8 @@ def run_scaffold(
 ) -> subprocess.CompletedProcess[str]:
     spec_path = out.parent / "spec.json"
     spec_path.write_text(json.dumps(spec), encoding="utf-8")
-    return scaffold_cli("--spec", str(spec_path), "--out", str(out), "--freeze", str(freeze))
+    return scaffold_cli("--spec", str(spec_path), "--out", str(out), "--freeze", str(freeze),
+                        *profile_args())
 
 
 def scaffold_manifest(out: Path) -> dict[str, tuple[str, str]]:
@@ -725,12 +751,16 @@ def run_validator(
     report: dict[str, Any],
     expected_success: bool,
     expected_error: str | None = None,
+    explicit_profile: bool = True,
 ) -> None:
+    global CASES
+    CASES += 1
     with tempfile.TemporaryDirectory(prefix="sam-orchestrate-test-") as temp_dir:
         report_path = Path(temp_dir) / "report.json"
         report_path.write_text(json.dumps(report), encoding="utf-8")
         result = subprocess.run(
-            [sys.executable, "-B", str(VALIDATOR), str(report_path)],
+            [sys.executable, "-B", str(VALIDATOR), str(report_path),
+             *(profile_args() if explicit_profile else [])],
             check=False,
             capture_output=True,
             text=True,
@@ -769,6 +799,8 @@ def validate_neutrality_adversaries() -> None:
         Path("sam-orchestrate/SKILL.md"),
         Path("sam-orchestrate/references/routing-policy.md"),
         Path("sam-orchestrate/agents/openai.yaml"),
+        Path("sam-orchestrate/references/profiles/codex-grok.md"),
+        Path("sam-orchestrate/references/workers/grok.md"),
     )
     with tempfile.TemporaryDirectory(prefix="sam-orchestrate-neutrality-") as temp_dir:
         baseline_root = Path(temp_dir) / "baseline"
@@ -819,32 +851,7 @@ def expect_failure(
     run_validator(report, False, expected_error)
 
 
-def main() -> int:
-    # Codex keeps every producer on Luna and accepts independent Astra review.
-    codex_report = valid_t2()
-    codex_report["task"]["active_host"] = "codex"
-    for entry in codex_report["dag"]:
-        review = entry["kind"] == "REVIEW"
-        entry["runtime"] = {
-            "host": "codex",
-            "role": "reviewer" if review else "routine_worker",
-            "model": "gpt-6-astra" if review else "gpt-5.6-luna",
-            "effort": "medium" if review else "xhigh",
-            "fallback_reason": None,
-        }
-    run_validator(codex_report, True)
-    codex_report["dag"][0]["runtime"].update(
-        role="genius_worker", model="gpt-5.6-luna", effort="max"
-    )
-    run_validator(codex_report, True)
-    wrong_worker = copy.deepcopy(codex_report)
-    wrong_worker["dag"][0]["runtime"].update(
-        model="gpt-6-astra", fallback_reason="Luna unavailable"
-    )
-    run_validator(wrong_worker, False, "must match host-runtime-matrix model")
-    codex_report["dag"][-1]["runtime"]["model"] = "gpt-5.6-sol"
-    run_validator(codex_report, False, "must match host-runtime-matrix")
-
+def run_common_cases() -> None:
     for report in (
         valid_t0(),
         valid_t0_code_absolute_certainty(),
@@ -884,7 +891,7 @@ def main() -> int:
         "non-required review gate must not record review rounds",
         valid_t0,
     )
-    validate_scaffold(DEFAULT_HOST)
+    validate_scaffold(DEFAULT_HOST if PROFILE == "native" else None)
 
     # Absolute certainty without the T0 micro-task prerequisites must fail closed.
     expect_failure(
@@ -895,13 +902,7 @@ def main() -> int:
     # DEEP without T3/risk is forbidden (cheap-first).
     def force_deep_on_t1(report: dict[str, Any]) -> None:
         report["dag"][0]["capability"] = "DEEP"
-        report["dag"][0]["runtime"] = {
-            "host": DEFAULT_HOST,
-            "role": "deep_worker",
-            "model": "grok-4.6",
-            "effort": "xhigh",
-            "fallback_reason": None,
-        }
+        report["dag"][0]["runtime"] = copy.deepcopy(RUNTIME_BY_CAPABILITY["DEEP"])
 
     expect_failure(
         force_deep_on_t1,
@@ -1085,7 +1086,7 @@ def main() -> int:
     )
     expect_failure(
         lambda report: report["task"].update({"active_host": "unknown-host"}),
-        "task.active_host must be codex, claude-code, or grok",
+        active_host_error(),
         valid_t0,
     )
 
@@ -1105,14 +1106,152 @@ def main() -> int:
         "review_gate.required must be true for recorded triggers",
     )
 
+    validate_neutrality_adversaries()
+
+
+def active_host_error() -> str:
+    if PROFILE == "native":
+        return "task.active_host must be codex, claude-code, or grok"
+    return f"task.active_host must be {FIXTURES[PROFILE][0]} for the {PROFILE} profile"
+
+
+def attempts() -> str:
+    return ATTEMPT_LABEL.get(PROFILE, "grok")
+
+
+def valid_genius_escalation() -> dict[str, Any]:
+    """STANDARD producer escalated to the profile genius row after multi-round failure."""
+    requirement = "Hard slice closed after genius unstick"
+    genius = FIXTURES[PROFILE][2]
+    return {
+        "schema_version": 2,
+        "task": {
+            "classification": "T1",
+            "goal": "Close a stuck implementation slice",
+            "success_criteria": ["Bounded fix lands"],
+            "constraints": ["Single file only"],
+            "no_go": ["Do not expand scope"],
+            "risk_flags": [],
+            "active_host": DEFAULT_HOST,
+            "changed_artifacts": ["CODE"],
+            "changed_files": [
+                {"path": "src/stuck.py", "artifact_class": "CODE", "producer_task_id": "E1"}
+            ],
+            "review_requested": False,
+            "controller_certainty": "high",
+        },
+        "dag": [
+            node(
+                "E1",
+                kind="EXECUTION",
+                owner="worker-1",
+                capability="STANDARD",
+                objective="Unstick the implementation",
+                requirement=requirement,
+                writable_paths=["src/stuck.py"],
+                artifact_classes=["CODE"],
+                evidence_ids=["V1"],
+                runtime=row_runtime(
+                    genius, f"multi_round_fail after 2 {attempts()} attempts; evidence prior"
+                ),
+            )
+        ],
+        "evidence": [evidence("V1", "E1", requirement, evidence_type="DIFF")],
+        "review_gate": {
+            "required": False,
+            "reasons": ["micro_task_high_certainty"],
+            "status": "NOT_REQUIRED",
+            "review_task_id": None,
+        },
+        "decision": {"result": "COMPLETE", "remaining_task_ids": []},
+    }
+
+
+def validate_scaffold_genius() -> None:
+    """The genius row is bound only with a recorded escalation trigger."""
+    with tempfile.TemporaryDirectory(prefix="sam-orchestrate-genius-") as temp_dir:
+        spec = scaffold_spec(None)
+        spec["files"]["tests/test_service.py"] = None
+        spec["nodes"][0].update(
+            genius=True, fallback_reason="multi_round_fail after 2 attempts; evidence V1"
+        )
+        spec_path = Path(temp_dir) / "spec.json"
+        out = Path(temp_dir) / "report.json"
+        for expect_valid in (True, False):
+            spec_path.write_text(json.dumps(spec), encoding="utf-8")
+            subprocess.run(
+                [sys.executable, "-B", str(SCAFFOLD), "--spec", str(spec_path), "--out", str(out),
+                 *profile_args()],
+                check=True, capture_output=True, text=True,
+            )
+            report = json.loads(out.read_text(encoding="utf-8"))
+            if report["dag"][0]["runtime"]["role"] != "genius_worker":
+                raise AssertionError("scaffold must bind the genius row when genius is set")
+            run_validator(
+                report, expect_valid, None if expect_valid else "runtime must match host-runtime-matrix"
+            )
+            spec["nodes"][0]["fallback_reason"] = None
+
+
+def run_native_cases() -> None:
+    # Codex keeps every producer on Luna and accepts independent Astra review.
+    codex_report = valid_t2()
+    codex_report["task"]["active_host"] = "codex"
+    for entry in codex_report["dag"]:
+        review = entry["kind"] == "REVIEW"
+        entry["runtime"] = {
+            "host": "codex",
+            "role": "reviewer" if review else "routine_worker",
+            "model": "gpt-6-astra" if review else "gpt-5.6-luna",
+            "effort": "medium" if review else "xhigh",
+            "fallback_reason": None,
+        }
+    run_validator(codex_report, True)
+    codex_report["dag"][0]["runtime"].update(
+        role="genius_worker", model="gpt-5.6-luna", effort="max"
+    )
+    run_validator(codex_report, True)
+    wrong_worker = copy.deepcopy(codex_report)
+    wrong_worker["dag"][0]["runtime"].update(
+        model="gpt-6-astra", fallback_reason="Luna unavailable"
+    )
+    run_validator(wrong_worker, False, "must match host-runtime-matrix model")
+    codex_report["dag"][-1]["runtime"]["model"] = "gpt-5.6-sol"
+    run_validator(codex_report, False, "must match host-runtime-matrix")
+
     skill = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
     if "Exclusive top pipeline" not in skill:
         raise AssertionError("sam-orchestrate must declare Exclusive top pipeline")
     if "Fix forward" not in skill:
         raise AssertionError("sam-orchestrate must fix forward instead of restarting")
 
-    validate_neutrality_adversaries()
-    print("PASS: orchestration contract, adversarial fixtures, and neutrality conformance")
+
+def run_preset_cases() -> None:
+    run_validator(valid_genius_escalation(), True)
+    validate_scaffold_genius()
+    # The genius row needs a recorded trigger; without one it is not a matrix row.
+    expect_failure(
+        lambda report: report["dag"][0].update(
+            runtime=row_runtime(FIXTURES[PROFILE][2])
+        ),
+        "runtime must match host-runtime-matrix",
+        valid_t1_code_high_certainty,
+    )
+    # A report with no explicit profile is validated under the profile it records.
+    run_validator(valid_t2(), True, explicit_profile=False)
+    run_validator(valid_genius_escalation(), True, explicit_profile=False)
+
+
+def main() -> int:
+    for profile in FIXTURES:
+        configure(profile)
+        run_common_cases()
+        (run_native_cases if profile == "native" else run_preset_cases)()
+    # Native default: no argument validates a native report.
+    configure("native")
+    run_validator(valid_t2(), True, explicit_profile=False)
+    print(f"PASS: orchestration contract, adversarial fixtures, and neutrality conformance "
+          f"({CASES} validator cases, {len(FIXTURES)} profiles)")
     return 0
 
 

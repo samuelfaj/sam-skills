@@ -33,10 +33,11 @@ BLOCKER_CLASSES = {"ENVIRONMENT", "EXTERNAL"}
 TREE_ID = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 
 
-def runtime_row(host: Any, key: str) -> tuple[str, str, str, str] | None:
+def runtime_row(profile: str, host: Any, key: str) -> tuple[str, str, str, str] | None:
     """Return (host, role, model, effort) for a capability or GENIUS row."""
-    if hasattr(v, "PROFILE_MATRIX"):
-        return v.PROFILE_MATRIX.get(key)
+    preset = v.PROFILES[profile]
+    if preset is not None:
+        return preset["matrix"].get(key)
     row = v.RUNTIME_MATRIX.get(host, {}).get(key)
     return None if row is None else (host, *row)
 
@@ -100,11 +101,15 @@ def write_diff(snapshot: dict[str, Any], out: Path, since: str | None) -> str:
 
 
 def build(
-    spec: dict[str, Any], run_paths: list[str] | None, review_diffs: int | None = None
+    spec: dict[str, Any],
+    run_paths: list[str] | None,
+    review_diffs: int | None = None,
+    profile: str = v.DEFAULT_PROFILE,
 ) -> tuple[dict[str, Any], list[str]]:
     errors: list[str] = []
     task_in = spec.get("task") or {}
-    host = task_in.get("active_host") or getattr(v, "CONTROLLER_HOST", None)
+    preset = v.PROFILES[profile]
+    host = task_in.get("active_host") or (preset["controller"] if preset else None)
     nodes_in = spec.get("nodes") or []
     evidence_in = spec.get("evidence") or []
     by_id = {node.get("id"): node for node in nodes_in}
@@ -162,7 +167,7 @@ def build(
         runtime = None
         if kind in {"EXECUTION", "REVIEW"}:
             key = "GENIUS" if node.get("genius") else node.get("capability")
-            row = runtime_row(host, key)
+            row = runtime_row(profile, host, key)
             if row is None:
                 errors.append(f"node {node_id}: no matrix row for {key} on host {host}")
             else:
@@ -281,6 +286,8 @@ def main() -> int:
     parser.add_argument("--freeze", help="snapshot from --freeze-out; only later changes count")
     parser.add_argument("--diff-out", help="with --freeze: write the diff since the snapshot and exit")
     parser.add_argument("--since", help="with --diff-out: tree id of the previously reviewed state")
+    parser.add_argument("--profile", choices=v.PROFILE_NAMES, default=v.DEFAULT_PROFILE,
+                        help="runtime profile for derived runtime rows (default native)")
     parser.add_argument("--spec", help="absolute path to the spec JSON")
     parser.add_argument("--out", help="absolute path for the report JSON")
     args = parser.parse_args()
@@ -319,7 +326,7 @@ def main() -> int:
             stderr = stderr.decode("utf-8", "replace")
         print(f"ERROR: {(stderr or '').strip() or exc}", file=sys.stderr)
         return 1
-    report, errors = build(spec, run_paths, review_diffs)
+    report, errors = build(spec, run_paths, review_diffs, args.profile)
     if errors:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)

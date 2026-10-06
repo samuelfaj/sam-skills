@@ -13,7 +13,7 @@ provider-, host-, tool-, and model-neutral.
 - Preserve unrelated staged, unstaged, and untracked work byte-for-byte. Never
   reset, checkout, stash, clean, rebase, or broadly restore the workspace.
 - Stage, commit, push, publish, open a change request, or message an external
-  system only when the user or a parent workflow (e.g. `sam-work`) explicitly
+  system only when the user or a parent workflow (e.g. `sam-task --deliver pr`) explicitly
   requested that exact action; parent authorization is enough, never re-ask.
 - Child mode (a parent workflow or phase worker invoked you): never ask;
   execute or return `BLOCKED` with receipts. Standalone: ask only questions
@@ -24,6 +24,7 @@ provider-, host-, tool-, and model-neutral.
 - A missing mandatory dependency, gate, or proof returns `BLOCKED`; never
   simulate it or turn missing proof into a pass. Stop after two correction
   cycles unless new evidence appears.
+- When the work touches frontend (UI components, markup, styles, layout, motion, client routing, rendered state), invoke `sam-design` for the UI work and include its coverage ledger.
 - Return any change beyond the frozen goal, contract, or owner boundary to the
   parent as the exact gap (standalone: ask). File or line counts alone neither
   widen nor approve scope; justify each added path against the frozen goal.
@@ -34,7 +35,7 @@ Use literal absolute paths: `<skill>` is this directory; `<tmp>` is the
 parent's phase directory, else scratch outside `<repo>`. Re-read a file only
 after compaction or when you cannot quote the needed section; a copy of
 `evidence-policy.md` or `risk-lenses.md` already read from sam-fix-bug,
-sam-refine-task, or sam-simplify-task counts.
+`sam-council --mode refine`, or sam-simplify-task counts.
 
 | Read | When |
 |---|---|
@@ -98,7 +99,7 @@ test solely to satisfy process.
 - Run applicable dependent gates with their actual local instructions: require
   local code review and coverage analysis for runtime changes, and browser
   proof only for impacted browser flows. A gate the parent runs itself on the
-  final head (e.g. `sam-work` review, coverage, or browser proof) is recorded
+  final head (e.g. `sam-task --deliver pr` review, coverage, or browser proof) is recorded
   parent-owned (output-contract `gates` row) and skipped; `behavior_proof` is
   never parent-owned.
 

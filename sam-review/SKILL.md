@@ -12,7 +12,7 @@ description: "Evidence-backed review of local, staged, branch, commit, range, or
 - Freeze target, base SHA, head SHA, changed files, and bundle fingerprint. Never fetch or change refs for a local target. Never truncate a patch.
 - Review the actual patch and adjacent code; account for every changed file exactly once; try to disprove each concern before accepting it.
 - Never execute a changed script, hook, build definition, or configuration before inspecting its diff. Never expose secrets in bundles, commands, reports, comments, or receipts.
-- Under a parent (sam-task, sam-work, sam-orchestrate, sam-goal, or a phase worker): never ask; publish nothing the parent did not explicitly authorize (local-only parents such as sam-work authorize nothing); its authorization is enough.
+- Under a parent (sam-task, sam-orchestrate, sam-goal, or a phase worker): never ask; publish nothing the parent did not explicitly authorize (local-only parents such as sam-task without --deliver pr authorize nothing); its authorization is enough.
 - Retain bundles, reports, receipts, and referenced logs for caller re-validation; delete only scratch no returned evidence references.
 
 ## Resource Routing

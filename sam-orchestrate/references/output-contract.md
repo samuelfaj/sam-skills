@@ -27,7 +27,7 @@ No keys beyond these; `+` marks a non-empty list; lists hold unique non-empty st
  "decision": {"result": "COMPLETE|BLOCKED|IN_PROGRESS", "remaining_task_ids": []}}
 ```
 
-`<class>`: `CODE` `TEST` `DOCS` `CONFIG` `DATA` `RELEASE` `OTHER`. Paths are normalized and repo-relative. `runtime` is `null` on `ORCHESTRATION` nodes; `blocker` is `null` unless `BLOCKED`.
+`<class>`: `CODE` `TEST` `DOCS` `CONFIG` `DATA` `RELEASE` `OTHER`. Paths are normalized and repo-relative. `runtime` is `null` on `ORCHESTRATION` nodes; `blocker` is `null` unless `BLOCKED`. Advisors are not DAG nodes.
 
 ## Spec
 
@@ -38,6 +38,17 @@ Write only judgment fields; `scripts/scaffold_report.py` derives the rest.
 - `evidence`: as in the report; omit `requirement` when the node has one.
 - `files`: `{"<path>": "<class>" | {"class": "<class>", "producer": "<id>"}}`. With `--freeze`, every path changed after the `scaffold_report.py --freeze-out` snapshot is added, each assigned to the one producer whose writable scope holds it; a changed path outside every scope, or a listed path that did not change, is an error. Do not attribute another writer's change to a run worker. Omit a class only when the producer declares one.
 - `review_rounds`: completed review rounds; with `--freeze` the scaffold counts `<run>/review-<n>.diff` files and a typed value must match.
+
+## Profiles
+
+With `--profile <preset>` (default `native`), `scaffold_report.py` and
+`validate_orchestration.py` use that preset's controller host and binding table
+from its profile file: `task.active_host` is the preset's controller,
+`runtime.host` may differ from it, and role, model, effort come from the preset
+row for the capability (or its genius row on `STANDARD`/`DEEP` with a non-empty
+`fallback_reason`). The validator detects the preset from a report when
+`--profile` is absent, so reports from the former per-profile skills validate.
+Spec `task.active_host` may be omitted under a preset.
 
 ## Invariants
 

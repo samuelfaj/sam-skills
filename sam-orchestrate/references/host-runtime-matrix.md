@@ -44,6 +44,13 @@ is unavailable, report the blocked role.
 - **Grok:** model family `grok-4.6` only; orchestration workers use `medium`,
   `high`, or `xhigh` (never `low` or `max`).
 
+## Profiles
+
+A preset or custom model pin replaces the columns above for its run: the
+binding table lives in `references/profiles/<preset>.md`, and the report is
+scaffolded and validated with `--profile <preset>`. Provider setup and spawn
+notes (for example the Z.AI transport) live in that profile file, not here.
+
 ## Advisor rows
 
 Optional, read-only, one focused question. Advisors never edit files and never

@@ -1,9 +1,26 @@
 ---
 name: sam-council
-description: "Blind specialist council that triages or falsifies consequential software plans via rebuttal and evidence-weighted decisions. Use for architecture, features, migrations, incidents, releases, security, costly, uncertain, or hard-to-reverse decisions; multi-provider only on explicit request."
+description: "Decide consequential software plans via a blind specialist council (--mode decide, default), or stress-test and revise a strategy without implementing it (--mode refine). Use for architecture, migrations, releases, or risky decisions; or to refine/harden/challenge a plan; not for implementing."
 ---
 
 # Sam Council
+
+## Modes
+
+`sam-council [--mode decide|refine]`.
+
+| Mode | Use when | Behavior |
+| --- | --- | --- |
+| `decide` (default) | A consequential, costly, or hard-to-reverse decision needs a verdict | Everything below, unchanged |
+| `refine` | The user asks to refine, harden, or challenge a plan, or a plan, debugging hypothesis, migration, rollout, release, test strategy, or architecture needs bounded evidence-backed revision before execution | Read `references/refine-mode.md` and follow it instead of the sections below; return `HIGH_CONFIDENCE`, `NOT_CONFIDENT`, or `BLOCKED` |
+
+Without `--mode`, pick `refine` only on an explicit refine/harden/challenge
+request; otherwise `decide`. Refine mode never implements the strategy and
+loads none of the council references or scripts below.
+Refine-mode resources, loaded only from `references/refine-mode.md`:
+`references/refine-output-contract.md`, `references/evidence-policy.md`,
+`references/risk-lenses.md`, `scripts/capture_scope.py`, and
+`scripts/validate_refine_report.py`.
 
 ## Non-Negotiable Contract
 

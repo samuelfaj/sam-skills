@@ -18,7 +18,7 @@ provider-, host-, tool-, and model-neutral.
 - Preserve unrelated staged, unstaged, and untracked work byte-for-byte. Never
   reset, checkout, stash, clean, rebase, or broadly restore the workspace.
 - Stage, commit, publish, or message an external system only when the user or a
-  parent workflow (e.g. `sam-work`) explicitly requested that exact action;
+  parent workflow (e.g. `sam-task --deliver pr`) explicitly requested that exact action;
   parent authorization is enough, never re-ask.
 - Child mode (a parent workflow or phase worker invoked you): never ask; if
   ownership cannot be reconstructed safely, return `BLOCKED` with receipts.
@@ -35,7 +35,7 @@ Use literal absolute paths: `<skill>` is this directory; `<tmp>` is the
 parent's phase directory, else scratch outside `<repo>`. Re-read a file only
 after compaction or when you cannot quote the needed section; a copy of
 `evidence-policy.md` or `risk-lenses.md` already read from sam-fix-bug,
-sam-create-feature, or sam-refine-task counts.
+sam-create-feature, or `sam-council --mode refine` counts.
 
 | Read | When |
 |---|---|

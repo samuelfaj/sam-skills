@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Design"
+  short_description: "Apply every installed design skill to frontend and UI work"
+  default_prompt: "Use $sam-design for this frontend/UI work. Run the setup check, consult all 21 design skills in phase order, resolve conflicts by the stated precedence, verify in a real browser at desktop and mobile widths, and return the full coverage ledger."

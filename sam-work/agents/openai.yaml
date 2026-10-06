@@ -1,4 +1,0 @@
-interface:
-  display_name: "Sam Work"
-  short_description: "Deliver a verified software change as a PR or MR"
-  default_prompt: "Use $sam-work to implement and deliver this change as a PR or MR. Verify the relevant behavior, publish the intended diff, and report the exact remote state."

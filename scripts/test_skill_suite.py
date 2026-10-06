@@ -160,7 +160,7 @@ def check_shared_file_groups(module: ModuleType) -> None:
             )
         write_routed_skill(
             root,
-            "sam-refine-task",
+            "sam-council",
             {
                 "references/evidence-policy.md": policy,
                 "references/risk-lenses.md": lenses,
@@ -171,16 +171,10 @@ def check_shared_file_groups(module: ModuleType) -> None:
         write_routed_skill(
             root, "sam-perceived-performance", {"scripts/capture_scope.py": capture}
         )
-        for name in (
-            "sam-orchestrate",
-            "sam-orchestrate-claude-grok",
-            "sam-orchestrate-codex-glmflash",
-            "sam-orchestrate-codex-grok",
-        ):
-            write_routed_skill(root, name, {"scripts/scaffold_report.py": scaffold})
+        write_routed_skill(root, "sam-orchestrate", {"scripts/scaffold_report.py": scaffold})
         write_routed_skill(
             root,
-            "sam-create-test-coverage",
+            "sam-test",
             {"scripts/scaffold_report.py": scaffold.replace("SCAFFOLD", "COVERAGE")},
         )
         write_routed_skill(
@@ -209,7 +203,7 @@ def check_shared_file_groups(module: ModuleType) -> None:
             path.write_text(original, encoding="utf-8")
 
         expect_drift(
-            "sam-refine-task/references/evidence-policy.md",
+            "sam-council/references/evidence-policy.md",
             "shared file references/evidence-policy.md",
             policy.replace("only when", "whenever"),
         )
@@ -229,18 +223,13 @@ def check_shared_file_groups(module: ModuleType) -> None:
             "shared file scripts/capture_scope.py",
             capture + "# drift\n",
         )
-        expect_drift(
-            "sam-orchestrate-codex-glmflash/scripts/scaffold_report.py",
-            "shared file scripts/scaffold_report.py",
-            scaffold + "# drift\n",
-        )
         expect_valid(module, root, "restored copies rejected")
 
         # A merged or deleted copy is tolerated, but the rest stay bound.
         (root / "sam-fix-bug/references/evidence-policy.md").unlink()
         expect_valid(module, root, "missing group copy rejected")
         expect_drift(
-            "sam-refine-task/references/evidence-policy.md",
+            "sam-council/references/evidence-policy.md",
             "shared file references/evidence-policy.md",
             policy + "extra\n",
         )
@@ -650,15 +639,15 @@ def main() -> int:
         expect_error(module, root, "not executable")
         script.chmod(0o755)
 
-        advisor = root / "sam-codex-advisor"
+        advisor = root / "sam-advisor"
         (advisor / "agents").mkdir(parents=True)
         (advisor / "SKILL.md").write_text(
             """---
-name: sam-codex-advisor
+name: sam-advisor
 description: "Consult Codex on gpt-5.6-sol as an advisor. Use when a fixed provider-specific second opinion is requested."
 ---
 
-# Sam Codex Advisor
+# Sam Advisor
 
 ## Non-Negotiable Contract
 
@@ -672,9 +661,9 @@ Return the recommendation and model used.
         )
         (advisor / "agents/openai.yaml").write_text(
             """interface:
-  display_name: "Sam Codex Advisor"
+  display_name: "Sam Advisor"
   short_description: "Consult a fixed provider-specific advisor"
-  default_prompt: "Use $sam-codex-advisor for a second opinion."
+  default_prompt: "Use $sam-advisor for a second opinion."
 """,
             encoding="utf-8",
         )

@@ -25,6 +25,8 @@ Coordination: other agents may share the workspace; never revert their work
 - Require inspect-before-edit and surgical changes matching repo conventions.
 - Separate proof the worker runs from proof the controller must re-check.
 - Scope expansion always returns to the controller.
+- Pinned-profile workers: on capability failure, return evidence to the
+  controller; never self-escalate to the genius or reviewer model.
 
 ## Spawn
 
@@ -38,6 +40,9 @@ final message:
 | Grok | `... --output-format json > <run>/<node>.json 2> <run>/<node>.err` | `.text` |
 
 Only read-only REVIEWER/advisor `claude -p` seats add `--add-dir <run>`.
+Profile spawn forms (worker runbook, reviewer, genius, advisor) are in the
+profile file. Seats that can nest add `Nested agents: pass RC_TOKEN_SAVER_EXECUTION_RECEIPT_V1 and its capability/lane environment unchanged; never put content into it` to the prompt.
+
 Read at most the last 60 log/stderr lines, only on a non-zero exit. Keep prompt
 and log files until the report validates, then delete them; keep the report.
 
@@ -58,3 +63,14 @@ when the delta touches public contracts/APIs/schemas, auth/security/permissions,
 persistence/migrations, shared modules used outside the change, or risk-flagged
 paths, or is larger than the original change (compare the printed `lines=`). A
 prior finding is closed only when the reviewer names it closed.
+
+## Genius prompts
+
+Only after the controller records an escalation trigger. Include the prior
+attempt count and failed proof IDs, the exact residual failure (not prior
+transcripts), and the frozen writable scope and no-go, unchanged from the last
+producer.
+
+## Advisor prompts
+
+Read-only focused question only; never implementation ownership.

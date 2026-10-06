@@ -46,7 +46,7 @@ SHARED_SCRIPTS = (
 SHARED_POLICY_SKILLS = (
     "sam-create-feature",
     "sam-fix-bug",
-    "sam-refine-task",
+    "sam-council",
     "sam-simplify-task",
 )
 SHARED_FILE_GROUPS = (
@@ -60,26 +60,18 @@ SHARED_FILE_GROUPS = (
         "scripts/capture_scope.py",
         SHARED_POLICY_SKILLS + ("sam-perceived-performance",),
     ),
-    (
-        "scripts/scaffold_report.py",
-        (
-            "sam-orchestrate",
-            "sam-orchestrate-claude-grok",
-            "sam-orchestrate-codex-glmflash",
-            "sam-orchestrate-codex-grok",
-        ),
-    ),
 )
 PROVIDER_SPECIFIC_REPLACEMENTS = {
-    "sam-codex-advisor": (
+    "sam-advisor": (
         (re.compile(r"\bcodex\b", re.IGNORECASE), "advisor-runtime"),
+        (re.compile(r"\bclaude(?:-code)?\b", re.IGNORECASE), "advisor-runtime"),
+        (re.compile(r"\bopenai\b", re.IGNORECASE), "provider"),
         (re.compile(r"\bgpt-5\.6-(?:luna|sol)\b", re.IGNORECASE), "approved-model"),
-    ),
-    "sam-claude-advisor": (
-        (re.compile(r"\bclaude\b", re.IGNORECASE), "advisor-runtime"),
         (re.compile(r"\b(?:haiku|sonnet|opus|fable)\b", re.IGNORECASE), "approved-model"),
     ),
-
+    "sam-design": (
+        (re.compile(r"\bclaude\b", re.IGNORECASE), "host-runtime"),
+    ),
     "sam-orchestrate": (
         (re.compile(r"\bgpt-6-astra\b", re.IGNORECASE), "approved-model"),
         (re.compile(r"\bcodex\b", re.IGNORECASE), "host-runtime"),
@@ -87,24 +79,8 @@ PROVIDER_SPECIFIC_REPLACEMENTS = {
         (re.compile(r"\bgrok\b", re.IGNORECASE), "host-runtime"),
         (re.compile(r"\bgpt-5\.6-(?:luna|sol)\b", re.IGNORECASE), "approved-model"),
         (re.compile(r"\bgrok-4\.6\b", re.IGNORECASE), "approved-model"),
-        (re.compile(r"\b(?:haiku|sonnet|opus|fable)\b", re.IGNORECASE), "approved-model"),
-    ),
-    "sam-orchestrate-codex-grok": (
-        (re.compile(r"\bcodex\b", re.IGNORECASE), "host-runtime"),
-        (re.compile(r"\bgrok\b", re.IGNORECASE), "host-runtime"),
-        (re.compile(r"\bgpt-5\.6-(?:luna|sol)\b", re.IGNORECASE), "approved-model"),
-        (re.compile(r"\bgrok-4\.6\b", re.IGNORECASE), "approved-model"),
-    ),
-    "sam-orchestrate-codex-glmflash": (
-        (re.compile(r"\bcodex\b", re.IGNORECASE), "host-runtime"),
-        (re.compile(r"\bgpt-5\.6-(?:luna|sol)\b", re.IGNORECASE), "approved-model"),
         (re.compile(r"\bglm-5\.3-flash\b", re.IGNORECASE), "approved-model"),
-    ),
-    "sam-orchestrate-claude-grok": (
-        (re.compile(r"\bclaude(?:-code)?\b", re.IGNORECASE), "host-runtime"),
-        (re.compile(r"\bgrok\b", re.IGNORECASE), "host-runtime"),
         (re.compile(r"\b(?:haiku|sonnet|opus|fable)\b", re.IGNORECASE), "approved-model"),
-        (re.compile(r"\bgrok-4\.6\b", re.IGNORECASE), "approved-model"),
     ),
     "sam-council": (
         (re.compile(r"\bcodex\b", re.IGNORECASE), "host-runtime"),
@@ -130,6 +106,21 @@ PROVIDER_SPECIFIC_REPLACEMENTS = {
         (re.compile(r"\bgrok\b", re.IGNORECASE), "host-runtime"),
     ),
 }
+# Literals the README may use despite provider words: the rename table and
+# the documented preset/advisor selectors.
+README_ALLOWED_LITERALS = (
+    "sam-codex-advisor",
+    "sam-claude-advisor",
+    "sam-orchestrate-codex-grok",
+    "sam-orchestrate-codex-glmflash",
+    "sam-orchestrate-claude-grok",
+    "--advisor codex|claude",
+    "--advisor codex",
+    "--advisor claude",
+    "codex-grok",
+    "codex-glmflash",
+    "claude-grok",
+)
 
 
 @dataclass(frozen=True)
@@ -402,6 +393,8 @@ def validate_repository_docs(
         if skill.name not in raw_text:
             errors.append(f"README.md: missing skill catalog entry for {skill.name}")
     inspected = raw_text
+    for literal in sorted(README_ALLOWED_LITERALS, key=len, reverse=True):
+        inspected = inspected.replace(literal, "allowed-literal")
     # Longest skill names first so prefixes (e.g. sam-orchestrate) do not leave
     # residual forbidden tokens inside longer names (sam-orchestrate-codex-grok).
     for skill_name in sorted(PROVIDER_SPECIFIC_REPLACEMENTS, key=len, reverse=True):

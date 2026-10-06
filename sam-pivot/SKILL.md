@@ -1,6 +1,6 @@
 ---
 name: sam-pivot
-description: "Use only when the user explicitly invokes /sam-pivot, $sam-pivot, or @sam-pivot to authorize autonomous replanning of a product build around blocked or obsolete methods."
+description: "Replan a product build autonomously around blocked or obsolete methods. Use only when the user explicitly invokes /sam-pivot, $sam-pivot, or @sam-pivot to authorize it; not for ordinary blocked plans or general autonomy requests."
 ---
 
 # Sam Pivot

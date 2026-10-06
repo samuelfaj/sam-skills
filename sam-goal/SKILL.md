@@ -15,6 +15,7 @@ Finish every outcome the user asked for with the smallest sound implementation. 
 - Respect authorization and reversibility. Ask before genuinely irreversible actions, and perform external writes only when the request or session authorizes them.
 - Protect secrets and private data in evidence; verify the target environment before any mutating check.
 - Use one controller if multiple workflow skills are named. Reuse completed evidence; do not run a second full pipeline over the same work.
+- When the work touches frontend (UI components, markup, styles, layout, motion, client routing, rendered state), invoke `sam-design` for the UI work and include its coverage ledger.
 - In Distill, let configured Jev routing help with eligible skill, tool, model, and effort choices. Give native workers bounded outcomes and evidence without pinning a model or effort unless the user or a concrete requirement calls for it. If Jev is absent, disabled, fails, or defers, make those choices from the task and repository evidence using the current agent and host defaults; keep working. Verify the integrated outcome regardless of how it was routed.
 
 ## Work

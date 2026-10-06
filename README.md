@@ -29,8 +29,9 @@ the requested behavior.
 
 ## Skills
 
-- `sam-work`: implement and deliver a software change to a reviewable PR/MR
-  with evidence proportional to the change and accurate remote readback.
+- `sam-task`: complete a software task locally or, with `--deliver pr`, through
+  a reviewable PR/MR with accurate remote readback. Frontend work always goes
+  through `sam-design`.
 - `sam-goal`: finish a broader software goal with adaptive decomposition,
   minimal implementation, and integrated verification.
   Invoke as `/sam-goal`, `$sam-goal`, or `@sam-goal`.
@@ -41,18 +42,16 @@ the requested behavior.
   validated behavior proof.
 - `sam-fix-bug`: reproduce, diagnose, minimally repair, and regression-test
   broken existing behavior.
-- `sam-refine-task`: challenge a proposed or completed approach through bounded,
-  evidence-backed refinement cycles.
 - `sam-simplify-task`: remove proven unnecessary complexity while preserving
   observable behavior.
 - `sam-perceived-performance`: make a requested interaction feel instantaneous
   while the real work continues, under measured feedback and dead-time budgets,
   proven rollback for every optimistic outcome, and a hard ban on faked progress,
   success, or freshness.
-- `sam-create-playwright-tests`: build risk-based browser coverage with linked
-  UI/backend, route, permission, persistence, and cleanup proof.
-- `sam-create-test-coverage`: select and implement the smallest reliable mix of
-  unit, component, integration, contract, and browser tests.
+- `sam-test`: select and implement the smallest reliable mix of unit,
+  component, integration, contract, and browser tests; `--layer` picks the
+  layer, including risk-based browser coverage with linked UI/backend, route,
+  permission, persistence, and cleanup proof.
 - `sam-create-task-demo-video`: record and validate a privacy-reviewed local MP4
   tied to acceptance criteria; only when authorized, publish it and verify its
   player embed from the proposal body markup read back through the API.
@@ -61,38 +60,45 @@ the requested behavior.
   safe; ask before publishing when no action was explicitly authorized.
 - `sam-pr-description`: generate a traceable pull/merge-request description from
   the real base, commits, diff, and validation evidence.
-- `sam-orchestrate`: coordinate independent work with native delegation,
-  optional Jev routing in Distill, and verified integration.
+- `sam-plan`: conduct task study and emit a machine freeze plan (goal, thesis,
+  steps, evidence, status) plus a required light-theme HTML pack for humans;
+  assertive investigation first, council only on risk triggers.
+- `sam-council`: rapidly triage or fully falsify consequential
+  system-development plans through portable blind reviews, bounded responses,
+  maximum safe parallelism, and evidence-weighted decision gates;
+  `--mode decide|refine` either decides between options or challenges a
+  proposed or completed approach through bounded, evidence-backed refinement
+  cycles. Multi-provider confrontation remains explicit opt-in.
+- `sam-advisor`: obtain a bounded read-only second opinion;
+  `--advisor codex|claude [model] [effort]` selects the advisor runtime, model,
+  and effort.
+- `sam-orchestrate`: coordinate independent work with native delegation by
+  default, optional Jev routing in Distill, and verified integration. Presets
+  `codex-grok`, `codex-glmflash`, and `claude-grok` select a hybrid
+  controller/worker profile; custom `--controller`, `--worker`, and
+  `--reviewer` build any other combination.
 - `sam-gauntlet-loop`: compile a named, fetchable quality-bar prompt with
   host-detected orchestration tokens and return it for the user to copy,
   edit, and paste. Never starts the loop. Use for `/sam-gauntlet-loop`,
   "gauntlet this", or "loop until it beats a real reference".
-- `sam-orchestrate-codex-grok`: hybrid controller/worker orchestration profile —
-  Grok 4.6 producers (medium LIGHT / high STANDARD / xhigh DEEP), Sol medium
-  independent review, and Sol high only for stall or multi-round unstick.
-- `sam-orchestrate-codex-glmflash`: controller with GLM-5.3-Flash producers via
-  the configured Z.AI provider, independent Sol medium review,
-  and Sol high only for stall or multi-round unstick.
-- `sam-orchestrate-claude-grok`: hybrid controller/worker orchestration profile —
-  Grok 4.6 producers (medium LIGHT / high STANDARD / xhigh DEEP), high independent
-  review, xhigh only for stall or multi-round unstick, max-effort advisor.
-- `sam-plan`: conduct task study and emit a machine freeze plan (goal, thesis,
-  steps, evidence, status) plus a required light-theme HTML pack for humans;
-  assertive investigation first, council only on risk triggers.
-- `sam-task`: complete a software task through its requested delivery point,
-  using specialized skills only when they improve the result.
-- `sam-council`: rapidly triage or fully falsify consequential
-  system-development plans through portable blind reviews, bounded responses,
-  maximum safe parallelism, and evidence-weighted decision gates;
-  multi-provider confrontation remains explicit opt-in.
-- `sam-codex-advisor`: obtain a bounded read-only second opinion; the calling
-  agent binds model and effort from the sam-orchestrate host-runtime-matrix
-  advisor row (or an explicit user override).
-- `sam-claude-advisor`: obtain a bounded read-only second opinion; the calling
-  agent binds model and effort from the sam-orchestrate host-runtime-matrix
-  advisor row (or an explicit user override).
-- `sam-grok-worker`: delegate a bounded implementation task to a fixed worker
-  runtime under workspace sandbox and headless execution.
+- `sam-design`: route frontend and UI design work through all 21 skills from
+  `emilkowalski/skills` and `nextlevelbuilder/ui-ux-pro-max-skill`, tracked in a
+  coverage ledger; install them with `scripts/install_design_skills.py`.
+
+### Renamed skills
+
+| Old name | New name |
+| --- | --- |
+| `sam-work` | `sam-task` (`--deliver pr`) |
+| `sam-refine-task` | `sam-council --mode refine` |
+| `sam-create-test-coverage` | `sam-test` |
+| `sam-create-playwright-tests` | `sam-test --layer` |
+| `sam-codex-advisor` | `sam-advisor --advisor codex` |
+| `sam-claude-advisor` | `sam-advisor --advisor claude` |
+| `sam-grok-worker` | `sam-orchestrate` (worker runbook) |
+| `sam-orchestrate-codex-grok` | `sam-orchestrate` preset `codex-grok` |
+| `sam-orchestrate-codex-glmflash` | `sam-orchestrate` preset `codex-glmflash` |
+| `sam-orchestrate-claude-grok` | `sam-orchestrate` preset `claude-grok` |
 
 ## Repository Quality Gate
 

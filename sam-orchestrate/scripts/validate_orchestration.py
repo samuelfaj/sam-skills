@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-"""Validate a deterministic sam-orchestrate execution report."""
+"""Validate a deterministic sam-orchestrate execution report.
+
+--profile selects the runtime profile (default: auto-detected from the report,
+else native). Preset profiles pin a controller host and a capability matrix.
+"""
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
@@ -66,14 +71,84 @@ RUNTIME_MATRIX: dict[str, dict[str, tuple[str, str, str]]] = {
         "GENIUS": ("genius_worker", "grok-4.6", "xhigh"),
     },
 }
-MATRIX_MODELS = {
-    model for host_rows in RUNTIME_MATRIX.values() for _, model, _ in host_rows.values()
+def _profile(controller, worker_hosts, matrix, label):
+    return {
+        "controller": controller,
+        "worker_hosts": worker_hosts,
+        "matrix": matrix,
+        "label": label,
+    }
+
+
+# Preset profiles: capability -> (host, role, model, effort).
+PROFILES: dict[str, dict[str, Any] | None] = {
+    "native": None,
+    "codex-grok": _profile(
+        "codex",
+        {"codex", "grok"},
+        {
+            "LIGHT": ("grok", "fast_scan", "grok-4.6", "medium"),
+            "STANDARD": ("grok", "routine_worker", "grok-4.6", "high"),
+            "DEEP": ("grok", "deep_worker", "grok-4.6", "xhigh"),
+            "REVIEWER": ("codex", "reviewer", "gpt-5.6-sol", "medium"),
+            "GENIUS": ("codex", "genius_worker", "gpt-5.6-sol", "high"),
+        },
+        "codex-grok",
+    ),
+    "codex-glmflash": _profile(
+        "codex",
+        {"codex"},
+        {
+            "LIGHT": ("codex", "fast_scan", "glm-5.3-flash", "max"),
+            "STANDARD": ("codex", "routine_worker", "glm-5.3-flash", "max"),
+            "DEEP": ("codex", "deep_worker", "glm-5.3-flash", "max"),
+            "REVIEWER": ("codex", "reviewer", "gpt-5.6-sol", "medium"),
+            "GENIUS": ("codex", "genius_worker", "gpt-5.6-sol", "high"),
+        },
+        "codex-glmflash",
+    ),
+    "claude-grok": _profile(
+        "claude-code",
+        {"claude-code", "grok"},
+        {
+            "LIGHT": ("grok", "fast_scan", "grok-4.6", "medium"),
+            "STANDARD": ("grok", "routine_worker", "grok-4.6", "high"),
+            "DEEP": ("grok", "deep_worker", "grok-4.6", "xhigh"),
+            "REVIEWER": ("claude-code", "reviewer", "opus", "high"),
+            "GENIUS": ("claude-code", "genius_worker", "opus", "xhigh"),
+        },
+        "claude-grok",
+    ),
 }
-MATRIX_EFFORTS = {
-    effort
-    for host_rows in RUNTIME_MATRIX.values()
-    for _, _, effort in host_rows.values()
-}
+DEFAULT_PROFILE = "native"
+PROFILE_NAMES = tuple(PROFILES)
+
+
+def detect_profile(report: Any) -> str:
+    """Pick the profile an old report was produced under, from its own data."""
+    task = report.get("task") if isinstance(report, dict) else None
+    dag = report.get("dag") if isinstance(report, dict) else None
+    if not isinstance(task, dict) or not isinstance(dag, list):
+        return DEFAULT_PROFILE
+    runtimes = [
+        n["runtime"]
+        for n in dag
+        if isinstance(n, dict) and isinstance(n.get("runtime"), dict)
+    ]
+    models = {r.get("model") for r in runtimes}
+    hosts = {r.get("host") for r in runtimes}
+    active = task.get("active_host")
+    if "glm-5.3-flash" in models:
+        return "codex-glmflash"
+    if "grok" in hosts and active == "claude-code":
+        return "claude-grok"
+    if "grok" in hosts and active == "codex":
+        return "codex-grok"
+    if "gpt-5.6-sol" in models and active == "codex":
+        return "codex-grok"
+    return DEFAULT_PROFILE
+
+
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -177,7 +252,7 @@ def package_neutrality_texts() -> dict[str, str]:
             if relative in {
                 "references/host-runtime-matrix.md",
                 "references/output-contract.md",
-            }:
+            } or relative.startswith("references/profiles/"):
                 continue
             try:
                 texts[f"{root_name}/{relative}"] = path.read_text(encoding="utf-8")
@@ -199,6 +274,7 @@ def validate_runtime_binding(
     capability: Any,
     active_host: Any,
     errors: list[str],
+    profile: str = DEFAULT_PROFILE,
 ) -> None:
     if not isinstance(runtime, dict):
         errors.append(f"{label}.runtime must be an object")
@@ -210,10 +286,14 @@ def validate_runtime_binding(
     model = runtime.get("model")
     effort = runtime.get("effort")
     fallback = runtime.get("fallback_reason")
-    if host not in HOSTS:
-        errors.append(f"{label}.runtime.host is invalid")
-    if active_host in HOSTS and host in HOSTS and host != active_host:
-        errors.append(f"{label}.runtime.host must match task.active_host")
+    preset = PROFILES[profile]
+    if preset is None:
+        if host not in HOSTS:
+            errors.append(f"{label}.runtime.host is invalid")
+        if active_host in HOSTS and host in HOSTS and host != active_host:
+            errors.append(f"{label}.runtime.host must match task.active_host")
+    elif host not in preset["worker_hosts"]:
+        errors.append(f"{label}.runtime.host is invalid for {profile} profile")
     if role not in RUNTIME_ROLES:
         errors.append(f"{label}.runtime.role is invalid")
     if not isinstance(model, str) or not model.strip():
@@ -226,6 +306,26 @@ def validate_runtime_binding(
         errors.append(
             f"{label}.runtime.fallback_reason must be null or a non-empty string"
         )
+    if preset is None:
+        validate_native_binding(
+            label, capability, host, role, model, effort, fallback, errors
+        )
+    else:
+        validate_preset_binding(
+            preset, profile, label, capability, host, role, model, effort, fallback, errors
+        )
+
+
+def validate_native_binding(
+    label: str,
+    capability: Any,
+    host: Any,
+    role: Any,
+    model: Any,
+    effort: Any,
+    fallback: Any,
+    errors: list[str],
+) -> None:
     if host not in RUNTIME_MATRIX or capability not in CAPABILITIES:
         return
     expected_role, expected_model, expected_effort = RUNTIME_MATRIX[host][capability]
@@ -273,7 +373,57 @@ def validate_runtime_binding(
     )
 
 
-def validate(report: dict[str, Any]) -> list[str]:
+def validate_preset_binding(
+    preset: dict[str, Any],
+    profile: str,
+    label: str,
+    capability: Any,
+    host: Any,
+    role: Any,
+    model: Any,
+    effort: Any,
+    fallback: Any,
+    errors: list[str],
+) -> None:
+    matrix = preset["matrix"]
+    if capability not in matrix:
+        return
+    expected_host, expected_role, expected_model, expected_effort = matrix[capability]
+    normalized_role = normalize_role(role) if isinstance(role, str) else role
+    genius_host, genius_role, genius_model, genius_effort = matrix["GENIUS"]
+    matches_capability = (
+        host == expected_host
+        and normalized_role == expected_role
+        and model == expected_model
+        and effort == expected_effort
+    )
+    matches_genius = (
+        capability in {"STANDARD", "DEEP"}
+        and host == genius_host
+        and normalized_role == genius_role
+        and model == genius_model
+        and effort == genius_effort
+        and isinstance(fallback, str)
+        and bool(fallback.strip())
+    )
+    if matches_capability or matches_genius:
+        return
+    if isinstance(fallback, str) and fallback.strip():
+        rows = matrix.values()
+        if model not in {row[2] for row in rows}:
+            errors.append(f"{label}.runtime.model is outside the approved {profile} matrix")
+        if effort not in {row[3] for row in rows}:
+            errors.append(f"{label}.runtime.effort is outside the approved {profile} matrix")
+        if host not in {row[0] for row in rows}:
+            errors.append(f"{label}.runtime.host is outside the approved {profile} matrix")
+        return
+    errors.append(
+        f"{label}.runtime must match host-runtime-matrix for capability {capability}"
+    )
+
+
+def validate(report: dict[str, Any], profile: str | None = None) -> list[str]:
+    profile = profile or detect_profile(report)
     errors = neutrality_violations(package_neutrality_texts())
     require_keys(
         report,
@@ -308,8 +458,14 @@ def validate(report: dict[str, Any]) -> list[str]:
     if classification not in TASK_CLASSES:
         errors.append("task.classification must be T0, T1, T2, or T3")
     active_host = task.get("active_host")
-    if active_host not in HOSTS:
-        errors.append("task.active_host must be codex, claude-code, or grok")
+    preset = PROFILES[profile]
+    if preset is None:
+        if active_host not in HOSTS:
+            errors.append("task.active_host must be codex, claude-code, or grok")
+    elif active_host != preset["controller"]:
+        errors.append(
+            f"task.active_host must be {preset['controller']} for the {profile} profile"
+        )
     if not isinstance(task.get("goal"), str) or not task.get("goal", "").strip():
         errors.append("task.goal must be a non-empty string")
     string_list(
@@ -402,6 +558,7 @@ def validate(report: dict[str, Any]) -> list[str]:
                 capability=capability,
                 active_host=active_host,
                 errors=errors,
+                profile=profile,
             )
         elif runtime is not None:
             errors.append(f"{label}.runtime must be null for controller orchestration")
@@ -1053,15 +1210,20 @@ def validate(report: dict[str, Any]) -> list[str]:
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        print("usage: validate_orchestration.py <report.json>", file=sys.stderr)
-        return 2
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("report")
+    parser.add_argument(
+        "--profile",
+        choices=PROFILE_NAMES,
+        help="runtime profile; default: detected from the report, else native",
+    )
+    args = parser.parse_args()
     try:
-        report = load_json(Path(sys.argv[1]))
+        report = load_json(Path(args.report))
     except ValueError as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1
-    errors = validate(report)
+    errors = validate(report, args.profile)
     if errors:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)

@@ -1,6 +1,6 @@
 ---
 name: sam-plan
-description: "Study a task and produce a validated plan freeze, a descriptive human-first HTML plan, and an executable agent-plan.md handoff; council only on risk triggers. Use when the user runs /sam-plan, asks for an implementation plan, or needs pre-implementation planning before sam-task/sam-work."
+description: "Study a task and produce a validated plan freeze, a descriptive human-first HTML plan, and an executable agent-plan.md handoff; council only on risk triggers. Use when the user runs /sam-plan, asks for an implementation plan, or needs pre-implementation planning before sam-task."
 ---
 
 # Sam Plan

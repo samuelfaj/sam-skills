@@ -12,7 +12,7 @@ Concise and reviewer-focused; provider-, host-, model-, tool-, and stack-neutral
 - Never assume the target branch name.
 - Never make an implementation, ticket, test, architecture, business-rule, or safety claim without evidence; write `Not applicable` or `Not verified` instead of filling gaps; distinguish tests changed from commands actually run.
 - Account for every changed file exactly once.
-- Draft locally; update a remote proposal only on an explicit user or parent (e.g. sam-work) request, which is enough: never re-ask.
+- Draft locally; update a remote proposal only on an explicit user or parent (e.g. sam-task --deliver pr) request, which is enough: never re-ask.
 - Never truncate the patch, read a sensitive path into context, or expose secrets in context, reports, descriptions, commands, or receipts.
 - Retain report, context, body, and referenced evidence for caller re-validation; remove only unused scratch.
 

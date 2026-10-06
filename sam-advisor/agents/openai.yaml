@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Advisor"
+  short_description: "Read-only second opinion from a chosen advisor"
+  default_prompt: "Use $sam-advisor with the advisor (codex or claude) to get a focused second opinion. Bind model and effort from the sam-orchestrate host-runtime-matrix advisor row."
