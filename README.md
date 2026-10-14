@@ -83,7 +83,10 @@ the requested behavior.
   "gauntlet this", or "loop until it beats a real reference".
 - `sam-design`: route frontend and UI design work through all 21 skills from
   `emilkowalski/skills` and `nextlevelbuilder/ui-ux-pro-max-skill`, tracked in a
-  coverage ledger; install them with `scripts/install_design_skills.py`.
+  coverage ledger, plus task-fit `design-taste` and `better-design` skills and
+  Canvas UI / UI Layouts component references. Install manifest skills with
+  `sam-design/scripts/install_design_skills.py`; Better Design also requires
+  its separately configured MCP server.
 
 ### Renamed skills
 

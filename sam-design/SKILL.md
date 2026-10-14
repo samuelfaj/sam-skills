@@ -1,11 +1,11 @@
 ---
 name: sam-design
-description: "Run every installed design skill from emilkowalski/skills and ui-ux-pro-max on any frontend/UI work, with a per-skill coverage ledger and browser proof. Use for UI components, pages, styling, layout, motion, design systems, or mobile/web UI; called by sam-task for frontend work; not for backend-only changes."
+description: "Run every installed design skill from emilkowalski/skills and ui-ux-pro-max on any frontend/UI work, plus task-fit design-taste, Canvas UI, UI Layouts, and Better Design guidance, with a coverage ledger and browser proof. Use for UI components, pages, styling, layout, motion, design systems, or mobile/web UI; called by sam-task for frontend work; not for backend-only changes."
 ---
 
 # Sam Design
 
-Orchestrate 21 upstream design skills on every frontend/UI task. The upstream skills stay installed in the host skill dir; this skill never copies their content. The manifest in [references/design-skills.md](references/design-skills.md) records each skill's repo, pinned commit, source path, install dir, aliases, phase, and purpose.
+Orchestrate the original 21 upstream design skills on every frontend/UI task, plus optional sources when useful or necessary. The upstream skills stay installed in the host skill dir; this skill never copies their content. The manifest in [references/design-skills.md](references/design-skills.md) records each skill's repo, pinned commit, source path, install dir, aliases, phase, and purpose.
 
 ## Non-Negotiable Contract
 
@@ -16,8 +16,8 @@ Orchestrate 21 upstream design skills on every frontend/UI task. The upstream sk
 
 ## Setup
 
-1. Run `python3 scripts/check_design_skills.py` (add `--root DIR` for each extra skill dir, `--json` for machine output). It prints `installed <path>` or `missing` per skill; exit 0 means all installed.
-2. If any are missing, tell the user which ones and propose `python3 scripts/install_design_skills.py --dest <host skill dir>` (`--dry-run` first; `--force` only to overwrite a differing dir). Install only with user approval. Without approval, continue with the installed skills and mark the rest `missing`.
+1. Run `python3 scripts/check_design_skills.py` (add `--root DIR` for each extra skill dir, `--json` for machine output). It prints `installed <path>` or `missing` per skill; exit 0 means all mandatory skills are installed; optional availability is reported separately.
+2. If any mandatory skills or selected optional skills are missing, tell the user which ones and propose `python3 scripts/install_design_skills.py --dest <host skill dir>` (`--dry-run` first; `--force` only to overwrite a differing dir). Install only with user approval. Without approval, continue with the installed skills and mark the rest `missing`.
 3. Use each path the check script reports; some hosts list `design` as `ckm-design`.
 
 ## Phases
@@ -34,6 +34,10 @@ Run in order. Within a phase, consult every skill listed, then apply the relevan
    - `design`, `banner-design`, `slides` when those assets are in scope.
 3. **Review**
    - `find-animation-opportunities`, `review-animations`, `improve-animations`, `break-ui`, then the `ui-ux-pro-max` pre-delivery checklist (its `references/pro-rules.md`).
+
+## Optional sources
+
+Read [references/optional-design-sources.md](references/optional-design-sources.md) to select additional guidance by task fit. Use the optional manifest rows for design-taste genre/craft skills and Better Design; consult Canvas UI and UI Layouts as component catalogs, not installable skills. These additions do not change the requirement to consult the original 21 skills. Load only selected optional skills, record why they help, and respect catalog licenses and Better Design MCP availability.
 
 ## Conflict precedence
 
@@ -57,16 +61,16 @@ Never add a UI library when the repo already has an equivalent; `pick-ui-library
 
 ## Output
 
-Return one table with 21 rows, one per skill:
+Return one table with the original 21 rows plus one row per selected optional skill or catalog:
 
-| Skill | Phase | Status (`applied` / `not-applicable` / `missing`) | What changed or decided / reason | Evidence |
+| Skill | Phase | Status (`applied` / `not-applicable` / `missing` / `blocked`) | What changed or decided / reason | Evidence |
 |---|---|---|---|---|
 
 Follow it with the precedence overrides made, the browser proof (viewports, interaction, worst-case data), and anything unverified.
 
 ## References
 
-- [references/design-skills.md](references/design-skills.md): manifest of the 21 skills.
+- [references/design-skills.md](references/design-skills.md): manifest of mandatory and optional installable skills.
 - `scripts/check_design_skills.py`: detect installed and missing skills.
 - `scripts/install_design_skills.py`: install pinned upstream skills into a host skill dir.
 - `scripts/test_design_harness.py`: offline tests for the manifest and scripts.

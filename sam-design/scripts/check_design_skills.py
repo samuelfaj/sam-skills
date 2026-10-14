@@ -43,7 +43,7 @@ def parse_manifest(path: Path = MANIFEST) -> tuple[dict[str, dict], list[dict]]:
                 "root": _plain(cells[3]),
                 "license": cells[4],
             }
-        elif section == "Skills" and len(cells) == 10:
+        elif section in ("Skills", "Optional skills") and len(cells) == 10:
             aliases = [] if cells[4] == "-" else [a.strip() for a in cells[4].split(",")]
             skills.append(
                 {
@@ -55,6 +55,7 @@ def parse_manifest(path: Path = MANIFEST) -> tuple[dict[str, dict], list[dict]]:
                     "commit": _plain(cells[5]),
                     "license": cells[6],
                     "phase": cells[7],
+                    "optional": section == "Optional skills",
                 }
             )
     return repos, skills
@@ -109,6 +110,7 @@ def main(argv: list[str] | None = None) -> int:
                 "skill": skill["skill"],
                 "status": "installed" if found else "missing",
                 "path": str(found) if found else None,
+                "optional": skill["optional"],
             }
         )
     missing = [r["skill"] for r in results if r["status"] == "missing"]
@@ -118,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         for r in results:
             print(f"{r['skill']}: installed {r['path']}" if r["path"] else f"{r['skill']}: missing")
         print(f"{len(results) - len(missing)}/{len(results)} installed")
-    return 1 if missing else 0
+    return 1 if any(r["status"] == "missing" and not r["optional"] for r in results) else 0
 
 
 if __name__ == "__main__":

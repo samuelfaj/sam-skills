@@ -38,10 +38,13 @@ def run(script: Path, *args: str) -> subprocess.CompletedProcess:
 
 
 class ManifestTests(unittest.TestCase):
-    def test_21_rows_with_pinned_commits(self):
+    def test_mandatory_and_optional_rows_with_pinned_commits(self):
         repos, skills = check.parse_manifest()
-        self.assertEqual(len(skills), 21)
-        self.assertEqual(len({s["skill"] for s in skills}), 21)
+        self.assertEqual(len(skills), 46)
+        self.assertEqual(len({s["skill"] for s in skills}), 46)
+        self.assertEqual(sum(not s["optional"] for s in skills), 21)
+        self.assertEqual(sum(s["optional"] for s in skills), 25)
+        self.assertEqual({s["repo"] for s in skills if s["optional"]}, {"taste", "better"})
         for skill in skills:
             self.assertRegex(skill["commit"], r"^[0-9a-f]{40}$", skill["skill"])
             self.assertEqual(skill["commit"], repos[skill["repo"]]["commit"])
@@ -62,7 +65,19 @@ class CheckTests(unittest.TestCase):
             self.assertEqual(data["design"]["status"], "installed")  # alias via dir and name
             self.assertEqual(data["break-ui"]["status"], "installed")  # frontmatter name
             self.assertEqual(data["slides"]["status"], "missing")
-            self.assertEqual(len(data), 21)
+            self.assertEqual(len(data), 46)
+
+    def test_missing_optional_skills_do_not_block_baseline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _, skills = check.parse_manifest()
+            for skill in skills:
+                if not skill["optional"]:
+                    write_skill(Path(tmp) / skill["install"], skill["skill"])
+            result = run(CHECK, "--root", tmp, "--json")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            missing = [s for s in json.loads(result.stdout)["skills"] if s["status"] == "missing"]
+            self.assertEqual(len(missing), 25)
+            self.assertTrue(all(s["optional"] for s in missing))
 
     def test_all_installed_exits_zero(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -72,8 +87,8 @@ class CheckTests(unittest.TestCase):
                 write_skill(Path(tmp) / "host" / s["install"], s["skill"])
             result = run(CHECK, "--root", str(Path(tmp) / "host"))
             self.assertEqual(result.returncode, 0, result.stdout)
-            self.assertIn("21/21 installed", result.stdout)
-            self.assertEqual(set(repos), {"emil", "uupm"})
+            self.assertIn("46/46 installed", result.stdout)
+            self.assertEqual(set(repos), {"emil", "uupm", "taste", "better"})
 
 
 class InstallTests(unittest.TestCase):
@@ -94,7 +109,7 @@ class InstallTests(unittest.TestCase):
 
             again = run(INSTALL, "--dest", str(dest), *src_args)
             self.assertEqual(again.returncode, 0)
-            self.assertEqual(again.stdout.count("unchanged"), 21)
+            self.assertEqual(again.stdout.count("unchanged"), 46)
 
             (dest / "animate" / "SKILL.md").write_text("local edit")
             refused = run(INSTALL, "--dest", str(dest), *src_args)
