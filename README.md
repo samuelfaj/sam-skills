@@ -81,6 +81,11 @@ the requested behavior.
   host-detected orchestration tokens and return it for the user to copy,
   edit, and paste. Never starts the loop. Use for `/sam-gauntlet-loop`,
   "gauntlet this", or "loop until it beats a real reference".
+- `sam-trello`: rebuild or maintain a Trello board from a merge request,
+  client documents, and plans. Cards get numbered titles, a fixed template in
+  simple language, two-way dependency links, an optional client prefix, label
+  and assignee, and images. Writes in the language the user asks for
+  (default en-US). `scripts/lint_board.py` checks an exported board.
 - `sam-design`: route frontend and UI design work through all 21 skills from
   `emilkowalski/skills` and `nextlevelbuilder/ui-ux-pro-max-skill`, tracked in a
   coverage ledger, plus task-fit `design-taste` and `better-design` skills and

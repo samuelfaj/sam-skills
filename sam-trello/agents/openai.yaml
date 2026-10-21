@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Trello"
+  short_description: "Build simple numbered Trello cards with dependencies"
+  default_prompt: "Use $sam-trello to reconcile this Trello board with its sources, rewrite every card in simple language, number the tasks and link their dependencies."
