@@ -92,6 +92,11 @@ the requested behavior.
   Canvas UI / UI Layouts component references. Install manifest skills with
   `sam-design/scripts/install_design_skills.py`; Better Design also requires
   its separately configured MCP server.
+- `sam-clean-ssd`: free disk space safely. Measure first, reconcile used space
+  against what is visible, then remove only user-approved regenerable caches,
+  build output and stale git worktrees through guarded scripts that refuse
+  unsafe paths, protect unique commits and prove the result with before/after
+  free space. Never erases or formats a drive.
 
 ### Renamed skills
 

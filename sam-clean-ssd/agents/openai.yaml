@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Clean SSD"
+  short_description: "Free disk space safely by removing only approved junk"
+  default_prompt: "Use $sam-clean-ssd to free space on this disk. Measure first, explain where the space went, and remove only the regenerable items I approve."
