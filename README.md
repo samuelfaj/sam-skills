@@ -135,7 +135,7 @@ manually or periodically; unavailable host metrics remain `null`.
 ## Install
 
 Install each complete `sam-*` directory through the target host's skill
-mechanism (`~/.grok/skills/` for Distill). Preserve the directory name and all
+mechanism (`~/.distill/skills/` for Distill). Preserve the directory name and all
 bundled `agents/`, `references/`, and `scripts/` resources. Structured reports need
 their bundled checkers and validators; the adaptive default does not.
 
