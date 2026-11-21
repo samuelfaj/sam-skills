@@ -99,14 +99,14 @@ the requested behavior.
   build output and stale git worktrees through guarded scripts that refuse
   unsafe paths, protect unique commits and prove the result with before/after
   free space. Never erases or formats a drive.
-- `sam-humanizer-short`: rewrite chat messages so they read like a person typing:
-  short lines, blank lines between ideas, answer first, no filler openers or
-  closers, with facts, names and paths left exact.
+- `sam-humanizer`: write a bot’s next reply from the conversation or shorten
+  a chat draft in any language, preserving the sender’s voice, facts and uncertainty.
 
 ### Renamed skills
 
 | Old name | New name |
 | --- | --- |
+| `sam-humanizer-short` | `sam-humanizer` |
 | `sam-work` | `sam-task` (`--deliver pr`) |
 | `sam-refine-task` | `sam-council --mode refine` |
 | `sam-create-test-coverage` | `sam-test` |

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Humanizer"
+  short_description: "Write natural chat replies or shorten a draft in any language"
+  default_prompt: "Use $sam-humanizer to reply naturally to this conversation in the sender’s voice."
