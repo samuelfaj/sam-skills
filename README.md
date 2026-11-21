@@ -92,6 +92,8 @@ the requested behavior.
   Canvas UI / UI Layouts component references. Install manifest skills with
   `sam-design/scripts/install_design_skills.py`; Better Design also requires
   its separately configured MCP server.
+- `sam-humanizer-caveman`: write a very brief chat reply or condense a draft in
+  any language, keeping the sender’s voice and the details that matter.
 - `sam-clean-ssd`: free disk space safely. Measure first, reconcile used space
   against what is visible, then remove only user-approved regenerable caches,
   build output and stale git worktrees through guarded scripts that refuse
