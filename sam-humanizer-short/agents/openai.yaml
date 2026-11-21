@@ -1,4 +1,4 @@
 interface:
   display_name: "Sam Humanizer Short"
-  short_description: "Rewrite chat messages as short, human lines with breaks"
-  default_prompt: "Use $sam-humanizer-short to rewrite this message so it reads like a person typing in chat: short lines, blank lines between ideas, answer first."
+  short_description: "Rewrite chat in the sender’s voice, with the facts intact"
+  default_prompt: "Use $sam-humanizer-short to make this message sound natural for the person and conversation it’s meant for."

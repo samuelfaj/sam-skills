@@ -1,58 +1,37 @@
 ---
 name: sam-humanizer-short
-description: Rewrite chat messages (Slack, DMs, PR comments, bot replies) so they sound like a real person typing fast. Short lines, line breaks, no essay paragraphs. Use when text reads like an AI or a long report.
+description: Rewrite a Slack message, WhatsApp reply, DM, PR comment, or bot update in a natural chat voice. Use when a draft sounds scripted, overly formal, or like a report.
 ---
 
 # Sam Humanizer Short
 
-Rewrite the text the way a coworker types in Slack.
+Read the last turn if one is supplied. What would the recipient need to hear from this speaker right now? In a thread, answer the open question. In a new channel post, name the thing that happened so someone coming in cold can follow. If the draft already fits the conversation, leave it alone.
+
+## Voice and rhythm
+
+- Take your cue from how the **sender** talks to this audience. Someone who writes “pra” to a teammate may write “você poderia” to a client. In English, keep the sender’s own contractions and technical vocabulary. With little context, ordinary conversational wording is enough.
+- Let the thought set the length. A confirmation may be two words. A decision may need a paragraph to explain what led to it, then a question on its own. Keep a qualification next to the claim it changes. Break where the speaker changes thought.
+- Keep warmth that does something. A greeting can open a new conversation. Thanks can acknowledge someone’s effort. In an ongoing exchange, it’s fine to get straight to the answer. Keep expressive punctuation, humor or emoji when they belong to this sender and moment. Adding typos, slang or a pet nickname to manufacture personality usually sounds forced.
+- Turn report headings into sentences someone could say. A short list is useful when the reader has several things to check. Drop the ceremonial intro, commentary on the team, repeated takeaway and sign-off when they add nothing. Preserve a real recommendation or request.
 
 ## Non-Negotiable Contract
 
-Keep every fact, name, number and path exact. Change only the shape and tone.
-
-## Shape
-
-- One idea per line.
-- Blank line between ideas.
-- 1 to 3 short lines per message. Split longer content into separate messages or lines.
-- Lead with the answer or the ask. No warm-up.
-- No headers, bold, bullet lists or tables in chat.
-- Fragments are fine: "Ok", "Oh, I didn't go through, just saw the post".
-
-## Voice
-
-- Plain words. Contractions. Say "I" and "you".
-- Say what you saw, what you did, what you need. Stop there.
-- Casual links and emoji are fine, rarely. One at most.
-- Small imperfections are fine (lowercase start, no final period).
-
-## Cut
-
-- Openers: "Great question", "Certainly", "I hope this helps".
-- Closers: "Let me know if...", "Feel free to...".
-- Recaps, hedging, "It's worth noting", "Additionally", "Moreover".
-- Lists of three for rhythm, inflated words, em dashes.
-- Explaining what you are about to say.
+Keep the facts and who saw, tested or promised what, including when the speaker is a bot. Copy names, identifiers, numeric values and their units, dates, links, code, commands, paths and error strings as supplied. A suspicion stays a suspicion. A proposed action stays proposed. Never invent an observation, recommendation, deadline, fix or offer to make the message flow.
 
 ## Return
 
-Return only the rewritten message, ready to paste. No commentary.
+Return just one pasteable message unless the user asks for separate sends. Follow the requested language. Otherwise keep the language of the message, even if the editing instructions are in another language.
 
-## Example
+For text someone will paste into Slack or WhatsApp, put a bare URL beside the ticket or file it opens. Skip Markdown link syntax or bold heading markers that the recipient might see as literal text. In a Markdown PR comment, a linked issue number is fine.
 
-Before:
-"The gaps: nothing makes the reviewer name the failure that matters, and section 3 accepts any green test job even if it never selected the suite in question."
+## Examples
 
-After:
-Hey, found two gaps.
+**WhatsApp, answering a question.** Someone asks “Qual dos dois portões?” The draft says “A entrada é pelo portão menor.” Send “Pelo menor”. The earlier turn supplies the rest.
 
-Reviewer never has to name the failure that matters (timeout, failed retry).
+**Slack, explaining a choice.** The draft says “Após vermos as duas provas impressas, nossa preferência é pela versão creme. O texto na cinza ficou difícil de ler. Gostaríamos de saber se podemos seguir com a creme.”
 
-And a green CI job counts even if it never ran that suite. That's how the e2e one got a free pass.
+> A gente gostou mais da creme quando viu as duas no papel. Na cinza ficou difícil de ler o texto.
+>
+> Podemos seguir com a creme?
 
-I'd add one check to 0.1 for this.
-
-## Keep exact
-
-Code, commands, paths, names, numbers and error strings stay untouched. Reply in the user's language.
+**English, technical reply.** Asked whether the export is fixed, the draft says “The job ran again. Confirmation that the resulting file opens is still pending.” Send “The job ran again. Still waiting to hear if the file opens.”
