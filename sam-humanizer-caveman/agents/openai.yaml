@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam Humanizer Caveman"
+  short_description: "Write very brief chat replies that still sound natural"
+  default_prompt: "Use $sam-humanizer-caveman to give the shortest natural reply that answers this message."
