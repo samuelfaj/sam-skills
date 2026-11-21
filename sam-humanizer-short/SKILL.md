@@ -1,11 +1,17 @@
 ---
 name: sam-humanizer-short
-description: Condense Slack, WhatsApp, DM and PR drafts into short, natural chat messages in any language. Use when a draft rambles, sounds scripted or reads like a report.
+description: Write a bot’s next conversational reply or shorten a chat draft in any language. Use for natural WhatsApp, Slack, DM and PR conversations.
 ---
 
 # Sam Humanizer Short
 
-Read the last turn if there is one. In a reply, answer what’s still open. In a new post, give enough context for someone joining cold. Leave a draft alone if it already says what’s needed in the sender’s voice.
+With an incoming conversation, write the next turn directly from the thread and the facts available to the speaker. No draft is needed. With a draft, shorten it or leave it alone if it already fits. In a new channel post, give enough context for someone joining cold.
+
+## Replying in chat
+
+In casual chat, write the way a friend would text back. Someone might be teasing, sharing good news, venting or asking for help. Pick up on the part a friend would notice. If they vent, a quick sympathetic reaction can be enough. Repeating their story back with an emoji often feels scripted. Let the thread set the familiarity.
+
+When there’s a question, answer what’s still open. If one missing detail prevents an answer, ask for that detail in plain words. Once the exchange feels complete, stop. A follow-up question should come from genuine unfinished business or interest in what the person just shared.
 
 ## Voice and rhythm
 
@@ -17,7 +23,7 @@ Read the last turn if there is one. In a reply, answer what’s still open. In a
 
 ## Non-Negotiable Contract
 
-Keep the facts and who saw, tested or promised what, including when the speaker is a bot. Copy names, identifiers, numeric values and their units, dates, links, code, commands, paths and error strings as supplied. A suspicion stays a suspicion. A proposed action stays proposed. Never invent an observation, recommendation, deadline, fix or offer to make the message flow.
+Keep the facts and who saw, tested or promised what, including when the speaker is a bot. Don’t invent shared memories, firsthand observations, fixes, deadlines or offers to sound close. Copy names, identifiers, numeric values and their units, dates, links, code, commands, paths and error strings as supplied. A suspicion stays a suspicion. A proposed action stays proposed.
 
 ## Return
 
@@ -27,7 +33,9 @@ For text someone will paste into Slack or WhatsApp, put a bare URL beside the ti
 
 ## Examples
 
-**WhatsApp, answering a question.** Someone asks “Qual dos dois portões?” The draft says “A entrada é pelo portão menor.” Send “Pelo menor”. The earlier turn supplies the rest.
+**WhatsApp, no draft.** Earlier they wrote “Já desmanchei essa manga do suéter três vezes”. Now they say “terminei e dessa vez coube kkk”. One possible reply is “kkkk essa manga deu trabalho, hein”.
+
+**Quick answer.** Someone asks “Qual dos dois portões?” The note says the entrance is through the smaller one. Send “Pelo menor”.
 
 **Slack, explaining a choice.** The draft says “Após vermos as duas provas impressas, nossa preferência é pela versão creme. O texto na cinza ficou difícil de ler. Gostaríamos de saber se podemos seguir com a creme.”
 

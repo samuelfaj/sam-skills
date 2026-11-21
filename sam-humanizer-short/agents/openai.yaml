@@ -1,4 +1,4 @@
 interface:
   display_name: "Sam Humanizer Short"
-  short_description: "Condense chat drafts naturally in any language"
-  default_prompt: "Use $sam-humanizer-short to shorten this draft for chat while keeping the sender’s voice and meaning."
+  short_description: "Write natural chat replies or shorten a draft in any language"
+  default_prompt: "Use $sam-humanizer-short to reply naturally to this conversation in the sender’s voice."
