@@ -1,9 +1,9 @@
 ---
-name: sam-humanizer-short
+name: sam-humanizer
 description: Write a bot’s next conversational reply or shorten a chat draft in any language. Use for natural WhatsApp, Slack, DM and PR conversations.
 ---
 
-# Sam Humanizer Short
+# Sam Humanizer
 
 With an incoming conversation, write the next turn directly from the thread and the facts available to the speaker. No draft is needed. With a draft, shorten it or leave it alone if it already fits. In a new channel post, give enough context for someone joining cold.
 
