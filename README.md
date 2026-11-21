@@ -97,8 +97,8 @@ the requested behavior.
   build output and stale git worktrees through guarded scripts that refuse
   unsafe paths, protect unique commits and prove the result with before/after
   free space. Never erases or formats a drive.
-- `sam-humanizer-short`: rewrite chat in the sender’s voice for the conversation
-  at hand, preserving facts, technical details and uncertainty.
+- `sam-humanizer-short`: condense chat drafts in any language into short sentences
+  and natural paragraphs, preserving the sender’s voice, facts and uncertainty.
 
 ### Renamed skills
 

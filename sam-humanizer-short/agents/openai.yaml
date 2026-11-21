@@ -1,4 +1,4 @@
 interface:
   display_name: "Sam Humanizer Short"
-  short_description: "Rewrite chat in the sender’s voice, with the facts intact"
-  default_prompt: "Use $sam-humanizer-short to make this message sound natural for the person and conversation it’s meant for."
+  short_description: "Condense chat drafts naturally in any language"
+  default_prompt: "Use $sam-humanizer-short to shorten this draft for chat while keeping the sender’s voice and meaning."

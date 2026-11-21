@@ -1,16 +1,17 @@
 ---
 name: sam-humanizer-short
-description: Rewrite a Slack message, WhatsApp reply, DM, PR comment, or bot update in a natural chat voice. Use when a draft sounds scripted, overly formal, or like a report.
+description: Condense Slack, WhatsApp, DM and PR drafts into short, natural chat messages in any language. Use when a draft rambles, sounds scripted or reads like a report.
 ---
 
 # Sam Humanizer Short
 
-Read the last turn if one is supplied. What would the recipient need to hear from this speaker right now? In a thread, answer the open question. In a new channel post, name the thing that happened so someone coming in cold can follow. If the draft already fits the conversation, leave it alone.
+Read the last turn if there is one. In a reply, answer what’s still open. In a new post, give enough context for someone joining cold. Leave a draft alone if it already says what’s needed in the sender’s voice.
 
 ## Voice and rhythm
 
-- Take your cue from how the **sender** talks to this audience. Someone who writes “pra” to a teammate may write “você poderia” to a client. In English, keep the sender’s own contractions and technical vocabulary. With little context, ordinary conversational wording is enough.
-- Let the thought set the length. A confirmation may be two words. A decision may need a paragraph to explain what led to it, then a question on its own. Keep a qualification next to the claim it changes. Break where the speaker changes thought.
+- Short is the default. Find the point before rewriting. Collapse repeated explanations, leave out setup the reader already knows, and say each new fact once. Simply breaking a long draft into lines leaves the editing unfinished.
+- Use short sentences. A quick reply can be a few words on one line. In a longer update, keep related sentences together and start a new paragraph when the thought turns, often from what happened to what someone needs to do. Keep a caveat with the claim it qualifies. Use as many lines as the meaning needs.
+- Match how the sender addresses this person. Familiarity, politeness, punctuation and sentence breaks should sound natural in the target language and dialect. Keep the sender’s mix of languages or borrowed terms when that’s how they talk.
 - Keep warmth that does something. A greeting can open a new conversation. Thanks can acknowledge someone’s effort. In an ongoing exchange, it’s fine to get straight to the answer. Keep expressive punctuation, humor or emoji when they belong to this sender and moment. Adding typos, slang or a pet nickname to manufacture personality usually sounds forced.
 - Turn report headings into sentences someone could say. A short list is useful when the reader has several things to check. Drop the ceremonial intro, commentary on the team, repeated takeaway and sign-off when they add nothing. Preserve a real recommendation or request.
 
@@ -20,7 +21,7 @@ Keep the facts and who saw, tested or promised what, including when the speaker 
 
 ## Return
 
-Return just one pasteable message unless the user asks for separate sends. Follow the requested language. Otherwise keep the language of the message, even if the editing instructions are in another language.
+Return just one pasteable message unless the user asks for separate sends. Use any target language the user requests. Otherwise keep the draft’s language, even when the editing instructions are in another language. If only context and notes are supplied for a reply, follow the conversation’s language.
 
 For text someone will paste into Slack or WhatsApp, put a bare URL beside the ticket or file it opens. Skip Markdown link syntax or bold heading markers that the recipient might see as literal text. In a Markdown PR comment, a linked issue number is fine.
 
@@ -30,7 +31,7 @@ For text someone will paste into Slack or WhatsApp, put a bare URL beside the ti
 
 **Slack, explaining a choice.** The draft says “Após vermos as duas provas impressas, nossa preferência é pela versão creme. O texto na cinza ficou difícil de ler. Gostaríamos de saber se podemos seguir com a creme.”
 
-> A gente gostou mais da creme quando viu as duas no papel. Na cinza ficou difícil de ler o texto.
+> No papel, a gente preferiu a creme. Na cinza ficou difícil de ler.
 >
 > Podemos seguir com a creme?
 
