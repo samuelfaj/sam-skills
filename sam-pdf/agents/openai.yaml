@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sam PDF"
+  short_description: "Build verified, screenshot-rich PDFs that render cleanly"
+  default_prompt: "Use $sam-pdf to build this PDF. Write the page spec from verified facts, capture or reuse the screens, build and preflight until no page has a layout problem, check the PDF and review every page before delivering."

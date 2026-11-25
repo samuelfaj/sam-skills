@@ -101,6 +101,11 @@ the requested behavior.
   free space. Never erases or formats a drive.
 - `sam-humanizer`: write a bot’s next reply from the conversation or shorten
   a chat draft in any language, preserving the sender’s voice, facts and uncertainty.
+- `sam-pdf`: build a polished PDF (product walkthroughs with many screenshots,
+  reports, proposals) from a JSON page spec. `scripts/print_pdf.py` blocks the
+  PDF while any page overflows or shows an unreadable image, and
+  `scripts/check_pdf.py` verifies the file and renders every page for review.
+  Needs Pillow, Playwright with Chromium, and poppler.
 
 ### Renamed skills
 

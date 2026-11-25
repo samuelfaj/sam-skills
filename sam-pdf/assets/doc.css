@@ -1,0 +1,300 @@
+/* Print layout for build_doc.py. Theme variables and @page come from the spec. */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+html,
+body {
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 10.5pt;
+  line-height: 1.5;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+h1,
+h2,
+h3 {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+p {
+  text-wrap: pretty;
+}
+.page {
+  width: var(--page-w);
+  height: var(--page-h);
+  padding: 10mm 13mm 11mm;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  break-after: page;
+}
+.page:last-child {
+  break-after: auto;
+}
+.bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 3mm;
+  padding-bottom: 3mm;
+  margin-bottom: 6mm;
+  border-bottom: 1px solid var(--line);
+  font-size: 8.5pt;
+  color: var(--muted);
+}
+.sec {
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+.num {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.role {
+  display: inline-block;
+  padding: 0.4mm 2.4mm;
+  border-radius: 99px;
+  font-size: 8pt;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+h2 {
+  font-size: 19pt;
+  margin-bottom: 3mm;
+}
+.copy p,
+.lead p {
+  margin-bottom: 2mm;
+  color: var(--ink);
+  opacity: 0.9;
+}
+.lead p:last-child,
+.copy p:last-child {
+  margin-bottom: 0;
+}
+
+/* Screenshot pages: copy column on the left, or a title band on top. */
+.single {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 66mm minmax(0, 1fr);
+  gap: 9mm;
+}
+.top {
+  flex: none;
+  margin-bottom: 5mm;
+  display: grid;
+  grid-template-columns: 66mm minmax(0, 1fr);
+  gap: 9mm;
+  align-items: start;
+}
+.top h2 {
+  margin-bottom: 0;
+}
+.lead {
+  max-width: 175mm;
+}
+figure {
+  min-width: 0;
+  min-height: 0;
+}
+.fit {
+  height: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+.fit img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  box-shadow: 0 1mm 3mm rgba(0, 0, 0, 0.06);
+  background: #fff;
+}
+.single .fit {
+  justify-content: flex-end;
+}
+.row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 6mm;
+}
+.row > figure {
+  flex: 1 1 0;
+}
+.split {
+  gap: 4mm;
+}
+.col {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4mm;
+}
+.col > figure {
+  flex: 1 1 0;
+}
+.labeled {
+  display: flex;
+  flex-direction: column;
+}
+.labeled .frame {
+  flex: 1;
+  min-height: 0;
+}
+figcaption {
+  flex: none;
+  margin-bottom: 2mm;
+  font-size: 8.5pt;
+  font-weight: 700;
+  color: var(--muted);
+}
+.phones {
+  gap: 5mm;
+  justify-content: center;
+}
+.phones > figure {
+  flex: 0 1 46mm;
+}
+.phones figcaption {
+  text-align: center;
+}
+.grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 5mm 8mm;
+}
+.grid .fit {
+  justify-content: flex-start;
+}
+
+/* Cover */
+.cover {
+  padding: 0;
+  background: var(--bg);
+}
+.cover-in {
+  height: 100%;
+  padding: 26mm 24mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.brand {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 16pt;
+  color: var(--primary);
+  margin-bottom: 22mm;
+}
+.cover h1 {
+  font-size: 38pt;
+  max-width: 190mm;
+  margin-bottom: 7mm;
+}
+.cover .sub {
+  font-size: 15pt;
+  max-width: 170mm;
+  margin-bottom: 18mm;
+}
+.cover .meta {
+  font-size: 10pt;
+  color: var(--muted);
+}
+
+/* Text pages */
+.lead-big {
+  font-size: 12.5pt;
+  max-width: 210mm;
+  margin-bottom: 8mm;
+}
+.cards {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  gap: 5mm;
+}
+.cards li {
+  border: 1px solid var(--line);
+  border-radius: 4mm;
+  padding: 5mm 6mm;
+  background: var(--bg);
+}
+.cards h3 {
+  font-size: 12pt;
+  margin-bottom: 2mm;
+  color: var(--primary);
+  hyphens: auto;
+}
+.cards .n {
+  display: block;
+  margin-bottom: 2mm;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 13pt;
+  color: var(--muted);
+  opacity: 0.7;
+}
+/* Narrow cards (5+ columns) need tighter padding to keep words whole. */
+.cards.dense li {
+  padding: 4mm;
+}
+.cards.dense h3 {
+  font-size: 11pt;
+}
+.cards.dense p {
+  font-size: 9.5pt;
+}
+.note {
+  margin-top: 8mm;
+  max-width: 170mm;
+  border-radius: 4mm;
+  padding: 5mm 6mm;
+  background: var(--bg);
+}
+.note h3 {
+  font-size: 12pt;
+  margin-bottom: 2mm;
+}
+.note ul {
+  padding-left: 4mm;
+  display: grid;
+  gap: 1.5mm;
+  font-size: 9.5pt;
+}
+.items {
+  display: grid;
+  gap: 3.5mm;
+  padding-left: 6mm;
+  font-size: 12pt;
+  max-width: 220mm;
+}
+.items li::marker {
+  color: var(--primary);
+  font-weight: 700;
+}
